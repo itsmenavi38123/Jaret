@@ -1,0 +1,116 @@
+# ─────────────────────────────────────────────
+# PYTHON / FASTAPI BACKEND PROJECT .gitignore
+# ─────────────────────────────────────────────
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Compiled extensions
+*.so
+
+# Build / Packaging
+build/
+dist/
+develop-eggs/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environments
+.venv/
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+*.hypothesis/
+.pytest_cache/
+test-results/
+tests/__pycache__/
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Environment files (secrets)
+.env
+.env.*
+!.env.example  # allow safe example env file
+
+# FastAPI specific (Uvicorn reload cache)
+*.pid
+*.db-journal
+
+# MongoDB data dumps
+dump/
+*.bson
+*.json
+
+# Logs
+*.log
+logs/
+*.pid
+*.sqlite3
+*.sqlite
+
+# IDE / Editor
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+
+# OS-specific junk
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Python type checker / language server
+.mypy_cache/
+.dmypy.json
+.pyre/
+.pytype/
+ruff_cache/
+__pypackages__/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.bak
+*.old
+
+# Docker / Deployment
+Dockerfile
+docker-compose.yml
+*.tar
+*.gz
+
+
