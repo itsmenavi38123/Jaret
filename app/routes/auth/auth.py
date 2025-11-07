@@ -2,7 +2,8 @@ import os
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 from uuid import uuid4
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordBearer
 from jose import jwt, JWTError
 from passlib.context import CryptContext
@@ -11,7 +12,6 @@ from app.config import JWT_SECRET, JWT_ALGORITHM, create_access_token, create_re
 import hashlib
 
 from app.db import get_collection
-from fastapi import Request
 
 router = APIRouter(tags=["auth"])
 
@@ -85,58 +85,103 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
 # -----------------------
 # Routes
 # -----------------------
-@router.post("/register", status_code=status.HTTP_201_CREATED)
+@router.post("/register")
 async def register(user: UserCreate, request: Request):
-    body = await request.json()
-    if not isinstance(body, dict):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid request body")
+    try:
+        body = await request.json()
+        if not isinstance(body, dict):
+            return {
+                "success": False,
+                "error": "Invalid request body",
+                "status_code": status.HTTP_400_BAD_REQUEST
+            }
 
-    allowed = {"email", "password"}
-    extra = set(body.keys()) - allowed
-    if extra:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Unexpected fields: {', '.join(sorted(extra))}. Only allowed fields: email, password"
+        allowed = {"email", "password"}
+        extra = set(body.keys()) - allowed
+        if extra:
+            return JSONResponse(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                content={
+                    "success": False,
+                    "error": f"Unexpected fields: {', '.join(sorted(extra))}. Only allowed fields: email, password"
+                }
+            )
+
+        users = get_collection("users")
+        existing = await users.find_one({"email": user.email})
+        if existing:
+            return JSONResponse(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                content={"success": False, "error": "Email already registered"}
+            )
+
+        user_id = str(uuid4())
+        to_insert = {
+            "_id": user_id,
+            "email": user.email,
+            "password_hash": hash_password(user.password),
+            "created_at": _now_utc(),
+        }
+
+        await users.insert_one(to_insert)
+
+        return JSONResponse(
+            status_code=status.HTTP_201_CREATED,
+            content={
+                "success": True,
+                "data": {
+                    "id": user_id,
+                    "email": user.email
+                }
+            }
         )
 
-    users = get_collection("users")
-    existing = await users.find_one({"email": user.email})
-    if existing:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
+    except Exception as e:
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"success": False, "error": str(e)}
+        )
 
-    user_id = str(uuid4())
-    to_insert = {
-        "_id": user_id,
-        "email": user.email,
-        "password_hash": hash_password(user.password),
-        "created_at": _now_utc(),
-    }
-
-    await users.insert_one(to_insert)
-    return {"id": user_id, "email": user.email}
-
-@router.post("/login", response_model=Token)
+@router.post("/login")
 async def login(credentials: UserLogin):
-    users = get_collection("users")
-    user_doc = await users.find_one({"email": credentials.email})
-    if not user_doc or not verify_password(credentials.password, user_doc.get("password_hash", "")):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
+    try:
+        users = get_collection("users")
+        user_doc = await users.find_one({"email": credentials.email})
 
-    token_data = {"sub": user_doc["_id"], "email": user_doc["email"]}
-    access_token = create_access_token(token_data)
-    refresh_token = create_refresh_token(token_data)
+        if not user_doc or not verify_password(credentials.password, user_doc.get("password_hash", "")):
+            return JSONResponse(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                content={"success": False, "error": "Invalid email or password"}
+            )
 
-    user_info = {
-        "id": user_doc["_id"],
-        "email": user_doc["email"],
-        "created_at": user_doc.get("created_at"),
-    }
+        token_data = {"sub": user_doc["_id"], "email": user_doc["email"]}
+        access_token = create_access_token(token_data)
+        refresh_token = create_refresh_token(token_data)
 
-    return Token(
-        user=user_info,
-        access_token=access_token,
-        refresh_token=refresh_token
-    )
+        created_at = user_doc.get("created_at")
+        user_info = {
+            "id": user_doc["_id"],
+            "email": user_doc["email"],
+            "created_at": created_at.isoformat() if created_at else None,
+        }
+
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content={
+                "success": True,
+                "data": {
+                    "user": user_info,
+                    "access_token": access_token,
+                    "refresh_token": refresh_token,
+                }
+            }
+        )
+
+    except Exception as e:
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"success": False, "error": str(e)}
+        )
 
 
 @router.post("/refresh", response_model=Token)
@@ -144,21 +189,41 @@ async def refresh_token(req: RefreshRequest):
     try:
         payload = jwt.decode(req.refresh_token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         if payload.get("type") != "refresh":
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token")
+            return JSONResponse(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                content={"success": False, "error": "Invalid refresh token"}
+            )
     except JWTError:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired refresh token")
+        return JSONResponse(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            content={"success": False, "error": "Invalid or expired refresh token"}
+        )
 
     user_id = payload.get("sub")
     email = payload.get("email")
     if not user_id or not email:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token payload")
+        return JSONResponse(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            content={"success": False, "error": "Invalid refresh token payload"}
+        )
 
-    # Optional: verify user still exists / is not disabled
     users = get_collection("users")
     user_doc = await users.find_one({"_id": user_id})
     if not user_doc:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+        return JSONResponse(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            content={"success": False, "error": "User not found"}
+        )
 
     new_access = create_access_token({"sub": user_id, "email": email})
     new_refresh = create_refresh_token({"sub": user_id, "email": email})
-    return Token(access_token=new_access, refresh_token=new_refresh)
+    return JSONResponse(
+        status_code=status.HTTP_200_OK,
+        content={
+            "success": True,
+            "data": {
+                "access_token": new_access,
+                "refresh_token": new_refresh,
+            }
+        }
+    )

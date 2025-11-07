@@ -12,20 +12,30 @@ class Settings(BaseSettings):
     mongo_uri: str
     mongo_db_name: str
 
+    # QuickBooks
+    quickbooks_client_id: str
+    quickbooks_client_secret: str
+    quickbooks_redirect_uri: str
+    quickbooks_environment: str
+
+    # Xero
+    xero_client_id: str
+    xero_client_secret: str
+    xero_redirect_uri: str
+
     jwt_secret_key: str
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-
+settings = Settings()
 # -----------------------
 # JWT configuration
 # -----------------------
-JWT_SECRET = os.getenv("JWT_SECRET_KEY")
-JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
-ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60"))  # minutes
-REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "7"))       # days
+JWT_SECRET = settings.jwt_secret_key
+JWT_ALGORITHM = settings.jwt_algorithm
+ACCESS_TOKEN_EXPIRE_MINUTES = settings.access_token_expire_minutes  # minutes
 
 if not JWT_SECRET:
     raise RuntimeError("JWT_SECRET_KEY must be set in environment")
@@ -43,10 +53,10 @@ def create_access_token(data: Dict[str, Any], expires_delta: Optional[timedelta]
 def create_refresh_token(data: Dict[str, Any], expires_delta: Optional[timedelta] = None) -> str:
     to_encode = data.copy()
     now = _now_utc()
-    expire = now + (expires_delta or timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS))
+    expire = now + (expires_delta or timedelta(days=7))
     to_encode.update({"iat": now, "exp": expire, "type": "refresh"})
     return jwt.encode(to_encode, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
-settings = Settings()
+
 
 

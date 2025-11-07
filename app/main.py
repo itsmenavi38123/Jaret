@@ -10,6 +10,8 @@ load_dotenv()
 
 # import routers (make sure backend/app/routes/auth/auth.py exposes `router`)
 from app.routes.auth.auth import router as auth_router
+from app.routes.quickbooks.auth import router as quickbooks_router
+from app.routes.xero.auth import router as xero_router
 
 app = FastAPI(
     title=os.getenv("APP_NAME", "FastAPI Backend"),
@@ -33,6 +35,8 @@ app.add_middleware(
 )
 
 app.include_router(auth_router, prefix="/auth")
+app.include_router(quickbooks_router, prefix="/quickbooks")
+app.include_router(xero_router, prefix="/xero")
 
 
 @app.on_event("startup")
