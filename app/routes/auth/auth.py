@@ -64,6 +64,23 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
+    
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        if payload.get("type") != "access":
+            raise credentials_exception
+        user_id: Optional[str] = payload.get("sub")
+        if user_id is None:
+            raise credentials_exception
+    except JWTError:
+        raise credentials_exception
+
+    users = get_collection("users")
+    user_doc = await users.find_one({"_id": user_id})
+    if not user_doc:
+        raise credentials_exception
+
+    return {"id": user_doc["_id"], "email": user_doc["email"]}
 
 
 @router.get("/me")
@@ -102,23 +119,6 @@ async def get_current_user_details(current_user: dict = Depends(get_current_user
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={"success": False, "error": str(e)}
         )
-    try:
-        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-        # only accept access tokens here
-        if payload.get("type") != "access":
-            raise credentials_exception
-        user_id: Optional[str] = payload.get("sub")
-        if user_id is None:
-            raise credentials_exception
-    except JWTError:
-        raise credentials_exception
-
-    users = get_collection("users")
-    user_doc = await users.find_one({"_id": user_id})
-    if not user_doc:
-        raise credentials_exception
-
-    return {"id": user_doc["_id"], "email": user_doc["email"]}
 
 # -----------------------
 # Routes
