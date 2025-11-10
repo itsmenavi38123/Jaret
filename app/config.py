@@ -18,6 +18,10 @@ class Settings(BaseSettings):
     quickbooks_redirect_uri: str
     quickbooks_environment: str
 
+    # Xero
+    xero_client_id: Optional[str] = None
+    xero_client_secret: Optional[str] = None
+    xero_redirect_uri: Optional[str] = None
 
     jwt_secret_key: str
     jwt_algorithm: str = "HS256"

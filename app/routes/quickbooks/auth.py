@@ -14,16 +14,28 @@ from app.config import JWT_SECRET, JWT_ALGORITHM
 router = APIRouter()
 
 @router.get("/login")
-async def login(current_user: dict = Depends(get_current_user)):
+async def login(
+    current_user: dict = Depends(get_current_user),
+    redirect_uri: str = None
+):
     """
     Redirects the user to the QuickBooks authorization URL.
+    Optionally accepts a custom redirect_uri parameter to override the configured one.
     """
+    state_data = {
+        "user_id": current_user["id"], 
+        "exp": datetime.utcnow() + timedelta(minutes=10)
+    }
+    
+    if redirect_uri:
+        state_data["redirect_uri"] = redirect_uri
+    
     state = jwt.encode(
-        {"user_id": current_user["id"], "exp": datetime.utcnow() + timedelta(minutes=10)},
+        state_data,
         JWT_SECRET,
         algorithm=JWT_ALGORITHM
     )
-    auth_url = quickbooks_service.get_authorization_url(state=state)
+    auth_url = quickbooks_service.get_authorization_url(state=state, redirect_uri=redirect_uri)
     return JSONResponse(
         status_code=status.HTTP_200_OK,
         content=jsonable_encoder({
@@ -120,13 +132,14 @@ async def callback(request: Request):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="State parameter not found in callback.")
         
     try:
-        # Verify and decode the state parameter to get the user ID
+        # Verify and decode the state parameter to get the user ID and redirect URI
         state_data = jwt.decode(state, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         user_id = state_data["user_id"]
+        redirect_uri = state_data.get("redirect_uri")  # Optional redirect URI
     except jwt.JWTError:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid state parameter.")
 
-    tokens = await quickbooks_service.exchange_code_for_tokens(code)
+    tokens = await quickbooks_service.exchange_code_for_tokens(code, redirect_uri)
     
     token_create = QuickBooksTokenCreate(
         user_id=user_id,

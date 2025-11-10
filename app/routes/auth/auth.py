@@ -64,6 +64,44 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
+
+
+@router.get("/me")
+async def get_current_user_details(current_user: dict = Depends(get_current_user)):
+    """
+    Get current authenticated user details.
+    Requires a valid access token.
+    """
+    try:
+        users = get_collection("users")
+        user_doc = await users.find_one({"_id": current_user["id"]})
+        
+        if not user_doc:
+            return JSONResponse(
+                status_code=status.HTTP_404_NOT_FOUND,
+                content={"success": False, "error": "User not found"}
+            )
+
+        created_at = user_doc.get("created_at")
+        user_info = {
+            "id": user_doc["_id"],
+            "email": user_doc["email"],
+            "created_at": created_at.isoformat() if created_at else None,
+        }
+
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content={
+                "success": True,
+                "data": user_info
+            }
+        )
+
+    except Exception as e:
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"success": False, "error": str(e)}
+        )
     try:
         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         # only accept access tokens here
