@@ -61,3 +61,10 @@ async def create_indexes() -> None:
     await quickbooks_tokens.create_index([("user_id", 1), ("realm_id", 1)])
     await quickbooks_tokens.create_index([("user_id", 1), ("is_active", 1)])
     await quickbooks_tokens.create_index("created_at")
+
+    xero_tokens = get_collection("xero_tokens")
+    await xero_tokens.create_index("user_id")
+    await xero_tokens.create_index("tenant_id")
+    await xero_tokens.create_index([("user_id", 1), ("tenant_id", 1)])
+    await xero_tokens.create_index([("user_id", 1), ("is_active", 1)])
+    await xero_tokens.create_index("created_at")

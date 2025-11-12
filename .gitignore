@@ -112,5 +112,5 @@ Dockerfile
 docker-compose.yml
 *.tar
 *.gz
-
-
+.pdf
+*.pdf

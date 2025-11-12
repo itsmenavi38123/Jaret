@@ -139,7 +139,7 @@ async def callback(request: Request):
     except jwt.JWTError:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid state parameter.")
 
-    tokens = await quickbooks_service.exchange_code_for_tokens(code, redirect_uri)
+    tokens = await quickbooks_service.exchange_code_for_tokens(code, redirect_uri=redirect_uri)
     
     token_create = QuickBooksTokenCreate(
         user_id=user_id,

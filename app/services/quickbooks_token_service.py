@@ -10,22 +10,39 @@ class QuickBooksTokenService:
         self.collection = get_collection("quickbooks_tokens")
 
     async def create_token(self, token_data: QuickBooksTokenCreate) -> QuickBooksToken:
-        """Create a new QuickBooks token record"""
+        """Create or update the QuickBooks token record for this user/realm."""
         now = datetime.utcnow()
-        token_dict = token_data.dict()
-        token_dict["_id"] = str(ObjectId())
-        token_dict["created_at"] = now
-        token_dict["updated_at"] = now
-        token_dict["is_active"] = True
-        
-        # Deactivate any existing tokens for this user and realm
-        await self.collection.update_many(
+        token_payload = token_data.dict()
+
+        existing = await self.collection.find_one(
             {"user_id": token_data.user_id, "realm_id": token_data.realm_id},
-            {"$set": {"is_active": False}}
+            sort=[("updated_at", -1)],
         )
-        
-        await self.collection.insert_one(token_dict)
-        return QuickBooksToken(**token_dict)
+
+        if existing:
+            update_fields = {
+                **token_payload,
+                "updated_at": now,
+                "is_active": True,
+                "created_at": existing.get("created_at", now),
+            }
+            await self.collection.update_one({"_id": existing["_id"]}, {"$set": update_fields})
+            # Remove any lingering duplicates for this user/realm
+            await self.collection.delete_many({
+                "user_id": token_data.user_id,
+                "realm_id": token_data.realm_id,
+                "_id": {"$ne": existing["_id"]},
+            })
+            refreshed = await self.collection.find_one({"_id": existing["_id"]})
+            return QuickBooksToken(**refreshed)
+
+        token_payload["_id"] = str(ObjectId())
+        token_payload["created_at"] = now
+        token_payload["updated_at"] = now
+        token_payload["is_active"] = True
+
+        await self.collection.insert_one(token_payload)
+        return QuickBooksToken(**token_payload)
 
     async def get_token_by_user_and_realm(self, user_id: str, realm_id: str) -> Optional[QuickBooksToken]:
         """Get the active token for a user and realm"""

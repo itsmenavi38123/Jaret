@@ -12,6 +12,8 @@ from app.config import JWT_SECRET, JWT_ALGORITHM, create_access_token, create_re
 import hashlib
 
 from app.db import get_collection
+from app.services.quickbooks_token_service import quickbooks_token_service
+from app.services.xero_token_service import xero_token_service
 
 router = APIRouter(tags=["auth"])
 
@@ -83,6 +85,26 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
     return {"id": user_doc["_id"], "email": user_doc["email"]}
 
 
+async def _connection_statuses(user_id: str) -> Dict[str, bool]:
+    quickbooks_tokens = await quickbooks_token_service.get_tokens_by_user(user_id)
+    xero_tokens = await xero_token_service.get_tokens_by_user(user_id)
+    return {
+        "quickbooks_connected": any(token.is_active for token in quickbooks_tokens),
+        "xero_connected": any(token.is_active for token in xero_tokens),
+    }
+
+
+async def _build_user_payload(user_doc: Dict[str, Any]) -> Dict[str, Any]:
+    created_at = user_doc.get("created_at")
+    user_info = {
+        "id": user_doc["_id"],
+        "email": user_doc["email"],
+        "created_at": created_at.isoformat() if created_at else None,
+    }
+    user_info.update(await _connection_statuses(user_doc["_id"]))
+    return user_info
+
+
 @router.get("/me")
 async def get_current_user_details(current_user: dict = Depends(get_current_user)):
     """
@@ -99,12 +121,7 @@ async def get_current_user_details(current_user: dict = Depends(get_current_user
                 content={"success": False, "error": "User not found"}
             )
 
-        created_at = user_doc.get("created_at")
-        user_info = {
-            "id": user_doc["_id"],
-            "email": user_doc["email"],
-            "created_at": created_at.isoformat() if created_at else None,
-        }
+        user_info = await _build_user_payload(user_doc)
 
         return JSONResponse(
             status_code=status.HTTP_200_OK,
@@ -196,12 +213,7 @@ async def login(credentials: UserLogin):
         access_token = create_access_token(token_data)
         refresh_token = create_refresh_token(token_data)
 
-        created_at = user_doc.get("created_at")
-        user_info = {
-            "id": user_doc["_id"],
-            "email": user_doc["email"],
-            "created_at": created_at.isoformat() if created_at else None,
-        }
+        user_info = await _build_user_payload(user_doc)
 
         return JSONResponse(
             status_code=status.HTTP_200_OK,
