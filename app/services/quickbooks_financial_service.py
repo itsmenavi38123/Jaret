@@ -194,7 +194,10 @@ def _safe_divide(numerator: float, denominator: float) -> Optional[float]:
 
 
 class QuickBooksFinancialService:
-    async def get_financial_overview(self, user_id: str, realm_id: str, force_refresh: bool = False) -> Dict[str, Any]:
+
+    async def get_financial_overview(self, user_id: str) -> Dict[str, Any]:
+
+        realm_id = await self.get_realm_id_by_user(user_id)
         token = await quickbooks_token_service.get_token_by_user_and_realm(user_id, realm_id)
         if not token:
             raise HTTPException(
@@ -202,10 +205,11 @@ class QuickBooksFinancialService:
                 detail=f"No active QuickBooks connection found for realm {realm_id}",
             )
 
-        token = await self._ensure_valid_token(token, force_refresh=force_refresh)
+        token = await self._ensure_valid_token(token)
 
         today = datetime.now(timezone.utc).date()
         profit_params, detail_params, cashflow_params, meta = self._build_period_params(today)
+        print(profit_params, detail_params, cashflow_params, meta)
 
         profit_snapshots, monthly_series, token = await self._fetch_profit_and_loss_reports(
             token, realm_id, profit_params, detail_params
@@ -223,6 +227,83 @@ class QuickBooksFinancialService:
         )
 
         return overview
+
+    async def get_realm_id_by_user(self, user_id: str) -> str:
+        tokens = await quickbooks_token_service.get_tokens_by_user(user_id)
+        active_tokens = [t for t in tokens if t.is_active]
+        if not active_tokens:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No active QuickBooks connection found for user",
+            )
+        return active_tokens[0].realm_id
+
+    async def get_dashboard_kpis(self, user_id: str) -> Dict[str, Any]:
+        realm_id = await self.get_realm_id_by_user(user_id)
+        token = await quickbooks_token_service.get_token_by_user_and_realm(user_id, realm_id)
+        if not token:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"No active QuickBooks connection found for realm {realm_id}",
+            )
+
+        token = await self._ensure_valid_token(token)
+
+        today = datetime.now(timezone.utc).date()
+        first_of_month = today.replace(day=1)
+
+        # Fetch MTD Profit and Loss
+        mtd_params = {
+            "start_date": first_of_month.isoformat(),
+            "end_date": today.isoformat(),
+        }
+        mtd_report, token = await self._call_report_with_refresh(
+            token, realm_id, report_name="ProfitAndLoss", params={"accounting_method": "Accrual", **mtd_params}
+        )
+        print(mtd_report,"=======")
+        mtd_snapshot = _profit_and_loss_from_report(mtd_report)
+        print(mtd_snapshot)
+
+        # Fetch Balance Sheet for Cash
+        balance_sheet_report, token = await self._fetch_balance_sheet(token, realm_id)
+
+        # Fetch Cash Flow for MTD and last month to calculate runway
+        last_month_end = first_of_month - timedelta(days=1)
+        last_month_start = last_month_end.replace(day=1)
+        cashflow_params = {
+            "mtd": {
+                "start_date": first_of_month.isoformat(),
+                "end_date": today.isoformat(),
+            },
+            "last_month": {
+                "start_date": last_month_start.isoformat(),
+                "end_date": last_month_end.isoformat(),
+            },
+        }
+        cashflow_reports, _ = await self._fetch_cashflow_reports(token, realm_id, cashflow_params)
+
+        # Compute KPIs
+        revenue_mtd = round(mtd_snapshot.total_income, 2)
+        net_margin_pct = _safe_divide(mtd_snapshot.net_income, mtd_snapshot.total_income)
+        net_margin_pct = round(net_margin_pct, 4) if net_margin_pct is not None else None
+        cash = round(balance_sheet_report.cash, 2)
+
+        # Calculate runway
+        cashflow_mtd_snapshot = cashflow_reports.get("mtd", CashFlowSnapshot())
+        cashflow_last_month_snapshot = cashflow_reports.get("last_month", CashFlowSnapshot())
+        cash_flow_mtd = cashflow_mtd_snapshot.net_cash_operating or cashflow_mtd_snapshot.net_change_cash
+        burn_rate_monthly = abs(
+            min(cashflow_last_month_snapshot.net_cash_operating or cashflow_last_month_snapshot.net_change_cash, 0)
+        )
+        runway_months = _safe_divide(cash, burn_rate_monthly) if burn_rate_monthly else None
+        runway_months = round(runway_months, 2) if runway_months is not None else None
+
+        return {
+            "revenue_mtd": revenue_mtd,
+            "net_margin_pct": net_margin_pct,
+            "cash": cash,
+            "runway_months": runway_months,
+        }
 
     async def _ensure_valid_token(self, token: QuickBooksToken, *, force_refresh: bool = False) -> QuickBooksToken:
         issued_at = token.updated_at or token.created_at

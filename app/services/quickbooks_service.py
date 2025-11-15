@@ -152,6 +152,7 @@ async def fetch_report(access_token: str, realm_id: str, report: str, params: Op
         merged_params.update(params)
 
     response = await _perform_qbo_request("GET", url, access_token, params=merged_params)
+    # print(response.json())
     return response.json()
 
 

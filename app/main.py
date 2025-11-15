@@ -41,7 +41,7 @@ app.include_router(auth_router, prefix="/auth")
 app.include_router(quickbooks_router, prefix="/quickbooks")
 app.include_router(xero_auth_router, prefix="/xero/auth")
 app.include_router(xero_accounts_router, prefix="/xero")
-app.include_router(financial_overview_router)
+app.include_router(financial_overview_router, prefix="/api")
 app.include_router(business_profile_router, prefix="/business-profile")
 
 
