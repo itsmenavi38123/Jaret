@@ -14,6 +14,7 @@ from app.routes.quickbooks.auth import router as quickbooks_router
 from app.routes.xero.auth import router as xero_auth_router
 from app.routes.xero.accounts import router as xero_accounts_router
 from app.routes.financial_overview import router as financial_overview_router
+from app.routes.business_profile.profile import router as business_profile_router
 
 app = FastAPI(
     title=os.getenv("APP_NAME", "FastAPI Backend"),
@@ -41,6 +42,7 @@ app.include_router(quickbooks_router, prefix="/quickbooks")
 app.include_router(xero_auth_router, prefix="/xero/auth")
 app.include_router(xero_accounts_router, prefix="/xero")
 app.include_router(financial_overview_router)
+app.include_router(business_profile_router, prefix="/business-profile")
 
 
 @app.on_event("startup")

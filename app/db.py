@@ -54,7 +54,12 @@ def close_client() -> None:
 async def create_indexes() -> None:
     users = get_collection("users")
     await users.create_index("email", unique=True)
-    
+
+    business_profiles = get_collection("business_profiles")
+    await business_profiles.create_index("user_id", unique=True)
+    await business_profiles.create_index("created_at")
+    await business_profiles.create_index("updated_at")
+
     quickbooks_tokens = get_collection("quickbooks_tokens")
     await quickbooks_tokens.create_index("user_id")
     await quickbooks_tokens.create_index("realm_id")
