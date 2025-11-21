@@ -115,14 +115,46 @@ def _extract_line_value(report: Dict[str, Any], line_names: Iterable[str]) -> fl
             return val
     return 0.0
 
+def qb_extract_section_total(report: Dict[str, Any], section_names: Iterable[str]) -> float:
+    target_names = set(section_names)
+
+    def _walk(row: Dict[str, Any]) -> Optional[float]:
+        row_type = row.get("RowType") or row.get("type")
+
+        if row_type == "Section":
+            # Check summary first (QuickBooks stores totals here)
+            summary = row.get("Summary", {}).get("ColData", [])
+            if summary and summary[0].get("value") in target_names:
+                if len(summary) > 1:
+                    return _parse_money(summary[1].get("value"))
+
+            # Walk children
+            for child in _iter_rows(row.get("Rows")):
+                result = _walk(child)
+                if result is not None:
+                    return result
+
+        elif row_type == "Data":
+            # Some totals may appear as Data rows
+            cols = row.get("ColData", [])
+            if cols and cols[0].get("value") in target_names and len(cols) > 1:
+                return _parse_money(cols[1].get("value"))
+
+        return None
+
+    for root in _iter_rows(report.get("Rows")):
+        val = _walk(root)
+        if val is not None:
+            return val
+    return 0.0
 
 def _profit_and_loss_from_report(report: Dict[str, Any]) -> ProfitAndLossSnapshot:
     return ProfitAndLossSnapshot(
-        total_income=_extract_section_total(report, {"Total Income", "Total Revenue"}),
-        cogs=_extract_section_total(report, {"Total Cost of Goods Sold", "Total Cost of Sales"}),
-        gross_profit=_extract_section_total(report, {"Gross Profit"}),
-        operating_expenses=_extract_section_total(report, {"Total Operating Expenses", "Operating Expenses"}),
-        net_income=_extract_section_total(report, {"Net Income"}),
+        total_income=qb_extract_section_total(report, {"Total Income", "Total Revenue"}),
+        cogs=qb_extract_section_total(report, {"Total Cost of Goods Sold", "Total Cost of Sales"}),
+        gross_profit=qb_extract_section_total(report, {"Gross Profit"}),
+        operating_expenses=qb_extract_section_total(report, {"Total Operating Expenses", "Operating Expenses"}),
+        net_income=qb_extract_section_total(report, {"Net Income"}),
         interest_expense=_extract_line_value(
             report,
             {
