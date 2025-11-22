@@ -16,6 +16,7 @@ from app.routes.xero.accounts import router as xero_accounts_router
 from app.routes.financial_overview import router as financial_overview_router
 from app.routes.business_profile.profile import router as business_profile_router
 from app.routes.opportunities_profile import router as opportunities_profile_router
+from app.routes.ai_opportunities import router as ai_opportunities_router
 
 app = FastAPI(
     title=os.getenv("APP_NAME", "FastAPI Backend"),
@@ -45,6 +46,7 @@ app.include_router(xero_accounts_router, prefix="/xero")
 app.include_router(financial_overview_router, prefix="/api")
 app.include_router(business_profile_router, prefix="/business-profile")
 app.include_router(opportunities_profile_router, prefix="/opportunities-profile")
+app.include_router(ai_opportunities_router, prefix="/api/ai/opportunities")
 
 
 @app.on_event("startup")
