@@ -1,5 +1,5 @@
 # backend/app/routes/ai_opportunities.py
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
@@ -12,6 +12,125 @@ from app.services.research_scout_service import ResearchScoutService
 
 router = APIRouter(tags=["ai-opportunities"])
 research_scout = ResearchScoutService()
+
+
+async def web_search(search_term: str, recency_days: int = 30, max_results: int = 10) -> List[Dict[str, Any]]:
+    """
+    Web search helper function that performs real web searches.
+    Integrates with web search APIs to find opportunities.
+    
+    This function is called by the Research Scout service to perform actual web searches
+    for opportunities, events, RFPs, grants, etc.
+    """
+    import os
+    import httpx
+    from datetime import datetime, timedelta
+    
+    # Priority 1: Use Tavily API if available (best for structured results)
+    tavily_key = os.getenv("TAVILY_API_KEY")
+    if tavily_key:
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.post(
+                    "https://api.tavily.com/search",
+                    json={
+                        "api_key": tavily_key,
+                        "query": search_term,
+                        "max_results": max_results,
+                        "search_depth": "advanced",
+                        "include_answer": False,
+                        "include_raw_content": False,
+                    },
+                    headers={"Content-Type": "application/json"},
+                )
+                if response.status_code == 200:
+                    data = response.json()
+                    results = data.get("results", [])
+                    formatted = []
+                    for r in results:
+                        formatted.append({
+                            "title": r.get("title", ""),
+                            "url": r.get("url", ""),
+                            "snippet": r.get("content", r.get("raw_content", "")),
+                            "date": r.get("published_date"),
+                        })
+                    if formatted:
+                        return formatted
+        except Exception as e:
+            print(f"Tavily search error: {e}")
+    
+    # Priority 2: Use Serper API if available (Google search results)
+    serper_key = os.getenv("SERPER_API_KEY")
+    if serper_key:
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.post(
+                    "https://google.serper.dev/search",
+                    json={
+                        "q": search_term,
+                        "num": max_results,
+                    },
+                    headers={
+                        "X-API-KEY": serper_key,
+                        "Content-Type": "application/json",
+                    },
+                )
+                if response.status_code == 200:
+                    data = response.json()
+                    results = data.get("organic", [])
+                    formatted = []
+                    for r in results:
+                        formatted.append({
+                            "title": r.get("title", ""),
+                            "url": r.get("link", ""),
+                            "snippet": r.get("snippet", ""),
+                            "date": r.get("date"),
+                        })
+                    if formatted:
+                        return formatted
+        except Exception as e:
+            print(f"Serper search error: {e}")
+    
+    # Priority 3: Use DuckDuckGo (no API key needed, but limited)
+    try:
+        async with httpx.AsyncClient(timeout=20.0, follow_redirects=True) as client:
+            # Use DuckDuckGo Instant Answer API
+            response = await client.get(
+                "https://api.duckduckgo.com/",
+                params={
+                    "q": search_term,
+                    "format": "json",
+                    "no_html": "1",
+                    "skip_disambig": "1",
+                },
+                headers={"User-Agent": "Mozilla/5.0"},
+            )
+            if response.status_code == 200:
+                data = response.json()
+                # DuckDuckGo returns limited results, format what we can
+                results = []
+                if data.get("AbstractText"):
+                    results.append({
+                        "title": data.get("Heading", search_term),
+                        "url": data.get("AbstractURL", ""),
+                        "snippet": data.get("AbstractText", ""),
+                        "date": None,
+                    })
+                # Also try web search via DuckDuckGo HTML
+                html_response = await client.get(
+                    "https://html.duckduckgo.com/html/",
+                    params={"q": search_term},
+                    headers={"User-Agent": "Mozilla/5.0"},
+                )
+                # Basic HTML parsing would go here
+                # For now, return what we have
+                if results:
+                    return results
+    except Exception as e:
+        print(f"DuckDuckGo search error: {e}")
+    
+    # If all searches fail, return empty - service will use fallback
+    return []
 
 
 class OpportunitySearchRequest(BaseModel):

@@ -47,6 +47,13 @@ QUICKBOOKS_ENVIRONMENT=sandbox  # or production
 XERO_CLIENT_ID=your-xero-client-id
 XERO_CLIENT_SECRET=your-xero-client-secret
 XERO_REDIRECT_URI=https://your-app.com/xero/callback
+
+# Research Scout (Web Search APIs - optional)
+TAVILY_API_KEY=your-tavily-api-key
+SERPER_API_KEY=your-serper-api-key
+
+# Weather API (optional - for weather badges)
+OPENWEATHER_API_KEY=your-openweather-api-key
 ```
 
 Settings are loaded via `app.config.Settings`, so all values automatically flow into the FastAPI app.
@@ -86,6 +93,8 @@ app/
 | `GET /xero/account-types` | List Xero account type metadata |
 | `GET /xero/accounts` | List accounts from Xero (requires Xero token + tenant) |
 | `GET /api/financial-overview?realm_id=12345` | Aggregated KPIs sourced from QuickBooks |
+| `POST /api/ai/opportunities/search` | Research Scout - Find opportunities with market intelligence |
+| `GET /api/ai/opportunities/search` | Research Scout - GET version |
 
 All secured routes require an `Authorization: Bearer <access_token>` header using the token returned from `/auth/login`.
 
@@ -118,6 +127,15 @@ Missing report data gracefully degrades corresponding fields to `null` and reduc
 - Use the Swagger UI to authorize requests: click **Authorize** and paste your bearer token.
 - Supply a valid QuickBooks `realm_id` linked to the authenticated user’s stored token.
 - The console logs produced by `uvicorn --reload` are helpful for watching request/response activity during development.
+
+## Research Scout API
+
+The Research Scout API provides opportunity discovery and market intelligence. See [RESEARCH_SCOUT_API.md](./RESEARCH_SCOUT_API.md) for complete documentation.
+
+**Quick Start**:
+1. Ensure user has `business_profile` and `opportunities_profile` set
+2. Call `POST /api/ai/opportunities/search` with query
+3. Receive structured JSON with opportunities, digest, benchmarks, and recommendations
 
 ## Maintenance Notes
 

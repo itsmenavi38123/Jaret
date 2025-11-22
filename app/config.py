@@ -23,6 +23,10 @@ class Settings(BaseSettings):
     xero_client_secret: Optional[str] = None
     xero_redirect_uri: Optional[str] = None
 
+    # Web Search APIs (for Research Scout)
+    tavily_api_key: Optional[str] = None
+    serper_api_key: Optional[str] = None
+
     jwt_secret_key: str
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60
