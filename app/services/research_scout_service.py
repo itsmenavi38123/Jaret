@@ -533,3 +533,199 @@ NEVER estimate event revenue without stating conversion_rate and attendance expl
             return None
         except Exception:
             return None
+
+    async def get_scenario_priors(
+        self,
+        scenario_type: str,
+        query: str,
+        business_profile: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Get assumptions/priors for scenario planning using web search.
+        
+        Args:
+            scenario_type: Type of scenario (CapEx, Hiring, Pricing, Expansion)
+            query: User's scenario query
+            business_profile: Business profile data
+        
+        Returns:
+            Dict with assumptions[] and sources[]
+        """
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            raise ValueError("OPENAI_API_KEY not found")
+        
+        client = AsyncOpenAI(api_key=api_key)
+        
+        # Extract industry from business profile
+        industry = "Unknown"
+        if business_profile and business_profile.get("onboarding_data"):
+            onboarding = business_profile["onboarding_data"]
+            industry = onboarding.get("industry", onboarding.get("business_type", "Unknown"))
+        
+        # Build system prompt for Research Scout (priors mode)
+        system_prompt = f"""You are LightSignal Research Scout in Scenario Priors mode.
+
+Your mission: Fill missing assumptions for financial scenario planning using real web data.
+
+🧰 TOOLS
+
+- search_web(query, recency_days, max_results)
+  → Use to find real-world data: equipment prices, interest rates, labor rates, market benchmarks.
+
+📊 INPUTS
+
+- **Scenario Type**: {scenario_type}
+- **User Query**: "{query}"
+- **Industry**: {industry}
+- **Business Profile**: {json.dumps(business_profile, default=str) if business_profile else "None"}
+
+🎯 OUTPUT FORMAT — STRICT JSON ONLY
+
+Return one object shaped as:
+
+{{
+  "assumptions": [
+    {{
+      "key": "equipment_cost",
+      "value": 50000,
+      "source": "https://example.com/equipment-pricing",
+      "confidence": 0.8
+    }},
+    {{
+      "key": "labor_rate_hourly",
+      "value": 25.0,
+      "source": "https://bls.gov/wages",
+      "confidence": 0.9
+    }},
+    {{
+      "key": "interest_rate",
+      "value": 0.065,
+      "source": "https://example.com/rates",
+      "confidence": 0.85
+    }}
+  ],
+  "sources": [
+    {{
+      "title": "Equipment Pricing Guide 2024",
+      "url": "https://example.com/equipment-pricing",
+      "date": "2024-01-15",
+      "note": "Used for equipment cost estimates"
+    }},
+    {{
+      "title": "BLS Wage Data",
+      "url": "https://bls.gov/wages",
+      "date": "2024-02-01",
+      "note": "Used for labor rate estimates"
+    }}
+  ]
+}}
+
+⚙️ BEHAVIOR RULES
+
+- Use search_web to find real data for ALL assumptions.
+- Common assumptions by scenario type:
+  - **CapEx**: equipment_cost, financing_rate, useful_life_years, maintenance_cost_annual
+  - **Hiring**: salary_annual, benefits_cost_pct, training_cost, productivity_ramp_months
+  - **Pricing**: competitor_prices, price_elasticity, market_avg_price
+  - **Expansion**: location_rent, build_out_cost, time_to_revenue_months
+- Always include sources with valid URLs.
+- Confidence should reflect data quality (0.0-1.0).
+- If data is not available, use industry averages and note the assumption.
+
+✅ QUALITY CHECK BEFORE RETURN
+
+- At least 3-5 assumptions populated.
+- All assumptions have sources.
+- Sources have valid URLs and dates.
+
+JSON only (no Markdown, no prose outside fields).
+"""
+
+        # Define tools
+        tools = [
+            {
+                "type": "function",
+                "function": {
+                    "name": "search_web",
+                    "description": "Search the web for real-time information about prices, rates, and market data.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "query": {
+                                "type": "string",
+                                "description": "The search query to find relevant information."
+                            },
+                            "recency_days": {
+                                "type": "integer",
+                                "description": "Number of days to look back for recent information (default 30)."
+                            },
+                            "max_results": {
+                                "type": "integer",
+                                "description": "Max number of results to return (default 10)."
+                            }
+                        },
+                        "required": ["query"]
+                    }
+                }
+            }
+        ]
+        
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": f"Find assumptions for: {query}"}
+        ]
+        
+        # Initial call
+        response = await client.chat.completions.create(
+            model="gpt-4o",
+            messages=messages,
+            tools=tools,
+            tool_choice="auto",
+            response_format={"type": "json_object"}
+        )
+        
+        response_message = response.choices[0].message
+        tool_calls = response_message.tool_calls
+        
+        # Handle tool calls loop
+        if tool_calls:
+            messages.append(response_message)
+            
+            # Import web_search here to avoid circular import
+            from app.routes.ai_opportunities import web_search
+            
+            for tool_call in tool_calls:
+                function_name = tool_call.function.name
+                function_args = json.loads(tool_call.function.arguments)
+                
+                if function_name == "search_web":
+                    search_term = function_args.get("query")
+                    recency = function_args.get("recency_days", 30)
+                    max_results = function_args.get("max_results", 10)
+                    
+                    # Execute search
+                    search_results = await web_search(search_term, recency, max_results)
+                    
+                    messages.append({
+                        "tool_call_id": tool_call.id,
+                        "role": "tool",
+                        "name": function_name,
+                        "content": json.dumps(search_results)
+                    })
+            
+            # Get final response
+            second_response = await client.chat.completions.create(
+                model="gpt-4o",
+                messages=messages,
+                response_format={"type": "json_object"}
+            )
+            final_content = second_response.choices[0].message.content
+        else:
+            final_content = response_message.content
+        
+        # Parse JSON
+        try:
+            return json.loads(final_content)
+        except json.JSONDecodeError:
+            raise ValueError("Invalid JSON response from Research Scout")
