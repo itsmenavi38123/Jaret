@@ -40,15 +40,15 @@ class OrchestratorService:
         
         system_prompt = """You are a scenario classification expert.
 
-Given a business scenario query, classify it into one of these types:
-- **CapEx**: Capital expenditure (equipment, vehicles, property, major purchases)
-- **Hiring**: Adding staff, contractors, or labor
-- **Pricing**: Changing prices, discounts, or pricing strategy
-- **Expansion**: Opening new locations, entering new markets, scaling operations
-- **Other**: Anything else
+            Given a business scenario query, classify it into one of these types:
+            - **CapEx**: Capital expenditure (equipment, vehicles, property, major purchases)
+            - **Hiring**: Adding staff, contractors, or labor
+            - **Pricing**: Changing prices, discounts, or pricing strategy
+            - **Expansion**: Opening new locations, entering new markets, scaling operations
+            - **Other**: Anything else
 
-Return ONLY the scenario type as a single word: CapEx, Hiring, Pricing, Expansion, or Other.
-"""
+            Return ONLY the scenario type as a single word: CapEx, Hiring, Pricing, Expansion, or Other.
+        """
 
         response = await client.chat.completions.create(
             model="gpt-4o",
