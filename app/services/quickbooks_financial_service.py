@@ -603,6 +603,21 @@ class QuickBooksFinancialService:
         available_metric_count = len([m for m in computed_metrics if m is not None])
         ai_confidence_pct = min(0.5 + 0.03 * available_metric_count, 0.95)
 
+        # Calculate EBITDA (Earnings Before Interest, Taxes, Depreciation, and Amortization)
+        # EBITDA = Net Income + Interest + Taxes + Depreciation + Amortization
+        # For simplicity, we'll use: EBITDA ≈ Operating Income + Depreciation/Amortization
+        # Since we don't have D&A separately, we'll use: EBITDA ≈ Gross Profit - Operating Expenses + Interest
+        ebitda = operating_income + mtd.interest_expense
+        
+        # Calculate debt service (for DSCR calculation)
+        # Debt service typically includes principal + interest payments
+        # We'll use interest expense as a proxy since principal payments aren't in P&L
+        debt_service = mtd.interest_expense
+        
+        # Calculate average monthly expenses for burn rate
+        # Monthly expenses = Operating Expenses + Interest
+        monthly_expenses_mtd = mtd.operating_expenses + mtd.interest_expense
+        
         overview: Dict[str, Any] = {
             "kpis": {
                 "revenue_mtd": round(mtd.total_income, 2),
@@ -615,6 +630,36 @@ class QuickBooksFinancialService:
                 "runway_months": round(runway_months, 2) if runway_months is not None else None,
                 "ai_confidence_pct": round(ai_confidence_pct, 2),
                 "industry_notes": self._build_industry_notes(gross_margin_pct, net_margin_pct),
+            },
+            "calculation_values": {
+                # Values for: Gross Margin = (Revenue − COGS) / Revenue
+                "revenue": round(mtd.total_income, 2),
+                "cogs": round(mtd.cogs, 2),
+                
+                # Values for: OpEx % = OpEx / Revenue
+                "opex": round(mtd.operating_expenses, 2),
+                
+                # Values for: Current Ratio = CA / CL
+                "current_assets": round(current_assets, 2),
+                "current_liabilities": round(current_liabilities, 2),
+                
+                # Values for: Quick Ratio = (Cash + AR) / CL
+                "cash": round(cash, 2),
+                "accounts_receivable": round(accounts_receivable, 2),
+                
+                # Values for: DSCR = EBITDA / DebtService
+                "ebitda": round(ebitda, 2),
+                "debt_service": round(debt_service, 2),
+                
+                # Values for: Burn Rate = Avg(Monthly Expenses − Revenue)
+                "monthly_expenses": round(monthly_expenses_mtd, 2),
+                "monthly_revenue": round(mtd.total_income, 2),
+                
+                # Additional useful values
+                "gross_profit": round(mtd.gross_profit, 2),
+                "net_income": round(mtd.net_income, 2),
+                "operating_income": round(operating_income, 2),
+                "interest_expense": round(mtd.interest_expense, 2),
             },
             "insights": insights,
             "liquidity": {
@@ -638,6 +683,13 @@ class QuickBooksFinancialService:
             "variance": variance_entries,
             "risks": risks,
         }
+        
+        # Debug: Verify calculation_values is in the response
+        print("DEBUG: Overview keys:", list(overview.keys()))
+        print("DEBUG: calculation_values present:", "calculation_values" in overview)
+        if "calculation_values" in overview:
+            print("DEBUG: calculation_values keys:", list(overview["calculation_values"].keys()))
+        
         return overview
 
     def _parse_monthly_series(self, report: Dict[str, Any]) -> List[Tuple[str, float]]:
@@ -838,6 +890,181 @@ class QuickBooksFinancialService:
         if not notes:
             notes.append("Performance is within standard industry bands.")
         return notes
+
+    async def get_historical_sales(
+        self,
+        user_id: str,
+        start_date: date,
+        end_date: date,
+        granularity: str = "daily"
+    ) -> List[Dict[str, Any]]:
+        """
+        Get historical sales data for demand forecasting.
+        
+        Args:
+            user_id: User ID
+            start_date: Start date for historical data
+            end_date: End date for historical data
+            granularity: Data granularity (daily, weekly, monthly)
+        
+        Returns:
+            List of sales data points
+        """
+        realm_id = await self.get_realm_id_by_user(user_id)
+        token = await quickbooks_token_service.get_token_by_user_and_realm(user_id, realm_id)
+        if not token:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"No active QuickBooks connection found for realm {realm_id}",
+            )
+        
+        token = await self._ensure_valid_token(token)
+        
+        # Determine column parameter based on granularity
+        column_param = {
+            "daily": "day",
+            "weekly": "week",
+            "monthly": "month"
+        }.get(granularity, "day")
+        
+        # Fetch P&L report with time columns
+        params = {
+            "start_date": start_date.isoformat(),
+            "end_date": end_date.isoformat(),
+            "columns": column_param,
+            "accounting_method": "Accrual"
+        }
+        
+        report, _ = await self._call_report_with_refresh(
+            token,
+            realm_id,
+            report_name="ProfitAndLoss",
+            params=params
+        )
+        
+        # Parse time-series revenue data
+        sales_data = self._parse_revenue_time_series(report, granularity)
+        
+        return sales_data
+    
+    def _parse_revenue_time_series(
+        self,
+        report: Dict[str, Any],
+        granularity: str
+    ) -> List[Dict[str, Any]]:
+        """Parse revenue time-series from P&L report"""
+        columns = report.get("Columns", {}).get("Column", [])
+        time_labels = [col.get("ColTitle") or col.get("ColType") for col in columns[1:]]
+        
+        def _find_revenue(row: Dict[str, Any]) -> Optional[List[float]]:
+            row_type = row.get("RowType")
+            if row_type == "Section":
+                header = row.get("Header", {}).get("ColData", [])
+                label = header[0].get("value") if header else None
+                if label in {"Total Income", "Total Revenue"}:
+                    summary = row.get("Summary", {}).get("ColData", [])
+                    return [_parse_money(col.get("value")) for col in summary[1:]]
+            
+            for child in _iter_rows(row.get("Rows")):
+                result = _find_revenue(child)
+                if result is not None:
+                    return result
+            return None
+        
+        revenue_values: List[float] = []
+        for root in _iter_rows(report.get("Rows")):
+            result = _find_revenue(root)
+            if result is not None:
+                revenue_values = result
+                break
+        
+        # Build sales data array
+        sales_data: List[Dict[str, Any]] = []
+        for idx, label in enumerate(time_labels):
+            value = revenue_values[idx] if idx < len(revenue_values) else 0.0
+            sales_data.append({
+                "period": label or f"Period-{idx+1}",
+                "revenue": round(value, 2),
+                "granularity": granularity
+            })
+        
+        return sales_data
+    
+    async def get_product_level_sales(
+        self,
+        user_id: str,
+        start_date: date,
+        end_date: date
+    ) -> List[Dict[str, Any]]:
+        """
+        Get product/service-level sales data.
+        
+        Args:
+            user_id: User ID
+            start_date: Start date
+            end_date: End date
+        
+        Returns:
+            List of product-level sales data
+        """
+        realm_id = await self.get_realm_id_by_user(user_id)
+        token = await quickbooks_token_service.get_token_by_user_and_realm(user_id, realm_id)
+        if not token:
+            return []
+        
+        token = await self._ensure_valid_token(token)
+        
+        # Fetch P&L by Product/Service (if available)
+        params = {
+            "start_date": start_date.isoformat(),
+            "end_date": end_date.isoformat(),
+            "accounting_method": "Accrual",
+            "group_by": "Product/Service"
+        }
+        
+        try:
+            report, _ = await self._call_report_with_refresh(
+                token,
+                realm_id,
+                report_name="ProfitAndLoss",
+                params=params
+            )
+            
+            # Parse product-level data
+            product_data = self._parse_product_sales(report)
+            return product_data
+        
+        except Exception as e:
+            print(f"Error fetching product-level sales: {e}")
+            return []
+    
+    def _parse_product_sales(self, report: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Parse product/service-level sales from report"""
+        product_sales: List[Dict[str, Any]] = []
+        
+        def _walk_products(row: Dict[str, Any]) -> None:
+            row_type = row.get("RowType")
+            
+            if row_type == "Data":
+                cols = row.get("ColData", [])
+                if len(cols) >= 2:
+                    product_name = cols[0].get("value", "")
+                    revenue = _parse_money(cols[1].get("value"))
+                    
+                    if product_name and revenue > 0:
+                        product_sales.append({
+                            "product_name": product_name,
+                            "revenue": round(revenue, 2)
+                        })
+            
+            # Recursively walk children
+            for child in _iter_rows(row.get("Rows")):
+                _walk_products(child)
+        
+        for root in _iter_rows(report.get("Rows")):
+            _walk_products(root)
+        
+        return product_sales
 
 
 quickbooks_financial_service = QuickBooksFinancialService()

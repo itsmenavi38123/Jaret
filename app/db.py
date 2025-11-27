@@ -1,5 +1,6 @@
 # backend/app/db.py
 import os
+import certifi
 from typing import Optional
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase, AsyncIOMotorCollection
 
@@ -16,7 +17,8 @@ def get_client() -> AsyncIOMotorClient:
         mongo_uri = os.getenv("MONGO_URI")
         if not mongo_uri:
             raise RuntimeError("MONGO_URI not set in environment")
-        _client = AsyncIOMotorClient(mongo_uri)
+        # Use certifi for SSL certificates to avoid handshake errors
+        _client = AsyncIOMotorClient(mongo_uri, tlsCAFile=certifi.where())
     return _client
 
 

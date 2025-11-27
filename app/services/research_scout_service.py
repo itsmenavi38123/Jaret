@@ -729,3 +729,78 @@ JSON only (no Markdown, no prose outside fields).
             return json.loads(final_content)
         except json.JSONDecodeError:
             raise ValueError("Invalid JSON response from Research Scout")
+    
+    async def get_peer_seasonal_trends(
+        self,
+        industry: str,
+        region: str
+    ) -> List[Dict[str, Any]]:
+        """
+        Get peer seasonal trends for demand forecasting.
+        
+        Args:
+            industry: Industry name
+            region: Region name
+        
+        Returns:
+            List of peer trend objects
+        """
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            return []
+        
+        client = AsyncOpenAI(api_key=api_key)
+        
+        system_prompt = f"""You are LightSignal Research Scout.
+Find seasonal trends for {industry} in {region}.
+Return JSON with trends array:
+{{
+    "trends": [
+        {{
+            "metric": "revenue|traffic|conversion",
+            "peer_median": 0.0,
+            "region": "{region}",
+            "trend": "growing|stable|declining",
+            "source": "source name",
+            "sample_note": "short note"
+        }}
+    ]
+}}
+"""
+        
+        try:
+            response = await client.chat.completions.create(
+                model="gpt-4o",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": f"Find seasonal trends for {industry} in {region}"}
+                ],
+                response_format={"type": "json_object"}
+            )
+            content = response.choices[0].message.content
+            result = json.loads(content)
+            return result.get("trends", [])
+        except Exception as e:
+            print(f"Error getting peer trends: {e}")
+            return []
+
+    async def get_event_impact_stats(
+        self,
+        event_type: str,
+        industry: str
+    ) -> Dict[str, Any]:
+        """
+        Get event impact statistics.
+        
+        Args:
+            event_type: Type of event
+            industry: Industry name
+            
+        Returns:
+            Impact stats dictionary
+        """
+        # Placeholder for now, can be expanded with AI lookup
+        return {
+            "avg_impact": 0.0,
+            "confidence": 0.5
+        }
