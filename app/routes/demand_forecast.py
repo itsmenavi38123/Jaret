@@ -68,8 +68,7 @@ async def generate_demand_forecast(
         historical_start = request.date_range.start - timedelta(days=365)  # Get 1 year of history
         
         try:
-            historical_sales = await quic
-            kbooks_financial_service.get_historical_sales(
+            historical_sales = await quickbooks_financial_service.get_historical_sales(
                 user_id=user_id,
                 start_date=historical_start,
                 end_date=request.date_range.start,
