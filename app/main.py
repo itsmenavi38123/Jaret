@@ -19,6 +19,7 @@ from app.routes.opportunities_profile import router as opportunities_profile_rou
 from app.routes.ai_opportunities import router as ai_opportunities_router
 from app.routes.ai_scenarios import router as ai_scenarios_router
 from app.routes.demand_forecast import router as demand_forecast_router
+from app.routes.asset_management import router as asset_management_router
 
 app = FastAPI(
     title=os.getenv("APP_NAME", "FastAPI Backend"),
@@ -51,6 +52,7 @@ app.include_router(opportunities_profile_router, prefix="/opportunities-profile"
 app.include_router(ai_opportunities_router, prefix="/api/ai/opportunities")
 app.include_router(ai_scenarios_router, prefix="/api/ai/scenarios")
 app.include_router(demand_forecast_router, prefix="/api")
+app.include_router(asset_management_router, prefix="/api")
 
 
 @app.on_event("startup")

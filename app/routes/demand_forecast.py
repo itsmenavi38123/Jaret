@@ -75,7 +75,6 @@ async def generate_demand_forecast(
                 granularity="monthly"
             )
         except HTTPException:
-            # If QuickBooks not connected, proceed with empty historical data
             historical_sales = []
         
         # Generate forecast

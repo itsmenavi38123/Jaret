@@ -75,3 +75,8 @@ async def create_indexes() -> None:
     await xero_tokens.create_index([("user_id", 1), ("tenant_id", 1)])
     await xero_tokens.create_index([("user_id", 1), ("is_active", 1)])
     await xero_tokens.create_index("created_at")
+
+    # Assets (built-in Asset Hub and external sync target)
+    assets = get_collection("assets")
+    await assets.create_index("user_id")
+    await assets.create_index("asset_id")
