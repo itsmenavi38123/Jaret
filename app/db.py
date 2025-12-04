@@ -80,3 +80,9 @@ async def create_indexes() -> None:
     assets = get_collection("assets")
     await assets.create_index("user_id")
     await assets.create_index("asset_id")
+
+    manual_entries = get_collection("manual_entries")
+    await manual_entries.create_index([("user_id", 1), ("occurred_on", 1)])
+
+    reminders = get_collection("reminders")
+    await reminders.create_index([("user_id", 1), ("due_date", 1)])

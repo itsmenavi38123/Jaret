@@ -4,6 +4,7 @@ from fastapi.responses import JSONResponse
 
 from app.routes.auth.auth import get_current_user
 from app.services.quickbooks_financial_service import quickbooks_financial_service
+from app.services.dashboard_service import dashboard_service
 
 router = APIRouter(tags=["financial-overview"])
 
@@ -33,15 +34,16 @@ async def get_financial_overview(
     )
 
 
-@router.get("/dashboard-kpis")
+@router.get("/dashboard/kpis")
 async def get_dashboard_kpis(
     current_user: dict = Depends(get_current_user),
 ):
     """
-    Get dashboard KPI cards: Revenue MTD, Net Margin %, Cash, Runway (months).
+    Get dashboard KPI cards with values, deltas, colors, and links.
+    Returns: Revenue MTD, Net Margin %, Cash, Runway (months), AI Health Score.
     """
     try:
-        kpis = await quickbooks_financial_service.get_dashboard_kpis(
+        dashboard_data = await dashboard_service.get_dashboard_data(
             user_id=current_user["id"],
         )
     except HTTPException as exc:
@@ -54,6 +56,58 @@ async def get_dashboard_kpis(
 
     return JSONResponse(
         status_code=status.HTTP_200_OK,
-        content=jsonable_encoder({"success": True, "data": kpis}),
+        content=jsonable_encoder({"success": True, "data": dashboard_data}),
+    )
+
+
+@router.get("/ai/insights/latest")
+async def get_latest_ai_insights(
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Get top 3 AI-generated insights: strength, issue, opportunity.
+    Uses Orchestrator, Finance Analyst, and Research Scout agents.
+    """
+    try:
+        insights_data = await dashboard_service.get_ai_dashboard_insights(
+            user_id=current_user["id"],
+        )
+    except HTTPException as exc:
+        raise exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate AI insights: {exc}",
+        ) from exc
+
+    return JSONResponse(
+        status_code=status.HTTP_200_OK,
+        content=jsonable_encoder({"success": True, "data": insights_data}),
+    )
+
+
+@router.get("/dashboard/alerts")
+async def get_dashboard_alerts(
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Get contextual alerts based on financial thresholds.
+    Returns alerts for: low cash, margin drop, negative cash flow, etc.
+    """
+    try:
+        alerts_data = await dashboard_service.get_contextual_alerts(
+            user_id=current_user["id"],
+        )
+    except HTTPException as exc:
+        raise exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch dashboard alerts: {exc}",
+        ) from exc
+
+    return JSONResponse(
+        status_code=status.HTTP_200_OK,
+        content=jsonable_encoder({"success": True, "data": alerts_data}),
     )
 
