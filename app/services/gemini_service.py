@@ -21,8 +21,9 @@ class GeminiService:
             "GEMINI_API_BASE_URL",
             "https://generativelanguage.googleapis.com/v1beta/models",
         )
-        self.dashboard_model = os.getenv("GEMINI_DASHBOARD_MODEL", "gemini-3.0-pro")
-        self.ai_health_model = os.getenv("GEMINI_AI_HEALTH_MODEL", "gemini-3.0-pro")
+        # Use current GA model names; override via env if needed.
+        self.dashboard_model = os.getenv("GEMINI_DASHBOARD_MODEL", "gemini-1.5-pro-latest")
+        self.ai_health_model = os.getenv("GEMINI_AI_HEALTH_MODEL", "gemini-1.5-pro-latest")
 
     async def explain_dashboard(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         system = (
@@ -103,7 +104,13 @@ class GeminiService:
         url = f"{self.base_url}/{model}:generateContent"
         async with httpx.AsyncClient(timeout=20) as client:
             response = await client.post(url, params={"key": self.api_key}, json=body)
-            response.raise_for_status()
+            try:
+                response.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                # Surface a clear error when model/endpoint is invalid.
+                detail = f"Gemini request failed ({response.status_code}): {response.text}"
+                raise httpx.HTTPStatusError(detail, request=exc.request, response=exc.response)
+
             payload = response.json()
             text = self._extract_text(payload)
             return json.loads(text)
