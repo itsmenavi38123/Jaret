@@ -20,6 +20,7 @@ API_BASE_URLS = {
 }
 
 DEFAULT_QBO_SCOPE = "com.intuit.quickbooks.accounting openid profile email"
+HARD_CODED_REDIRECT_URI = "http://localhost:8000/quickbooks/callback"
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +54,7 @@ def get_authorization_url(state: Optional[str] = None, redirect_uri: Optional[st
     """
     client_id = _required_env("QUICKBOOKS_CLIENT_ID")
     chosen_scope = scope or DEFAULT_QBO_SCOPE
-    callback_uri = redirect_uri or _required_env("QUICKBOOKS_REDIRECT_URI")
+    callback_uri = redirect_uri or HARD_CODED_REDIRECT_URI
     encoded_redirect = urllib.parse.quote(callback_uri, safe="")
     encoded_scope = urllib.parse.quote(chosen_scope, safe=" ")
     encoded_state = urllib.parse.quote(state or "secureRandomState123", safe="")
@@ -82,7 +83,7 @@ async def exchange_code_for_tokens(code: str, redirect_uri: Optional[str] = None
     data = {
         "grant_type": "authorization_code",
         "code": code,
-        "redirect_uri": redirect_uri or _required_env("QUICKBOOKS_REDIRECT_URI"),
+        "redirect_uri": redirect_uri or HARD_CODED_REDIRECT_URI,
     }
 
     try:
