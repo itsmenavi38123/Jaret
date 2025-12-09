@@ -20,7 +20,7 @@ API_BASE_URLS = {
 }
 
 DEFAULT_QBO_SCOPE = "com.intuit.quickbooks.accounting openid profile email"
-HARD_CODED_REDIRECT_URI = "https://biz-advisor-74.preview.emergentagent.com/api/quickbooks-oauth/callback/quickbooks/callback"
+HARD_CODED_REDIRECT_URI = "https://biz-advisor-74.preview.emergentagent.com/api/quickbooks-oauth/callback"
 
 logger = logging.getLogger(__name__)
 
