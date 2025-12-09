@@ -21,9 +21,9 @@ class GeminiService:
             "GEMINI_API_BASE_URL",
             "https://generativelanguage.googleapis.com/v1beta/models",
         )
-        # Use current GA model names; override via env if needed.
-        self.dashboard_model = os.getenv("GEMINI_DASHBOARD_MODEL", "gemini-1.5-pro-latest")
-        self.ai_health_model = os.getenv("GEMINI_AI_HEALTH_MODEL", "gemini-1.5-pro-latest")
+        # Default to a recent generateContent-capable model; override via env if needed.
+        self.dashboard_model = os.getenv("GEMINI_DASHBOARD_MODEL", "gemini-2.5-flash")
+        self.ai_health_model = os.getenv("GEMINI_AI_HEALTH_MODEL", "gemini-2.5-flash")
 
     async def explain_dashboard(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         system = (
@@ -108,12 +108,38 @@ class GeminiService:
                 response.raise_for_status()
             except httpx.HTTPStatusError as exc:
                 # Surface a clear error when model/endpoint is invalid.
-                detail = f"Gemini request failed ({response.status_code}): {response.text}"
+                detail = (
+                    f"Gemini request failed ({response.status_code}): {response.text}. "
+                    f"Check model '{model}' and base_url '{self.base_url}'."
+                )
                 raise httpx.HTTPStatusError(detail, request=exc.request, response=exc.response)
 
             payload = response.json()
             text = self._extract_text(payload)
-            return json.loads(text)
+            try:
+                return json.loads(text)
+            except json.JSONDecodeError:
+                parsed = self._maybe_parse_jsonish(text)
+                if parsed is not None:
+                    return parsed
+                return {"text": text}
+
+    def _maybe_parse_jsonish(self, text: str) -> Optional[Dict[str, Any]]:
+        """
+        Try to parse JSON that may be wrapped in markdown code fences.
+        """
+        candidate = text.strip()
+        if candidate.startswith("```"):
+            lines = candidate.splitlines()
+            if lines and lines[0].startswith("```"):
+                lines = lines[1:]
+            if lines and lines[-1].startswith("```"):
+                lines = lines[:-1]
+            candidate = "\n".join(lines).strip()
+        try:
+            return json.loads(candidate)
+        except Exception:
+            return None
 
     def _extract_text(self, payload: Dict[str, Any]) -> str:
         candidates = payload.get("candidates") or []
