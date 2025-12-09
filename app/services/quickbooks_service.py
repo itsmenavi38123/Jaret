@@ -20,7 +20,7 @@ API_BASE_URLS = {
 }
 
 DEFAULT_QBO_SCOPE = "com.intuit.quickbooks.accounting openid profile email"
-HARD_CODED_REDIRECT_URI = "http://localhost:8000/quickbooks/callback"
+HARD_CODED_REDIRECT_URI = "http://3.22.196.142/quickbooks/callback"
 
 logger = logging.getLogger(__name__)
 
