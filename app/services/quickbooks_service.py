@@ -5,8 +5,9 @@ import urllib.parse
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
+import asyncio
 import httpx
-from fastapi import HTTPException
+from fastapi import HTTPException, status
 
 AUTH_BASE_URL = "https://appcenter.intuit.com/connect/oauth2"
 TOKEN_URL = "https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer"
@@ -147,35 +148,59 @@ def token_has_expired(created_at: datetime, expires_in_seconds: int, safety_buff
     return datetime.now(timezone.utc) >= expiry
 
 
-async def _perform_qbo_request(
-    method: str,
-    url: str,
-    access_token: str,
-    *,
-    params: Optional[Dict[str, Any]] = None,
-    json_payload: Optional[Dict[str, Any]] = None,
-) -> httpx.Response:
+async def _perform_qbo_request(method: str, url: str, access_token: str, **kwargs) -> httpx.Response:
     headers = {
         "Authorization": f"Bearer {access_token}",
         "Accept": "application/json",
-        "Content-Type": "application/json",
     }
-    try:
-        async with httpx.AsyncClient(timeout=40.0) as client:
-            response = await client.request(method, url, params=params, json=json_payload, headers=headers)
-    except Exception as exc:
-        logger.exception("QuickBooks API request failed: %s %s", method, url)
-        raise HTTPException(status_code=502, detail="Failed to reach QuickBooks API") from exc
+    
+    # Merge headers if provided
+    if "headers" in kwargs:
+        headers.update(kwargs.pop("headers"))
 
-    if response.status_code in {401, 403}:
-        logger.warning("QuickBooks unauthorized response: %s", response.text)
-        raise QuickBooksUnauthorizedError(response.text)
-
-    if response.status_code >= 400:
-        logger.error("QuickBooks API error (%s): %s", response.status_code, response.text)
-        raise HTTPException(status_code=response.status_code, detail=response.text)
-
-    return response
+    async with httpx.AsyncClient() as client:
+        # Retry loop for 429 ThrottleExceeded
+        max_retries = 3
+        base_delay = 2.0
+        
+        for attempt in range(max_retries + 1):
+            response = await client.request(method, url, headers=headers, **kwargs)
+            
+            if response.status_code == 429:
+                # 429 Throttle Exceeded
+                if attempt < max_retries:
+                    sleep_time = base_delay * (2 ** attempt)  # 2s, 4s, 8s
+                    print(f"⚠️ QuickBooks 429 Throttle. Retrying in {sleep_time}s...")
+                    await asyncio.sleep(sleep_time)
+                    continue
+                else:
+                    # Retries exhausted
+                    print(f"❌ QuickBooks 429 Throttle Exhausted after {max_retries} retries.")
+                    raise HTTPException(
+                        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                        detail="QuickBooks API rate limit exceeded. Please try again later.",
+                    )
+            
+            # Check for other errors
+            if response.status_code == 401:
+                raise QuickBooksUnauthorizedError("Access token expired or invalid")
+                
+            if response.status_code != 200:
+                print(f"❌ QBO Request Failed: {response.status_code} - {response.text}")
+                # Try to parse Intuit error
+                try:
+                    error_json = response.json()
+                    fault = error_json.get("Fault", {}).get("Error", [{}])[0]
+                    msg = fault.get("Message") or fault.get("Detail") or response.text
+                except:
+                    msg = response.text
+                    
+                raise HTTPException(
+                    status_code=response.status_code,
+                    detail=f"QuickBooks API Error: {msg}",
+                )
+                
+            return response
 
 
 async def fetch_report(access_token: str, realm_id: str, report: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
