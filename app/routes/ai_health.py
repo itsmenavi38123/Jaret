@@ -9,17 +9,13 @@ from app.services.quickbooks_financial_service import quickbooks_financial_servi
 
 router = APIRouter(tags=["ai-health"])
 
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-class HealthRequest(BaseModel):
-    company_id: Optional[str] = None
-    range: Optional[str] = "12m"
-    include_peers: Optional[bool] = True
-    include_breakdowns: Optional[bool] = True
-
-@router.post("/full")
+@router.get("/full")
 async def get_business_health_full(
-    request: HealthRequest,
+    range: str = Query("12m"),
+    include_peers: bool = Query(True),
+    include_breakdowns: bool = Query(True),
     current_user: dict = Depends(get_current_user),
 ):
     """
@@ -29,6 +25,8 @@ async def get_business_health_full(
     """
     try:
         user_id = current_user["id"]
+        # company_id is inferred from user_id->active_company relationship in DB/QB service
+
         
         # 1. Fetch Real Financial Data
         # We need KPIs (Revenue, Margin, Cash, Runway)
