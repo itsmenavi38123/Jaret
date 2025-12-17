@@ -130,12 +130,14 @@ async def update_opportunities_profile(
         opportunities_profiles = get_collection("opportunities_profiles")
         user_id = current_user["id"]
 
+        # Check if profile exists
+        existing = await opportunities_profiles.find_one({"user_id": user_id})
+
         # Custom Upsert Logic
         if not existing:
             # Create new if not exists (Upsert)
             now = _now_utc()
             
-            # Use defaults if fields are missing in update payload (best effort upsert)
             new_profile = OpportunitiesProfile(
                 user_id=user_id,
                 business_type=data.business_type or "Unknown",
