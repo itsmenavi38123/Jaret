@@ -328,10 +328,8 @@ class QuickBooksFinancialService:
         mtd_snapshot = _profit_and_loss_from_report(mtd_report)
         print(mtd_snapshot)
 
-        # Fetch Balance Sheet for Cash
         balance_sheet_report, token = await self._fetch_balance_sheet(token, realm_id)
 
-        # Fetch Cash Flow for MTD and last month to calculate runway
         last_month_end = first_of_month - timedelta(days=1)
         last_month_start = last_month_end.replace(day=1)
         cashflow_params = {
@@ -346,27 +344,33 @@ class QuickBooksFinancialService:
         }
         cashflow_reports, _ = await self._fetch_cashflow_reports(token, realm_id, cashflow_params)
 
-        # Compute KPIs
         revenue_mtd = round(mtd_snapshot.total_income, 2)
         net_margin_pct = _safe_divide(mtd_snapshot.net_income, mtd_snapshot.total_income)
         net_margin_pct = round(net_margin_pct, 4) if net_margin_pct is not None else None
         cash = round(balance_sheet_report.cash, 2)
-
         # Calculate runway
         cashflow_mtd_snapshot = cashflow_reports.get("mtd", CashFlowSnapshot())
         cashflow_last_month_snapshot = cashflow_reports.get("last_month", CashFlowSnapshot())
-        cash_flow_mtd = cashflow_mtd_snapshot.net_cash_operating or cashflow_mtd_snapshot.net_change_cash
-        burn_rate_monthly = abs(
-            min(cashflow_last_month_snapshot.net_cash_operating or cashflow_last_month_snapshot.net_change_cash, 0)
-        )
-        runway_months = _safe_divide(cash, burn_rate_monthly) if burn_rate_monthly else None
-        runway_months = round(runway_months, 2) if runway_months is not None else None
+        
+        # Burn Rate Logic: Use Last Month if available (stable), else use MTD (real-time)
+        burn_last = cashflow_last_month_snapshot.net_cash_operating or cashflow_last_month_snapshot.net_change_cash
+        burn_mtd = cashflow_mtd_snapshot.net_cash_operating or cashflow_mtd_snapshot.net_change_cash
+        
+        # We look for negative cash flow (burn)
+        burn_rate_monthly = 0.0
+        if burn_last and burn_last < 0:
+            burn_rate_monthly = abs(burn_last)
+        elif burn_mtd and burn_mtd < 0:
+            burn_rate_monthly = abs(burn_mtd)
+            
+        runway_months = _safe_divide(cash, burn_rate_monthly) if burn_rate_monthly > 0 else 0.0
+        runway_months = round(runway_months, 2) if runway_months is not None else 0.0
 
         return {
-            "revenue_mtd": revenue_mtd,
-            "net_margin_pct": net_margin_pct,
-            "cash": cash,
-            "runway_months": runway_months,
+            "revenue_mtd": revenue_mtd or 0.0,
+            "net_margin_pct": net_margin_pct or 0.0,
+            "cash": cash or 0.0,
+            "runway_months": runway_months or 0.0,
         }
 
     async def _ensure_valid_token(self, token: QuickBooksToken, *, force_refresh: bool = False) -> QuickBooksToken:

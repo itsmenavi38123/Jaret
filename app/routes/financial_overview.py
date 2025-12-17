@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
@@ -38,14 +39,26 @@ async def get_financial_overview(
 async def get_dashboard_kpis(
     current_user: dict = Depends(get_current_user),
 ):
-    """
-    Get dashboard KPI cards with values, deltas, colors, and links.
-    Returns: Revenue MTD, Net Margin %, Cash, Runway (months), AI Health Score.
-    """
     try:
-        dashboard_data = await dashboard_service.get_dashboard_data(
-            user_id=current_user["id"],
-        )
+        user_id = current_user["id"]
+        
+        kpis_data = await quickbooks_financial_service.get_dashboard_kpis(user_id)
+        def build_card(val, format_type="currency"):
+            return {
+                "value": val,
+            }
+
+        kpi_cards = {
+            "revenue_mtd": build_card(kpis_data.get("revenue_mtd"), "currency"),
+            "net_margin_pct": build_card(kpis_data.get("net_margin_pct"), "percentage"),
+            "cash": build_card(kpis_data.get("cash"), "currency"),
+            "runway_months": build_card(kpis_data.get("runway_months"), "months"),
+            "ai_health_score": build_card(None, "score") # Not calculating score locally to save time
+        }
+        
+        dashboard_data = {
+            "kpis": kpi_cards,
+        }
     except HTTPException as exc:
         raise exc
     except Exception as exc:
