@@ -589,7 +589,7 @@ Return one object shaped as:
     {{
       "key": "equipment_cost",
       "value": 50000,
-      "source": "https://example.com/equipment-pricing",
+      "source": "https://valid-supplier.com/item",
       "confidence": 0.8
     }},
     {{
@@ -597,32 +597,21 @@ Return one object shaped as:
       "value": 25.0,
       "source": "https://bls.gov/wages",
       "confidence": 0.9
-    }},
-    {{
-      "key": "interest_rate",
-      "value": 0.065,
-      "source": "https://example.com/rates",
-      "confidence": 0.85
     }}
   ],
   "sources": [
     {{
       "title": "Equipment Pricing Guide 2024",
-      "url": "https://example.com/equipment-pricing",
+      "url": "https://valid-supplier.com/item",
       "date": "2024-01-15",
       "note": "Used for equipment cost estimates"
-    }},
-    {{
-      "title": "BLS Wage Data",
-      "url": "https://bls.gov/wages",
-      "date": "2024-02-01",
-      "note": "Used for labor rate estimates"
     }}
   ]
 }}
 
 ⚙️ BEHAVIOR RULES
 
+- **CRITICAL**: DO NOT USE 'example.com' or 'test.com'. If you cannot find a source, leave the source field null or omit the assumption.
 - Use search_web to find real data for ALL assumptions.
 - Common assumptions by scenario type:
   - **CapEx**: equipment_cost, financing_rate, useful_life_years, maintenance_cost_annual
@@ -637,7 +626,7 @@ Return one object shaped as:
 
 - At least 3-5 assumptions populated.
 - All assumptions have sources.
-- Sources have valid URLs and dates.
+- Sources have valid URLs (NO example.com).
 
 JSON only (no Markdown, no prose outside fields).
 """
