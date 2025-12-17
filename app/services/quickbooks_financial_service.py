@@ -68,14 +68,27 @@ def _extract_section_total(report: Dict[str, Any], section_names: Iterable[str])
     target_names = set(section_names)
 
     def _walk(row: Dict[str, Any]) -> Optional[float]:
-        row_type = row.get("RowType")
+        row_type = row.get("RowType") or row.get("type")
         if row_type == "Section":
+            # QuickBooks puts the section name in Summary, not Header
+            summary = row.get("Summary", {}).get("ColData", [])
+            if summary:
+                label = summary[0].get("value") if summary else None
+                if label in target_names:
+                    # Return the value (second column)
+                    if len(summary) > 1:
+                        return _parse_money(summary[1].get("value"))
+            
+            # Also check Header as fallback for some report types
             header = row.get("Header", {}).get("ColData", [])
-            label = header[0].get("value") if header else None
-            if label in target_names:
-                summary = row.get("Summary", {}).get("ColData", [])
-                if len(summary) > 1:
-                    return _parse_money(summary[1].get("value"))
+            if header:
+                label = header[0].get("value") if header else None
+                if label in target_names:
+                    summary = row.get("Summary", {}).get("ColData", [])
+                    if len(summary) > 1:
+                        return _parse_money(summary[1].get("value"))
+            
+            # Walk children
             for child in _iter_rows(row.get("Rows")):
                 result = _walk(child)
                 if result is not None:
@@ -153,7 +166,7 @@ def _profit_and_loss_from_report(report: Dict[str, Any]) -> ProfitAndLossSnapsho
         total_income=qb_extract_section_total(report, {"Total Income", "Total Revenue"}),
         cogs=qb_extract_section_total(report, {"Total Cost of Goods Sold", "Total Cost of Sales"}),
         gross_profit=qb_extract_section_total(report, {"Gross Profit"}),
-        operating_expenses=qb_extract_section_total(report, {"Total Operating Expenses", "Operating Expenses"}),
+        operating_expenses=qb_extract_section_total(report, {"Total Operating Expenses", "Operating Expenses", "Total Expenses", "Expenses"}),
         net_income=qb_extract_section_total(report, {"Net Income"}),
         interest_expense=_extract_line_value(
             report,
@@ -168,21 +181,40 @@ def _profit_and_loss_from_report(report: Dict[str, Any]) -> ProfitAndLossSnapsho
 
 def _balance_sheet_from_report(report: Dict[str, Any]) -> BalanceSheetSnapshot:
     return BalanceSheetSnapshot(
-        current_assets=_extract_section_total(report, {"Total Current Assets"}),
-        current_liabilities=_extract_section_total(report, {"Total Current Liabilities"}),
-        total_liabilities=_extract_section_total(report, {"Total Liabilities"}),
-        total_equity=_extract_section_total(report, {"Total Equity"}),
+        current_assets=_extract_section_total(report, {"Total Current Assets", "TOTAL CURRENT ASSETS"}),
+        current_liabilities=_extract_section_total(report, {"Total Current Liabilities", "TOTAL CURRENT LIABILITIES"}),
+        total_liabilities=_extract_section_total(report, {"Total Liabilities", "TOTAL LIABILITIES"}),
+        total_equity=_extract_section_total(report, {"Total Equity", "TOTAL EQUITY"}),
         cash=_extract_section_total(
             report,
             {
                 "Cash and Cash Equivalents",
                 "Cash and cash equivalents",
                 "Cash and Cash Equivalents (Bank Accounts)",
+                "Total Bank Accounts",
+                "TOTAL BANK ACCOUNTS",
+                "Bank Accounts",
             },
         ),
-        accounts_receivable=_extract_line_value(report, {"Accounts Receivable", "Accounts receivable"}),
-        accounts_payable=_extract_line_value(report, {"Accounts Payable", "Accounts payable"}),
-        inventory=_extract_line_value(report, {"Inventory Asset", "Inventory"}),
+        accounts_receivable=_extract_section_total(
+            report,
+            {
+                "Accounts Receivable",
+                "Accounts receivable",
+                "Total Accounts Receivable",
+                "TOTAL ACCOUNTS RECEIVABLE",
+            },
+        ),
+        accounts_payable=_extract_section_total(
+            report,
+            {
+                "Accounts Payable",
+                "Accounts payable",
+                "Total Accounts Payable",
+                "TOTAL ACCOUNTS PAYABLE",
+            },
+        ),
+        inventory=_extract_line_value(report, {"Inventory Asset", "Inventory", "Total Inventory"}),
     )
 
 
