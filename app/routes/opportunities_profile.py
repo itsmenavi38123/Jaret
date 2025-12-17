@@ -130,32 +130,50 @@ async def update_opportunities_profile(
         opportunities_profiles = get_collection("opportunities_profiles")
         user_id = current_user["id"]
 
-        # Check if profile exists
-        existing = await opportunities_profiles.find_one({"user_id": user_id})
+        # Custom Upsert Logic
         if not existing:
+            # Create new if not exists (Upsert)
+            now = _now_utc()
+            
+            # Use defaults if fields are missing in update payload (best effort upsert)
+            new_profile = OpportunitiesProfile(
+                user_id=user_id,
+                business_type=data.business_type or "Unknown",
+                operating_region=data.operating_region or "Unknown",
+                preferred_opportunity_types=data.preferred_opportunity_types or [],
+                radius=data.radius or 50,
+                max_budget=data.max_budget or 0.0,
+                travel_range=data.travel_range or "Local",
+                staffing_capacity=data.staffing_capacity or 1,
+                risk_appetite=data.risk_appetite or "medium",
+                auto_sync=data.auto_sync if data.auto_sync is not None else True,
+                indoor_only=data.indoor_only if data.indoor_only is not None else False,
+                created_at=now,
+                updated_at=now
+            )
+            await opportunities_profiles.insert_one(new_profile.dict(by_alias=True))
+            
             return JSONResponse(
-                status_code=status.HTTP_404_NOT_FOUND,
-                content={"success": False, "error": "Opportunities profile not found"}
+                status_code=status.HTTP_201_CREATED,
+                content={
+                    "success": True, 
+                    "message": "Opportunities profile created (upsert)",
+                    "data": jsonable_encoder(new_profile)
+                }
             )
 
-        # Prepare update data
+        # Update existing
         update_data = {}
-        if data.business_type is not None:
-            update_data["business_type"] = data.business_type
-        if data.operating_region is not None:
-            update_data["operating_region"] = data.operating_region
-        if data.preferred_opportunity_types is not None:
-            update_data["preferred_opportunity_types"] = data.preferred_opportunity_types
-        if data.radius is not None:
-            update_data["radius"] = data.radius
-        if data.max_budget is not None:
-            update_data["max_budget"] = data.max_budget
-        if data.travel_range is not None:
-            update_data["travel_range"] = data.travel_range
-        if data.staffing_capacity is not None:
-            update_data["staffing_capacity"] = data.staffing_capacity
-        if data.risk_appetite is not None:
-            update_data["risk_appetite"] = data.risk_appetite
+        if data.business_type is not None: update_data["business_type"] = data.business_type
+        if data.operating_region is not None: update_data["operating_region"] = data.operating_region
+        if data.preferred_opportunity_types is not None: update_data["preferred_opportunity_types"] = data.preferred_opportunity_types
+        if data.radius is not None: update_data["radius"] = data.radius
+        if data.max_budget is not None: update_data["max_budget"] = data.max_budget
+        if data.travel_range is not None: update_data["travel_range"] = data.travel_range
+        if data.staffing_capacity is not None: update_data["staffing_capacity"] = data.staffing_capacity
+        if data.risk_appetite is not None: update_data["risk_appetite"] = data.risk_appetite
+        if data.auto_sync is not None: update_data["auto_sync"] = data.auto_sync
+        if data.indoor_only is not None: update_data["indoor_only"] = data.indoor_only
 
         now = _now_utc()
         update_data["updated_at"] = now

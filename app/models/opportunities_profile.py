@@ -13,6 +13,8 @@ class OpportunitiesProfile(BaseModel):
     travel_range: str
     staffing_capacity: int
     risk_appetite: str
+    auto_sync: bool = True
+    indoor_only: bool = False
     created_at: datetime
     updated_at: datetime
 
@@ -32,6 +34,8 @@ class OpportunitiesProfileCreate(BaseModel):
     travel_range: str
     staffing_capacity: int
     risk_appetite: str
+    auto_sync: bool = True
+    indoor_only: bool = False
 
 class OpportunitiesProfileUpdate(BaseModel):
     business_type: Optional[str] = None
@@ -42,3 +46,5 @@ class OpportunitiesProfileUpdate(BaseModel):
     travel_range: Optional[str] = None
     staffing_capacity: Optional[int] = None
     risk_appetite: Optional[str] = None
+    auto_sync: Optional[bool] = None
+    indoor_only: Optional[bool] = None
