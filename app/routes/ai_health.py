@@ -9,8 +9,17 @@ from app.services.quickbooks_financial_service import quickbooks_financial_servi
 
 router = APIRouter(tags=["ai-health"])
 
-@router.get("/full")
+from pydantic import BaseModel
+
+class HealthRequest(BaseModel):
+    company_id: Optional[str] = None
+    range: Optional[str] = "12m"
+    include_peers: Optional[bool] = True
+    include_breakdowns: Optional[bool] = True
+
+@router.post("/full")
 async def get_business_health_full(
+    request: HealthRequest,
     current_user: dict = Depends(get_current_user),
 ):
     """
