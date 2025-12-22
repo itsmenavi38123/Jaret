@@ -16,121 +16,110 @@ research_scout = ResearchScoutService()
 
 async def web_search(search_term: str, recency_days: int = 30, max_results: int = 10) -> List[Dict[str, Any]]:
     """
-    Web search helper function that performs real web searches.
-    Integrates with web search APIs to find opportunities.
+    Web search helper function using Gemini's built-in web search (grounding).
+    No external search APIs needed - uses Gemini's grounding capability.
     
     This function is called by the Research Scout service to perform actual web searches
     for opportunities, events, RFPs, grants, etc.
     """
     import os
-    import httpx
+    import google.generativeai as genai
     from datetime import datetime, timedelta
     
-    # Priority 1: Use Tavily API if available (best for structured results)
-    tavily_key = os.getenv("TAVILY_API_KEY")
-    if tavily_key:
-        try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.post(
-                    "https://api.tavily.com/search",
-                    json={
-                        "api_key": tavily_key,
-                        "query": search_term,
-                        "max_results": max_results,
-                        "search_depth": "advanced",
-                        "include_answer": False,
-                        "include_raw_content": False,
-                    },
-                    headers={"Content-Type": "application/json"},
-                )
-                if response.status_code == 200:
-                    data = response.json()
-                    results = data.get("results", [])
-                    formatted = []
-                    for r in results:
-                        formatted.append({
-                            "title": r.get("title", ""),
-                            "url": r.get("url", ""),
-                            "snippet": r.get("content", r.get("raw_content", "")),
-                            "date": r.get("published_date"),
-                        })
-                    if formatted:
-                        return formatted
-        except Exception as e:
-            print(f"Tavily search error: {e}")
-    
-    # Priority 2: Use Serper API if available (Google search results)
-    serper_key = os.getenv("SERPER_API_KEY")
-    if serper_key:
-        try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.post(
-                    "https://google.serper.dev/search",
-                    json={
-                        "q": search_term,
-                        "num": max_results,
-                    },
-                    headers={
-                        "X-API-KEY": serper_key,
-                        "Content-Type": "application/json",
-                    },
-                )
-                if response.status_code == 200:
-                    data = response.json()
-                    results = data.get("organic", [])
-                    formatted = []
-                    for r in results:
-                        formatted.append({
-                            "title": r.get("title", ""),
-                            "url": r.get("link", ""),
-                            "snippet": r.get("snippet", ""),
-                            "date": r.get("date"),
-                        })
-                    if formatted:
-                        return formatted
-        except Exception as e:
-            print(f"Serper search error: {e}")
-    
-    # Priority 3: Use DuckDuckGo (no API key needed, but limited)
     try:
-        async with httpx.AsyncClient(timeout=20.0, follow_redirects=True) as client:
-            # Use DuckDuckGo Instant Answer API
-            response = await client.get(
-                "https://api.duckduckgo.com/",
-                params={
-                    "q": search_term,
-                    "format": "json",
-                    "no_html": "1",
-                    "skip_disambig": "1",
-                },
-                headers={"User-Agent": "Mozilla/5.0"},
-            )
-            if response.status_code == 200:
-                data = response.json()
-                # DuckDuckGo returns limited results, format what we can
-                results = []
-                if data.get("AbstractText"):
-                    results.append({
-                        "title": data.get("Heading", search_term),
-                        "url": data.get("AbstractURL", ""),
-                        "snippet": data.get("AbstractText", ""),
-                        "date": None,
-                    })
-                # Also try web search via DuckDuckGo HTML
-                html_response = await client.get(
-                    "https://html.duckduckgo.com/html/",
-                    params={"q": search_term},
-                    headers={"User-Agent": "Mozilla/5.0"},
-                )
-                # Basic HTML parsing would go here
-                # For now, return what we have
-                if results:
-                    return results
+        # Configure Gemini
+        gemini_api_key = os.getenv("GEMINI_API_KEY")
+        if not gemini_api_key:
+            print("GEMINI_API_KEY not found, cannot perform web search")
+            return []
+        
+        genai.configure(api_key=gemini_api_key)
+        
+        # Use Gemini with grounding (web search)
+        model = genai.GenerativeModel('gemini-2.0-flash-exp')
+        
+        # Build search prompt
+        search_prompt = f"""Search the web for: {search_term}
+
+Find up to {max_results} relevant, recent results.
+Focus on official sources, event platforms, government portals, and reputable sites.
+
+Return ONLY a JSON array of results in this exact format:
+[
+  {{
+    "title": "Result title",
+    "url": "https://example.com/page",
+    "snippet": "Brief description or excerpt",
+    "date": "YYYY-MM-DD or null"
+  }}
+]
+
+CRITICAL: Return ONLY the JSON array, no other text."""
+
+        # Generate with grounding enabled
+        response = model.generate_content(
+            search_prompt,
+            tools='google_search_retrieval'  # Enable web search grounding
+        )
+        
+        # Parse response
+        if response and response.text:
+            import json
+            import re
+            
+            # Extract JSON from response
+            text = response.text.strip()
+            
+            # Try to find JSON array in response
+            json_match = re.search(r'\[.*\]', text, re.DOTALL)
+            if json_match:
+                json_str = json_match.group(0)
+                try:
+                    results = json.loads(json_str)
+                    
+                    # Validate and clean results
+                    formatted = []
+                    for r in results[:max_results]:
+                        if isinstance(r, dict) and r.get("url"):
+                            formatted.append({
+                                "title": r.get("title", ""),
+                                "url": r.get("url", ""),
+                                "snippet": r.get("snippet", ""),
+                                "date": r.get("date"),
+                            })
+                    
+                    if formatted:
+                        return formatted
+                except json.JSONDecodeError as e:
+                    print(f"Failed to parse Gemini search JSON: {e}")
+            
+            # If JSON parsing fails, try to extract from grounding metadata
+            if hasattr(response, 'candidates') and response.candidates:
+                candidate = response.candidates[0]
+                if hasattr(candidate, 'grounding_metadata'):
+                    metadata = candidate.grounding_metadata
+                    if hasattr(metadata, 'grounding_chunks'):
+                        results = []
+                        for chunk in metadata.grounding_chunks[:max_results]:
+                            if hasattr(chunk, 'web'):
+                                web = chunk.web
+                                results.append({
+                                    "title": getattr(web, 'title', ''),
+                                    "url": getattr(web, 'uri', ''),
+                                    "snippet": '',
+                                    "date": None,
+                                })
+                        if results:
+                            return results
+        
+        print("Gemini search returned no valid results")
+        return []
+        
     except Exception as e:
-        print(f"DuckDuckGo search error: {e}")
-    
-    # If all searches fail, return empty - service will use fallback
-    return []
+        print(f"Gemini web search error: {e}")
+        import traceback
+        traceback.print_exc()
+        return []
 
 
 class OpportunitySearchRequest(BaseModel):
