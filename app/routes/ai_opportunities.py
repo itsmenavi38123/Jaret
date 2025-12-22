@@ -16,110 +16,21 @@ research_scout = ResearchScoutService()
 
 async def web_search(search_term: str, recency_days: int = 30, max_results: int = 10) -> List[Dict[str, Any]]:
     """
-    Web search helper function using Gemini's built-in web search (grounding).
-    No external search APIs needed - uses Gemini's grounding capability.
+    Web search helper function - called by OpenAI when Research Scout needs web data.
     
-    This function is called by the Research Scout service to perform actual web searches
-    for opportunities, events, RFPs, grants, etc.
+    This function is called by the Research Scout service via OpenAI function calling
+    when it needs to search for opportunities, events, RFPs, grants, etc.
+    
+    IMPORTANT: This returns empty results because we don't have a web search API configured.
+    Research Scout (OpenAI) will work with its own knowledge instead of fabricating data.
     """
     import os
-    import google.generativeai as genai
-    from datetime import datetime, timedelta
+    from openai import AsyncOpenAI
     
-    try:
-        # Configure Gemini
-        gemini_api_key = os.getenv("GEMINI_API_KEY")
-        if not gemini_api_key:
-            print("GEMINI_API_KEY not found, cannot perform web search")
-            return []
-        
-        genai.configure(api_key=gemini_api_key)
-        
-        # Use Gemini with grounding (web search)
-        model = genai.GenerativeModel('gemini-2.0-flash-exp')
-        
-        # Build search prompt
-        search_prompt = f"""Search the web for: {search_term}
+    # Return empty - Research Scout will use its knowledge without fabricating search results
+    # If you want real web search, integrate Serper/Tavily/Bing API here
+    return []
 
-Find up to {max_results} relevant, recent results.
-Focus on official sources, event platforms, government portals, and reputable sites.
-
-Return ONLY a JSON array of results in this exact format:
-[
-  {{
-    "title": "Result title",
-    "url": "https://example.com/page",
-    "snippet": "Brief description or excerpt",
-    "date": "YYYY-MM-DD or null"
-  }}
-]
-
-CRITICAL: Return ONLY the JSON array, no other text."""
-
-        # Generate with grounding enabled
-        response = model.generate_content(
-            search_prompt,
-            tools='google_search_retrieval'  # Enable web search grounding
-        )
-        
-        # Parse response
-        if response and response.text:
-            import json
-            import re
-            
-            # Extract JSON from response
-            text = response.text.strip()
-            
-            # Try to find JSON array in response
-            json_match = re.search(r'\[.*\]', text, re.DOTALL)
-            if json_match:
-                json_str = json_match.group(0)
-                try:
-                    results = json.loads(json_str)
-                    
-                    # Validate and clean results
-                    formatted = []
-                    for r in results[:max_results]:
-                        if isinstance(r, dict) and r.get("url"):
-                            formatted.append({
-                                "title": r.get("title", ""),
-                                "url": r.get("url", ""),
-                                "snippet": r.get("snippet", ""),
-                                "date": r.get("date"),
-                            })
-                    
-                    if formatted:
-                        return formatted
-                except json.JSONDecodeError as e:
-                    print(f"Failed to parse Gemini search JSON: {e}")
-            
-            # If JSON parsing fails, try to extract from grounding metadata
-            if hasattr(response, 'candidates') and response.candidates:
-                candidate = response.candidates[0]
-                if hasattr(candidate, 'grounding_metadata'):
-                    metadata = candidate.grounding_metadata
-                    if hasattr(metadata, 'grounding_chunks'):
-                        results = []
-                        for chunk in metadata.grounding_chunks[:max_results]:
-                            if hasattr(chunk, 'web'):
-                                web = chunk.web
-                                results.append({
-                                    "title": getattr(web, 'title', ''),
-                                    "url": getattr(web, 'uri', ''),
-                                    "snippet": '',
-                                    "date": None,
-                                })
-                        if results:
-                            return results
-        
-        print("Gemini search returned no valid results")
-        return []
-        
-    except Exception as e:
-        print(f"Gemini web search error: {e}")
-        import traceback
-        traceback.print_exc()
-        return []
 
 
 class OpportunitySearchRequest(BaseModel):

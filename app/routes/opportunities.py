@@ -111,22 +111,26 @@ def _transform_to_ui_format(
     cards = opportunities_data.get("cards", [])
     scout_kpis = opportunities_data.get("kpis", {})
     
-    # Calculate KPIs
-    active_count = scout_kpis.get("active_count", len(cards))
-    total_value = sum(card.get("est_revenue", 0) for card in cards)
-    avg_fit = scout_kpis.get("avg_fit_score", 0)
-    if not avg_fit and cards:
-        avg_fit = sum(card.get("fit_score", 0) for card in cards) / len(cards)
+    # Calculate KPIs from REAL data only
+    active_count = len(cards)  # Actual count from Research Scout
+    total_value = sum(card.get("est_revenue", 0) for card in cards if card.get("est_revenue"))
     
-    event_readiness = scout_kpis.get("event_readiness", 0)
-    if not event_readiness and cards:
-        # Calculate from event cards
-        event_cards = [c for c in cards if c.get("type") == "event"]
-        if event_cards:
-            event_readiness = sum(
-                _calculate_event_readiness(c, cash, runway_months) 
-                for c in event_cards
-            ) / len(event_cards)
+    # Average fit score - only if we have cards
+    avg_fit = 0
+    if cards:
+        fit_scores = [card.get("fit_score", 0) for card in cards if card.get("fit_score")]
+        if fit_scores:
+            avg_fit = sum(fit_scores) / len(fit_scores)
+    
+    # Event readiness - only calculate if we have event cards
+    event_readiness = 0
+    event_cards = [c for c in cards if c.get("type") == "event"]
+    if event_cards:
+        readiness_scores = [
+            _calculate_event_readiness(c, cash, runway_months) 
+            for c in event_cards
+        ]
+        event_readiness = sum(readiness_scores) / len(readiness_scores)
     
     # Transform opportunity cards
     recommended = []
@@ -137,18 +141,18 @@ def _transform_to_ui_format(
         "kpis": {
             "active_opportunities": {
                 "count": active_count,
-                "new_this_week": 0  # TODO: Track this in database
+                "new_this_week": None  # Will be calculated from database timestamps
             },
-            "total_potential_value": total_value,
-            "avg_fit_score": round(avg_fit),
-            "event_readiness_index": round(event_readiness),
+            "total_potential_value": total_value if total_value > 0 else None,
+            "avg_fit_score": round(avg_fit) if avg_fit > 0 else None,
+            "event_readiness_index": round(event_readiness) if event_readiness > 0 else None,
             "historical_roi": {
-                "multiplier": 0,  # Will be filled from database
+                "multiplier": None,  # Will be filled from database
                 "sample_size": 0
             }
         },
         "recommended": recommended,
-        "search_results": [],  # Will be populated if search_query provided
+        "search_results": [],
     }
 
 
@@ -323,15 +327,15 @@ def _format_tracked_opportunities(tracked_opps: List[Dict]) -> List[Dict[str, An
 
 
 def _calculate_historical_roi(outcomes: List[Dict]) -> Dict[str, Any]:
-    """Calculate historical ROI from outcomes"""
+    """Calculate historical ROI from actual outcomes - returns null if no data"""
     if not outcomes:
-        return {"multiplier": 0, "sample_size": 0}
+        return {"multiplier": None, "sample_size": 0}
     
     roi_values = []
     for outcome in outcomes:
         revenue = outcome.get("actual_revenue", 0)
-        cost = outcome.get("actual_cost", 1)
-        if cost > 0:
+        cost = outcome.get("actual_cost", 0)
+        if cost > 0 and revenue > 0:  # Only include valid outcomes
             roi = revenue / cost
             roi_values.append(roi)
     
@@ -342,4 +346,5 @@ def _calculate_historical_roi(outcomes: List[Dict]) -> Dict[str, Any]:
             "sample_size": len(roi_values)
         }
     
-    return {"multiplier": 0, "sample_size": 0}
+    # No valid outcomes - return null
+    return {"multiplier": None, "sample_size": 0}
