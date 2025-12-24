@@ -14,6 +14,7 @@ from app.routes.auth.auth import get_current_user
 from app.db import get_collection
 from app.services.research_scout_service import ResearchScoutService
 from app.services.quickbooks_financial_service import quickbooks_financial_service
+from app.agents.opportunities_agent import research_scout_opportunities
 
 router = APIRouter(tags=["opportunities"])
 research_scout = ResearchScoutService()
@@ -89,6 +90,40 @@ async def get_opportunities_overview(
             status_code=status.HTTP_200_OK,
             content=jsonable_encoder(ui_response),
         )
+    
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"error": str(e)},
+        )
+
+
+@router.get("/research-scout")
+async def get_research_scout_opportunities(
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Get opportunities directly from the Research Scout agent.
+
+    Returns raw data from the opportunities_agent.research_scout function.
+    """
+    try:
+        user_id = current_user["id"]
+
+        # Fetch business profile
+        agent_profile ={
+        "business_type": "Food Truck",
+        "services": ["Street food", "Catering"],
+        "location": "Austin, Texas",
+        "keywords": ["festival", "vendor", "grant"]
+    }
+
+        # Call the research scout agent
+        scout_result = research_scout_opportunities(agent_profile)
+
+        return scout_result
     
     except Exception as e:
         import traceback
