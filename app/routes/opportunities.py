@@ -100,6 +100,34 @@ async def get_opportunities_overview(
         )
 
 
+@router.get("/manual-search")
+async def manual_opportunities_search(
+    query: str = Query(..., description="Manual search query for opportunities"),
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Search for opportunities using a manual query without requiring business profiles.
+
+    This endpoint allows users to search for opportunities based on their own query,
+    bypassing personalized business profile matching.
+    """
+    try:
+        user_id = current_user["id"]
+
+        # Call the research scout agent
+        scout_result = research_scout_opportunities(query)
+
+        return scout_result
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"error": str(e)},
+        )
+
+
 @router.get("/research-scout")
 async def get_research_scout_opportunities(
     current_user: dict = Depends(get_current_user),
@@ -124,7 +152,7 @@ async def get_research_scout_opportunities(
         scout_result = research_scout_opportunities(agent_profile)
 
         return scout_result
-    
+
     except Exception as e:
         import traceback
         traceback.print_exc()

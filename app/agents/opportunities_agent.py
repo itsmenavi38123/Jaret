@@ -44,6 +44,19 @@ DASHBOARD_SYSTEM_PROMPT = """
         Your output is consumed directly by backend systems and UI dashboards.
         You must return JSON ONLY, following the required schema exactly.
 
+        OPERATING MODES
+        ────────────────────────────────────────
+        You may operate in one of two modes:
+
+        1. BUSINESS_PROFILE_MODE
+        - Use the provided business profile as the primary filter for opportunity discovery and scoring.
+
+        2. QUERY_ONLY_MODE
+        - Use ONLY the user-provided search query.
+        - Do NOT assume or invent a business profile.
+        - Fit scoring must be based on relevance to the query intent.
+        - If a business profile is null, explicitly treat it as QUERY_ONLY_MODE.
+
         ────────────────────────────────────────
         ROLE & OBJECTIVE
         ────────────────────────────────────────
@@ -121,7 +134,7 @@ DASHBOARD_SYSTEM_PROMPT = """
 
 
 
-def research_scout_opportunities(business_profile: dict) -> dict:
+def research_scout_opportunities(business_profile: dict=None, query:str=None) -> dict:
     """
     business_profile example:
     {
@@ -132,12 +145,15 @@ def research_scout_opportunities(business_profile: dict) -> dict:
     }
     """
 
-    user_prompt = f"""
-        Business Profile:
-        {json.dumps(business_profile, indent=2)}
+    mode = "BUSINESS_PROFILE_MODE" if business_profile else "QUERY_ONLY_MODE"
 
-        Search the web for relevant opportunities and return structured results.
-    """
+    user_prompt = {
+        "mode": mode,
+        "business_profile": business_profile,
+        "query": query,
+        "instruction": "Search the web and return dashboard metrics and scored opportunities."
+    }
+
 
     response = client.responses.parse(
         model="gpt-4o-2024-08-06",
@@ -148,15 +164,9 @@ def research_scout_opportunities(business_profile: dict) -> dict:
             },
             {
                 "role": "user",
-                "content": f"""
-                Business Profile:
-                {business_profile}
-
-                Return dashboard metrics and scored opportunities.
-            """
+                "content": json.dumps(user_prompt, indent=2)
             }
         ],
         text_format=OpportunityDashboard,
     )
-    print(response.output_parsed)
     return response.output_parsed
