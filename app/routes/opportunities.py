@@ -8,13 +8,16 @@ from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from math import ceil
 
 from app.routes.auth.auth import get_current_user
 from app.db import get_collection
 from app.services.research_scout_service import ResearchScoutService
 from app.services.quickbooks_financial_service import quickbooks_financial_service
 from app.agents.opportunities_agent import research_scout_opportunities
+from app.models.opportunities import Opportunity, OpportunityCreate, OpportunityUpdate
+from bson import ObjectId
+
 
 router = APIRouter(tags=["opportunities"])
 research_scout = ResearchScoutService()
@@ -411,3 +414,156 @@ def _calculate_historical_roi(outcomes: List[Dict]) -> Dict[str, Any]:
     
     # No valid outcomes - return null
     return {"multiplier": None, "sample_size": 0}
+
+
+@router.post("/save")
+async def save_opportunity(
+    opportunity_data: OpportunityCreate,
+    current_user: dict = Depends(get_current_user),
+):
+    user_id = current_user["id"]
+
+    opportunity = Opportunity(
+        user_id=user_id,
+        **opportunity_data.dict()
+    )
+
+    opportunities_collection = get_collection("opportunities")
+    result = await opportunities_collection.insert_one(opportunity.dict(by_alias=True))
+
+    return JSONResponse(
+        status_code=status.HTTP_201_CREATED,
+        content={
+            "message": "Opportunity saved successfully",
+            "opportunity_id": opportunity.id
+        },
+    )
+
+@router.get("/saved")
+async def get_saved_opportunities(
+    current_user: dict = Depends(get_current_user),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(10, ge=1, le=100),
+):
+    """
+    Get paginated saved opportunities for the current user.
+    """
+    try:
+        user_id = current_user["id"]
+        skip = (page - 1) * page_size
+
+        opportunities_collection = get_collection("opportunities")
+
+        # Total count
+        total_count = await opportunities_collection.count_documents(
+            {"user_id": user_id}
+        )
+
+        # Paginated data
+        cursor = (
+            opportunities_collection
+            .find({"user_id": user_id})
+            .skip(skip)
+            .limit(page_size)
+        )
+
+        opportunities = await cursor.to_list(length=page_size)
+
+
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content={
+                "data": jsonable_encoder(opportunities),
+                "pagination": {
+                    "page": page,
+                    "page_size": page_size,
+                    "total_items": total_count,
+                    "total_pages": ceil(total_count / page_size) if total_count else 0,
+                },
+            },
+        )
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"error": str(e)},
+        )
+
+
+@router.put("/update/{opportunity_id}")
+async def update_opportunity(
+    opportunity_id: str,
+    opportunity_data: OpportunityUpdate,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Update an existing opportunity.
+    """
+    try:
+        user_id = current_user["id"]
+
+        opportunities_collection = get_collection("opportunities")
+        update_data = {k: v for k, v in opportunity_data.dict().items() if v is not None}
+        update_data["updated_at"] = datetime.utcnow()
+
+        result = await opportunities_collection.update_one(
+            {"_id": opportunity_id, "user_id": user_id},
+            {"$set": update_data}
+        )
+
+        updated_doc = await opportunities_collection.find_one({"_id": opportunity_id})
+
+        if result.matched_count == 0:
+            return JSONResponse(
+                status_code=status.HTTP_404_NOT_FOUND,
+                content={"error": "Opportunity not found"},
+            )
+
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content={"message": "Opportunity updated successfully", "data":jsonable_encoder(updated_doc)},
+        )
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"error": str(e)},
+        )
+
+
+@router.delete("/delete/{opportunity_id}")
+async def delete_opportunity(
+    opportunity_id: str,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Delete an opportunity.
+    """
+    try:
+        user_id = current_user["id"]
+
+        opportunities_collection = get_collection("opportunities")
+        result = await opportunities_collection.delete_one({"_id": opportunity_id, "user_id": user_id})
+
+        if result.deleted_count == 0:
+            return JSONResponse(
+                status_code=status.HTTP_404_NOT_FOUND,
+                content={"error": "Opportunity not found"},
+            )
+
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content={"message": "Opportunity deleted successfully"},
+        )
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"error": str(e)},
+        )

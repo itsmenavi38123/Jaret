@@ -86,3 +86,10 @@ async def create_indexes() -> None:
 
     reminders = get_collection("reminders")
     await reminders.create_index([("user_id", 1), ("due_date", 1)])
+
+    opportunities = get_collection("opportunities")
+    await opportunities.create_index("user_id")
+    await opportunities.create_index("status")
+    await opportunities.create_index("deadline")
+    await opportunities.create_index("created_at")
+    await opportunities.create_index("updated_at")
