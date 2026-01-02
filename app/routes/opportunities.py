@@ -637,7 +637,7 @@ class QuestionRequest(BaseModel):
     question: str
     history: Optional[List[ChatMessage]] = []
 
-@router.post("/ask")
+@router.post("/scenario")
 def ask_question(payload: QuestionRequest):
 
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
