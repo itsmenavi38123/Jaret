@@ -653,17 +653,14 @@ def ask_question(payload: QuestionRequest):
         messages=messages
     )
 
-    raw_answer = response.choices[0].message.content.strip()
-    answer = [line.strip() for line in raw_answer.split("\n") if line.strip()]
+    answer = response.choices[0].message.content.strip()
 
     return JSONResponse(
         status_code=status.HTTP_201_CREATED,
         content={
             "success": True,
             "message": "Here is the response for the question you shared.",
-            "data": {
-                "response": answer
-            },
+            "data": answer,
             "created_at": datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
         }
     )
