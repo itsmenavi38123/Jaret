@@ -5,7 +5,7 @@ Returns KPIs, recommended opportunities, search results, and tracked opportuniti
 """
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timedelta
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status,FastAPI
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from math import ceil
@@ -17,6 +17,16 @@ from app.services.quickbooks_financial_service import quickbooks_financial_servi
 from app.agents.opportunities_agent import research_scout_opportunities
 from app.models.opportunities import Opportunity, OpportunityCreate, OpportunityUpdate
 from bson import ObjectId
+
+import os
+from pydantic import BaseModel
+from dotenv import load_dotenv
+from openai import OpenAI
+from datetime import datetime
+from typing import List, Optional
+from fastapi import FastAPI
+
+load_dotenv()
 
 
 router = APIRouter(tags=["opportunities"])
@@ -567,3 +577,93 @@ async def delete_opportunity(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={"error": str(e)},
         )
+
+
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
+client = OpenAI(api_key=OPENAI_API_KEY)
+
+
+app = FastAPI(title="LightSignal Scenario Planning API")
+
+class QuestionRequest(BaseModel):
+    question: str
+
+SYSTEM_PROMPT = """
+You are the LightSignal Scenario Planning Lab.
+
+You are a calm, experienced decision partner for small business owners.
+You are NOT a chatbot and NOT a motivational speaker.
+
+Your role:
+- Help business owners think through real decisions
+- Speak in plain, simple language
+- Be realistic, practical, and reassuring
+- Avoid jargon and buzzwords
+- Never guarantee outcomes
+
+For every “what if” or decision question:
+You should naturally cover:
+- Is this feasible or risky?
+- What happens to cash, profit, and runway at a high level?
+- Pros and cons
+- Hidden risks or things people miss
+- What similar businesses usually do
+- Alternatives (wait, smaller step, do nothing)
+- A simple, practical recommendation
+
+IMPORTANT RULES:
+- Do NOT invent numbers
+- If data is missing, speak qualitatively
+- Use ranges or directional language only
+- Do NOT mention tools, APIs, models, or data sources
+- Do NOT use markdown
+- Do NOT return JSON
+- Return ONLY natural text, like a real advisor talking
+
+Tone:
+Clear. Calm. Honest. Supportive. Business-practical.
+
+Length:
+3–8 short paragraphs or bullet-style sentences.
+"""
+
+
+class ChatMessage(BaseModel):
+    role: str
+    content: str
+
+class QuestionRequest(BaseModel):
+    question: str
+    history: Optional[List[ChatMessage]] = []
+
+@router.post("/ask")
+def ask_question(payload: QuestionRequest):
+
+    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+
+    for msg in payload.history:
+        messages.append({"role": msg.role, "content": msg.content})
+
+    messages.append({"role": "user", "content": payload.question})
+
+    response = client.chat.completions.create(
+        model="gpt-4.1-mini",
+        temperature=0.4,
+        messages=messages
+    )
+
+    raw_answer = response.choices[0].message.content.strip()
+    answer = [line.strip() for line in raw_answer.split("\n") if line.strip()]
+
+    return JSONResponse(
+        status_code=status.HTTP_201_CREATED,
+        content={
+            "success": True,
+            "message": "Here is the response for the question you shared.",
+            "data": {
+                "response": answer
+            },
+            "created_at": datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+        }
+    )

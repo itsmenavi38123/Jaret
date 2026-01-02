@@ -50,6 +50,7 @@ coverage.xml
 .pytest_cache/
 test-results/
 tests/__pycache__/
+media
 
 # PyInstaller
 *.manifest
