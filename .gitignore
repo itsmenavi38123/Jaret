@@ -115,3 +115,7 @@ docker-compose.yml
 *.gz
 .pdf
 *.pdf
+
+
+secrets/
+*.json
