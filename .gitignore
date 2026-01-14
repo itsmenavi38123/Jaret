@@ -57,10 +57,6 @@ media
 *.spec
 
 # Environment files (secrets)
-.env
-.env.*
-!.env.example  # allow safe example env file
-
 # FastAPI specific (Uvicorn reload cache)
 *.pid
 *.db-journal
