@@ -149,6 +149,13 @@ async def get_current_user_details(current_user: dict = Depends(get_current_user
                 status_code=status.HTTP_404_NOT_FOUND,
                 content={"success": False, "error": "User not found"}
             )
+        
+        if not user_doc.get("is_verified", False):
+            return JSONResponse(
+                status_code=status.HTTP_403_FORBIDDEN,
+                content={"success": False, "error": "Email not verified. Please verify your email."}
+            )
+
 
         user_info = await _build_user_payload(user_doc)
 
