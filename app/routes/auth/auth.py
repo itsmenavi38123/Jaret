@@ -218,7 +218,7 @@ async def register(user: UserCreate, request: Request):
 
             verification_token = await create_email_verification_token(existing["_id"])
 
-            verify_url = f"https://app.lightsignal.com/auth/verification?token={verification_token}"
+            verify_url = f"https://lightsignal.app/auth/verification?token={verification_token}"
 
             send_email(
                 to_email=existing["email"],
@@ -259,7 +259,7 @@ async def register(user: UserCreate, request: Request):
         await users.insert_one(to_insert)
 
         verification_token = await create_email_verification_token(user_id)
-        verify_url = f"https://app.lightsignal.com/auth/verification?token={verification_token}"
+        verify_url = f"https://lightsignal.app/auth/verification?token={verification_token}"
 
         send_email(
             to_email=user.email,
