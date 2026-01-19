@@ -129,6 +129,7 @@ async def _build_user_payload(user_doc: Dict[str, Any]) -> Dict[str, Any]:
     user_info = {
         "id": user_doc["_id"],
         "email": user_doc["email"],
+        "role": user_doc.get("role"),
         "created_at": created_at.isoformat() if created_at else None,
     }
     user_info.update(await _connection_statuses(user_doc["_id"]))
