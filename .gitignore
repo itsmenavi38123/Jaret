@@ -115,3 +115,5 @@ docker-compose.yml
 
 secrets/
 *.json
+
+.env
