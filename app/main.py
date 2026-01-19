@@ -24,6 +24,7 @@ from app.routes.ai_health import router as ai_health_router
 from app.routes.demand_forecast import router as demand_forecast_router
 from app.routes.asset_management import router as asset_management_router
 from app.routes.preparation import router as preparation_router
+from app.routes.admin import router as admin_router
 
 app = FastAPI(
     title=os.getenv("APP_NAME", "FastAPI Backend"),
@@ -61,6 +62,7 @@ app.include_router(ai_health_router, prefix="/api/ai/health")
 app.include_router(demand_forecast_router, prefix="/api")
 app.include_router(asset_management_router, prefix="/api")
 app.include_router(preparation_router, prefix="/api")
+app.include_router(admin_router)
 
 
 

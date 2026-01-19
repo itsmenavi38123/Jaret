@@ -93,3 +93,11 @@ async def create_indexes() -> None:
     await opportunities.create_index("deadline")
     await opportunities.create_index("created_at")
     await opportunities.create_index("updated_at")
+
+    admin_logs = get_collection("admin_logs")
+    await admin_logs.create_index("admin_user_id")
+    await admin_logs.create_index("target_user_id")
+    await admin_logs.create_index("action")
+    await admin_logs.create_index("timestamp")
+    await admin_logs.create_index([("admin_user_id", 1), ("timestamp", -1)])
+    await admin_logs.create_index([("target_user_id", 1), ("timestamp", -1)])

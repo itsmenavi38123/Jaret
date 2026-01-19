@@ -7,6 +7,13 @@ class UserInDB(BaseModel):
     id: str = Field(alias="_id")
     email: EmailStr
     password_hash: str
+    full_name: str
+    company_name: str
+    is_verified: bool = False
+    is_paused: bool = False  # Admin can pause/unpause accounts
+    last_active: Optional[datetime] = None
+    role: str = "Viewer"  # Owner | Admin | Viewer
+    signup_source: str = "demo"  # demo | invite
     created_at: datetime
 
     class Config:

@@ -73,6 +73,7 @@ class UserCreate(BaseModel):
     email: EmailStr
     password: str = Field(min_length=6)
     company_name: str = Field(..., min_length=2)
+    signup_source: str = "demo"  # demo | invite
     
 
 class UserLogin(BaseModel):
@@ -253,6 +254,11 @@ async def register(user: UserCreate, request: Request):
             "password_hash": hash_password(user.password),
             "company_name": user.company_name,
             "is_verified": False,
+            "is_beta": False, 
+            "role": "Client",  # Default role for new users
+            "signup_source": user.signup_source,
+            "is_paused": False,  # New accounts are not paused
+            "last_active": _now_utc(),
             "created_at": _now_utc(),
         }
 
@@ -260,7 +266,6 @@ async def register(user: UserCreate, request: Request):
 
         verification_token = await create_email_verification_token(user_id)
         verify_url = f"https://lightsignal.app/auth/verification?token={verification_token}"
-
         send_email(
             to_email=user.email,
             subject="Verify your LightSignal account",
@@ -313,12 +318,32 @@ async def login(credentials: UserLogin):
                 content={"success": False, "error": "Email not verified. Please verify your email."}
             )
 
+        if user_doc.get("is_paused", False):
+            return JSONResponse(
+                status_code=status.HTTP_403_FORBIDDEN,
+                content={"success": False, "error": "Your account has been paused. Only admin can unpause your account. Contact Admin."}
+            )
 
-        token_data = {"sub": user_doc["_id"], "email": user_doc["email"]}
+        # Update last_active
+        await users.update_one(
+            {"_id": user_doc["_id"]},
+            {"$set": {"last_active": _now_utc()}}
+        )
+
+        # ✅ Role handling (default Viewer)
+        role = user_doc.get("role") or "Viewer"
+
+        token_data = {
+            "sub": str(user_doc["_id"]),
+            "email": user_doc["email"],
+            "role": role
+        }
+
         access_token = create_access_token(token_data)
         refresh_token = create_refresh_token(token_data)
 
         user_info = await _build_user_payload(user_doc)
+        user_info["role"] = role
 
         return JSONResponse(
             status_code=status.HTTP_200_OK,
@@ -335,7 +360,7 @@ async def login(credentials: UserLogin):
     except Exception as e:
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content={"success": False, "error": str(e)}
+            content={"success": False, "error": "Internal server error"}
         )
 
 
