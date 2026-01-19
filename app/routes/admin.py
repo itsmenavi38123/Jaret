@@ -140,12 +140,24 @@ async def get_admin_stats(current_user: dict = Depends(require_admin_role)):
             )
 
 @router.get("/all-users")
-async def get_all_users(current_user: dict = Depends(require_admin_role)):
+async def get_all_users(
+    current_user: dict = Depends(require_admin_role),
+    page: int = 1,
+    per_page: int = 20
+):
     try:
         users_collection = get_collection("users")
 
-        # Get all users
-        users_cursor = users_collection.find({})
+        if page < 1:
+            page = 1
+        skip = (page - 1) * per_page
+
+        # Get total count
+        total_count = await users_collection.count_documents({})
+        total_pages = (total_count + per_page - 1) // per_page
+
+        # Get users with pagination
+        users_cursor = users_collection.find({}).skip(skip).limit(per_page)
         users = await users_cursor.to_list(length=None)
 
         users_data = []
@@ -192,7 +204,15 @@ async def get_all_users(current_user: dict = Depends(require_admin_role)):
             status_code=200,
             content={
                 "success": True,
-                "data": users_data
+                "data": users_data,
+                "pagination": {
+                    "page": page,
+                    "per_page": per_page,
+                    "total_count": total_count,
+                    "total_pages": total_pages,
+                    "has_next": page < total_pages,
+                    "has_prev": page > 1
+                }
             }
         )
 
