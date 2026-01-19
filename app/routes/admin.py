@@ -508,11 +508,17 @@ async def force_user_logout(request: UserActionRequest, current_user: dict = Dep
 @router.get("/logs")
 async def get_admin_logs(
     current_user: dict = Depends(require_admin_role),
-    limit: int = 100,
-    skip: int = 0
+    page: int = 1,
+    per_page: int = 20
 ):
     try:
-        logs = await admin_logs_service.get_logs(limit=limit, skip=skip)
+        if page < 1:
+            page = 1
+        skip = (page - 1) * per_page
+        result = await admin_logs_service.get_logs(limit=per_page, skip=skip)
+        logs = result["logs"]
+        total_count = result["total_count"]
+        total_pages = (total_count + per_page - 1) // per_page
 
         # Format logs for response
         formatted_logs = []
@@ -533,9 +539,12 @@ async def get_admin_logs(
                 "success": True,
                 "data": formatted_logs,
                 "pagination": {
-                    "limit": limit,
-                    "skip": skip,
-                    "has_more": len(logs) == limit
+                    "page": page,
+                    "per_page": per_page,
+                    "total_count": total_count,
+                    "total_pages": total_pages,
+                    "has_next": page < total_pages,
+                    "has_prev": page > 1
                 }
             }
         )

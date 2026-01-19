@@ -51,11 +51,12 @@ class AdminLogsService:
         await self.collection.insert_one(log_doc)
         return log_id
 
-    async def get_logs(self, limit: int = 100, skip: int = 0) -> list:
+    async def get_logs(self, limit: int = 100, skip: int = 0) -> dict:
         """Get admin logs with pagination"""
+        total_count = await self.collection.count_documents({})
         cursor = self.collection.find({}).sort("timestamp", -1).skip(skip).limit(limit)
         logs = await cursor.to_list(length=None)
-        return logs
+        return {"logs": logs, "total_count": total_count}
 
     async def get_logs_by_admin(self, admin_user_id: str, limit: int = 50) -> list:
         """Get logs for a specific admin"""
