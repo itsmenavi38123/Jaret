@@ -961,9 +961,42 @@ async def get_usage_signals(current_user: dict = Depends(require_admin_role)):
         insights_users = await feature_usage_service.get_unique_users_per_feature("insights", beta_user_ids)
         insights_viewed_percent = round((insights_users / total_beta_users) * 100, 2)
 
-        # Sessions (not available)
-        average_sessions_per_beta_user = None
-        median_session_length = None
+        # Sessions
+        login_logs_collection = get_collection("login_logs")
+        session_lengths = []
+        total_sessions = 0
+
+        for user_id in beta_user_ids:
+            # Get login times for this user
+            user_logins_cursor = login_logs_collection.find(
+                {"user_id": user_id},
+                {"login_time": 1, "_id": 0}
+            ).sort("login_time", 1)
+            user_logins = [doc["login_time"] async for doc in user_logins_cursor]
+            
+            if len(user_logins) > 1:
+                # Calculate session lengths as time between consecutive logins
+                for i in range(len(user_logins) - 1):
+                    duration = (user_logins[i+1] - user_logins[i]).total_seconds() / 60  # in minutes
+                    if duration > 0:  # avoid negative or zero
+                        session_lengths.append(duration)
+            
+            # Count sessions as number of logins (each login starts a session)
+            total_sessions += len(user_logins)
+
+        # Average sessions per beta user
+        average_sessions_per_beta_user = round(total_sessions / total_beta_users, 2) if total_beta_users > 0 else 0
+
+        # Median session length
+        if session_lengths:
+            session_lengths.sort()
+            n = len(session_lengths)
+            if n % 2 == 1:
+                median_session_length = round(session_lengths[n // 2], 2)
+            else:
+                median_session_length = round((session_lengths[n // 2 - 1] + session_lengths[n // 2]) / 2, 2)
+        else:
+            median_session_length = None
 
         return JSONResponse(
             status_code=200,

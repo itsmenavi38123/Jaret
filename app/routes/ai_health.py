@@ -6,6 +6,7 @@ from fastapi.responses import JSONResponse
 
 from app.routes.auth.auth import get_current_user
 from app.services.quickbooks_financial_service import quickbooks_financial_service
+from app.services.feature_usage_service import feature_usage_service
 
 router = APIRouter(tags=["ai-health"])
 
@@ -471,6 +472,9 @@ async def get_business_health_full(
         # Remove None values from response
         response = {k: v for k, v in response.items() if v is not None}
         response["Business Health"] = {k: v for k, v in response["Business Health"].items() if v is not None}
+
+        # Log successful insights view
+        await feature_usage_service.log_usage(user_id, "insights")
 
         return JSONResponse(
             status_code=status.HTTP_200_OK,

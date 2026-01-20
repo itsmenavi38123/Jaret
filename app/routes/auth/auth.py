@@ -337,6 +337,13 @@ async def login(credentials: UserLogin):
             {"$set": {"last_active": _now_utc()}}
         )
 
+        # Log login event for session tracking
+        login_logs = get_collection("login_logs")
+        await login_logs.insert_one({
+            "user_id": user_doc["_id"],
+            "login_time": _now_utc()
+        })
+
         # ✅ Role handling (default Viewer)
         role = user_doc.get("role") or "Viewer"
 

@@ -16,6 +16,7 @@ from app.services.research_scout_service import ResearchScoutService
 from app.services.quickbooks_financial_service import quickbooks_financial_service
 from app.agents.opportunities_agent import research_scout_opportunities
 from app.models.opportunities import Opportunity, OpportunityCreate, OpportunityUpdate
+from app.services.feature_usage_service import feature_usage_service
 from bson import ObjectId
 
 import os
@@ -638,29 +639,39 @@ class QuestionRequest(BaseModel):
     history: Optional[List[ChatMessage]] = []
 
 @router.post("/scenario")
-def ask_question(payload: QuestionRequest):
+async def ask_question(payload: QuestionRequest, current_user: dict = Depends(get_current_user)):
+    try:
+        user_id = current_user["id"]
 
-    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+        # Log feature usage for scenario planning
+        await feature_usage_service.log_usage(user_id, "scenario_planning")
 
-    for msg in payload.history:
-        messages.append({"role": msg.role, "content": msg.content})
+        messages = [{"role": "system", "content": SYSTEM_PROMPT}]
 
-    messages.append({"role": "user", "content": payload.question})
+        for msg in payload.history:
+            messages.append({"role": msg.role, "content": msg.content})
 
-    response = client.chat.completions.create(
-        model="gpt-4.1-mini",
-        temperature=0.4,
-        messages=messages
-    )
+        messages.append({"role": "user", "content": payload.question})
 
-    answer = response.choices[0].message.content.strip()
+        response = client.chat.completions.create(
+            model="gpt-4.1-mini",
+            temperature=0.4,
+            messages=messages
+        )
 
-    return JSONResponse(
-        status_code=status.HTTP_201_CREATED,
-        content={
-            "success": True,
-            "message": "Here is the response for the question you shared.",
-            "data": answer,
-            "created_at": datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
-        }
-    )
+        answer = response.choices[0].message.content.strip()
+
+        return JSONResponse(
+            status_code=status.HTTP_201_CREATED,
+            content={
+                "success": True,
+                "message": "Here is the response for the question you shared.",
+                "data": answer,
+                "created_at": datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+            }
+        )
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "error": str(e)}
+        )
