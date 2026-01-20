@@ -196,7 +196,8 @@ async def get_all_users(
                 "created_date": created_date.isoformat() if created_date else None,
                 "last_login_timestamp": last_login.isoformat() if last_login else None,
                 "signup_source": signup_source,
-                "is_paused": user.get("is_paused", False)
+                "is_paused": user.get("is_paused", False),
+                "is_beta": user.get("is_beta", False)
             }
             users_data.append(user_info)
 
@@ -651,11 +652,15 @@ async def get_beta_users(
     cohort: Optional[BetaCohort] = None,
     status: Optional[BetaStatus] = None,
     nda_required: Optional[bool] = None,
-    limit: int = 50,
-    skip: int = 0
+    page: int = 1,
+    per_page: int = 20
 ):
     try:
         beta_profiles_collection = get_collection("beta_profiles")
+
+        if page < 1:
+            page = 1
+        skip = (page - 1) * per_page
 
         # Build match conditions
         match_conditions = {"is_beta": True}
@@ -665,6 +670,10 @@ async def get_beta_users(
             match_conditions["beta_status"] = status
         if nda_required is not None:
             match_conditions["nda_required"] = nda_required
+
+        # Get total count
+        total_count = await beta_profiles_collection.count_documents(match_conditions)
+        total_pages = (total_count + per_page - 1) // per_page
 
         # Aggregation pipeline
         pipeline = [
@@ -687,19 +696,11 @@ async def get_beta_users(
                 "beta_updated_by": 1
             }},
             {"$skip": skip},
-            {"$limit": limit}
+            {"$limit": per_page}
         ]
 
         beta_users_cursor = beta_profiles_collection.aggregate(pipeline)
         beta_users = await beta_users_cursor.to_list(length=None)
-
-        # Get total count
-        count_pipeline = [
-            {"$match": match_conditions},
-            {"$count": "total"}
-        ]
-        count_result = await beta_profiles_collection.aggregate(count_pipeline).to_list(length=1)
-        total = count_result[0]["total"] if count_result else 0
 
         # Format response
         formatted_users = []
@@ -726,10 +727,12 @@ async def get_beta_users(
                 "success": True,
                 "data": formatted_users,
                 "pagination": {
-                    "total": total,
-                    "limit": limit,
-                    "skip": skip,
-                    "has_more": skip + limit < total
+                    "page": page,
+                    "per_page": per_page,
+                    "total_count": total_count,
+                    "total_pages": total_pages,
+                    "has_next": page < total_pages,
+                    "has_prev": page > 1
                 }
             }
         )

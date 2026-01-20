@@ -157,6 +157,12 @@ async def get_current_user_details(current_user: dict = Depends(get_current_user
                 status_code=status.HTTP_403_FORBIDDEN,
                 content={"success": False, "error": "Email not verified. Please verify your email."}
             )
+            
+        if user_doc.get("is_paused", False):
+            return JSONResponse(
+                status_code=status.HTTP_403_FORBIDDEN,
+                content={"success": False, "error": "Your account has been paused. Only admin can unpause your account. Contact Admin."}
+            )
 
 
         user_info = await _build_user_payload(user_doc)
