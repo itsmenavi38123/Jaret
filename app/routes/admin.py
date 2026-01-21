@@ -272,7 +272,8 @@ async def get_single_user(user_id: str, current_user: dict = Depends(require_adm
             "created_date": created_date.isoformat() if created_date else None,
             "last_login_timestamp": last_login.isoformat() if last_login else None,
             "signup_source": signup_source,
-            "is_paused": user.get("is_paused", False)
+            "is_paused": user.get("is_paused", False),
+            "is_beta": user.get("is_beta", False)
         }
 
         return JSONResponse(
