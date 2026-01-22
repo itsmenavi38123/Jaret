@@ -855,19 +855,23 @@ async def update_beta_notes(request: UpdateBetaNotesRequest, current_user: dict 
             content={"success": False, "error": str(e)}
         )
 
-@router.get("/support/onboarding-stuck")
-async def get_onboarding_stuck_users(
+@router.get("/support")
+async def get_all_support_issues(
     current_user: dict = Depends(require_admin_role),
-    days_threshold: int = Query(7, description="Days since last progress to consider stuck")
+    days_threshold: int = Query(7, description="Days since last progress to consider stuck"),
+    issue_type: Optional[str] = Query(None, description="Filter by issue_type: onboarding_stuck, verification_failed, auth_error, token_error"),
+    page: int = Query(1, ge=1, description="Page number (starts at 1)"),
+    per_page: int = Query(20, ge=1, le=100, description="Items per page")
 ):
     try:
         users_collection = get_collection("users")
+        tokens_collection = get_collection("email_verification_tokens")
         business_profiles_collection = get_collection("business_profiles")
-
+        
+        all_issues = []
+        
+        # 1. Get Onboarding Stuck Users
         cutoff_date = datetime.utcnow() - timedelta(days=days_threshold)
-
-        # Find verified users without business profiles or with old last_active
-        stuck_users = []
         async for user in users_collection.find({
             "is_verified": True,
             "$or": [
@@ -875,40 +879,31 @@ async def get_onboarding_stuck_users(
                 {"last_active": {"$exists": False}, "created_at": {"$lt": cutoff_date}}
             ]
         }):
-            # Check if they have business profile
             has_profile = await business_profiles_collection.count_documents({"user_id": user["_id"]}) > 0
             if not has_profile:
                 days_since = (datetime.utcnow() - (user.get("last_active") or user.get("created_at", datetime.utcnow()))).days
-                stuck_users.append({
+                issue = {
+                    "issue_id": f"onboarding_{user['_id']}",
                     "user_id": user["_id"],
                     "email": user.get("email"),
-                    "onboarding_state": "no_business_profile",
-                    "days_since_last_progress": days_since
-                })
-
-        return JSONResponse(
-            status_code=200,
-            content={"success": True, "data": stuck_users}
-        )
-
-    except Exception as e:
-        return JSONResponse(
-            status_code=500,
-            content={"success": False, "error": str(e)}
-        )
-
-@router.get("/support/verification-failures")
-async def get_verification_failures(
-    current_user: dict = Depends(require_admin_role)
-):
-    try:
-        users_collection = get_collection("users")
-        tokens_collection = get_collection("email_verification_tokens")
-
-        failures = []
+                    "issue_type": "onboarding_stuck",
+                    "severity": "high" if days_since > 30 else "medium",
+                    "title": "User Stuck in Onboarding",
+                    "description": f"No business profile setup. Last activity: {days_since} days ago",
+                    "days_since_last_progress": days_since,
+                    "created_at": user.get("created_at").isoformat() if user.get("created_at") else None,
+                    "last_active": user.get("last_active").isoformat() if user.get("last_active") else None,
+                    "metadata": {
+                        "is_verified": user.get("is_verified", False),
+                        "is_beta": user.get("is_beta", False)
+                    }
+                }
+                if not issue_type or issue_type == "onboarding_stuck":
+                    all_issues.append(issue)
+        
+        # 2. Get Verification Failures
         async for user in users_collection.find({"is_verified": False}):
             user_id = user["_id"]
-            # Check for expired tokens
             expired_tokens = await tokens_collection.count_documents({
                 "user_id": user_id,
                 "used": False,
@@ -919,53 +914,74 @@ async def get_verification_failures(
                     {"user_id": user_id},
                     sort=[("created_at", -1)]
                 )
-                failures.append({
+                hours_since = (datetime.utcnow() - (last_sent.get("created_at") if last_sent else datetime.utcnow())).total_seconds() / 3600
+                issue = {
+                    "issue_id": f"verification_{user_id}",
                     "user_id": user_id,
                     "email": user.get("email"),
-                    "verification_status": "unverified",
-                    "last_verification_sent_at": last_sent.get("created_at") if last_sent else None,
-                    "failure_reason": "expired"
-                })
-
+                    "issue_type": "verification_failed",
+                    "severity": "high",
+                    "title": "Email Verification Expired",
+                    "description": "Verification token expired. User needs new verification email.",
+                    "failure_reason": "expired",
+                    "last_verification_sent_at": last_sent.get("created_at").isoformat() if last_sent else None,
+                    "hours_since_sent": round(hours_since, 2),
+                    "created_at": user.get("created_at").isoformat() if user.get("created_at") else None,
+                    "metadata": {
+                        "is_verified": user.get("is_verified", False),
+                        "is_beta": user.get("is_beta", False)
+                    }
+                }
+                if not issue_type or issue_type == "verification_failed":
+                    all_issues.append(issue)
+        
+        # 3. Auth Errors (reserved for future use)
+        # Currently empty but structure ready for when auth error logs are available
+        if not issue_type or issue_type == "auth_error":
+            pass
+        
+        # 4. Token Issues (reserved for future use)
+        # Currently empty but structure ready for when token failure logs are available
+        if not issue_type or issue_type == "token_error":
+            pass
+        
+        # Sort by severity (high first) and then by creation date
+        severity_order = {"high": 0, "medium": 1, "low": 2}
+        all_issues.sort(key=lambda x: (
+            severity_order.get(x.get("severity", "low"), 99),
+            x.get("created_at", "")
+        ))
+        
+        # Get summary statistics (before pagination)
+        issue_summary = {
+            "onboarding_stuck": sum(1 for i in all_issues if i["issue_type"] == "onboarding_stuck"),
+            "verification_failed": sum(1 for i in all_issues if i["issue_type"] == "verification_failed"),
+            "auth_error": 0,  # Reserved
+            "token_error": 0   # Reserved
+        }
+        
+        # Apply pagination
+        total_count = len(all_issues)
+        total_pages = (total_count + per_page - 1) // per_page
+        skip = (page - 1) * per_page
+        paginated_issues = all_issues[skip:skip + per_page]
+        
         return JSONResponse(
             status_code=200,
-            content={"success": True, "data": failures}
-        )
-
-    except Exception as e:
-        return JSONResponse(
-            status_code=500,
-            content={"success": False, "error": str(e)}
-        )
-
-@router.get("/support/auth-errors")
-async def get_auth_errors(
-    current_user: dict = Depends(require_admin_role)
-):
-    try:
-        # For now, return empty as we don't have auth error logs yet
-        # In a real implementation, query logs for auth failures
-        return JSONResponse(
-            status_code=200,
-            content={"success": True, "data": []}
-        )
-
-    except Exception as e:
-        return JSONResponse(
-            status_code=500,
-            content={"success": False, "error": str(e)}
-        )
-
-@router.get("/support/token-issues")
-async def get_token_issues(
-    current_user: dict = Depends(require_admin_role)
-):
-    try:
-        # For now, return empty as we don't have token failure logs yet
-        # In a real implementation, query for expired/invalid tokens
-        return JSONResponse(
-            status_code=200,
-            content={"success": True, "data": []}
+            content={
+                "success": True,
+                "summary": issue_summary,
+                "total_issues": total_count,
+                "pagination": {
+                    "page": page,
+                    "per_page": per_page,
+                    "total_count": total_count,
+                    "total_pages": total_pages,
+                    "has_next": page < total_pages,
+                    "has_prev": page > 1
+                },
+                "data": paginated_issues
+            }
         )
 
     except Exception as e:
@@ -979,8 +995,11 @@ async def get_usage_signals(current_user: dict = Depends(require_admin_role)):
     try:
         users_collection = get_collection("users")
 
-        # Get beta user ids
-        beta_users_cursor = users_collection.find({"is_beta": True}, {"_id": 1})
+        # Get beta user ids (excluding admin users)
+        beta_users_cursor = users_collection.find(
+            {"is_beta": True, "role": {"$ne": "Admin"}}, 
+            {"_id": 1}
+        )
         beta_user_ids = [user["_id"] async for user in beta_users_cursor]
         total_beta_users = len(beta_user_ids)
 
@@ -993,8 +1012,9 @@ async def get_usage_signals(current_user: dict = Depends(require_admin_role)):
                     "accounting_connected_percent": 0,
                     "scenario_planning_opened_percent": 0,
                     "insights_viewed_percent": 0,
-                    "average_sessions_per_beta_user": None,
-                    "median_session_length": None
+                    "average_sessions_per_beta_user": 0,
+                    "median_session_length": None,
+                    "total_login_count": 0
                 }
             )
 
@@ -1019,10 +1039,11 @@ async def get_usage_signals(current_user: dict = Depends(require_admin_role)):
         insights_users = await feature_usage_service.get_unique_users_per_feature("insights", beta_user_ids)
         insights_viewed_percent = round((insights_users / total_beta_users) * 100, 2)
 
-        # Sessions
+        # Sessions and Session Length Calculation
         login_logs_collection = get_collection("login_logs")
         session_lengths = []
         total_sessions = 0
+        users_with_logins = 0
 
         for user_id in beta_user_ids:
             # Get login times for this user
@@ -1032,20 +1053,25 @@ async def get_usage_signals(current_user: dict = Depends(require_admin_role)):
             ).sort("login_time", 1)
             user_logins = [doc["login_time"] async for doc in user_logins_cursor]
             
-            if len(user_logins) > 1:
-                # Calculate session lengths as time between consecutive logins
-                for i in range(len(user_logins) - 1):
-                    duration = (user_logins[i+1] - user_logins[i]).total_seconds() / 60  # in minutes
-                    if duration > 0:  # avoid negative or zero
-                        session_lengths.append(duration)
-            
-            # Count sessions as number of logins (each login starts a session)
-            total_sessions += len(user_logins)
+            if len(user_logins) > 0:
+                users_with_logins += 1
+                # Count sessions as number of logins
+                total_sessions += len(user_logins)
+                
+                # Only calculate session duration if user has multiple logins
+                if len(user_logins) > 1:
+                    # Calculate time spent in app per session (time between consecutive logins)
+                    # This represents how long between sessions (inactive time)
+                    for i in range(len(user_logins) - 1):
+                        duration = (user_logins[i+1] - user_logins[i]).total_seconds() / 60  # in minutes
+                        if duration > 0:
+                            session_lengths.append(duration)
 
-        # Average sessions per beta user
+        # Average sessions per beta user (total logins / total beta users)
         average_sessions_per_beta_user = round(total_sessions / total_beta_users, 2) if total_beta_users > 0 else 0
 
-        # Median session length
+        # Median session interval (time between consecutive logins in minutes)
+        # This shows how frequently users return to the app
         if session_lengths:
             session_lengths.sort()
             n = len(session_lengths)
@@ -1065,7 +1091,7 @@ async def get_usage_signals(current_user: dict = Depends(require_admin_role)):
                 "scenario_planning_opened_percent": scenario_planning_opened_percent,
                 "insights_viewed_percent": insights_viewed_percent,
                 "average_sessions_per_beta_user": average_sessions_per_beta_user,
-                "median_session_length": median_session_length
+                "median_session_length": None
             }
         )
 
