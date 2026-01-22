@@ -13,6 +13,7 @@ class BetaStatus(str, Enum):
     invited = "invited"
     accepted = "accepted"
     onboarded = "onboarded"
+    active = "active"
     inactive = "inactive"
 
 class BetaProfile(BaseModel):

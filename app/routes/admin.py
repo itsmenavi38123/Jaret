@@ -44,12 +44,14 @@ class SetBetaRequest(BaseModel):
     is_beta: bool
     beta_cohort: Optional[BetaCohort] = None
     beta_status: Optional[BetaStatus] = None
-    nda_required: bool = False
     beta_notes: Optional[str] = None
 
 class UpdateBetaNotesRequest(BaseModel):
     user_id: str
     beta_notes: Optional[str] = None
+
+class BetaModeToggleRequest(BaseModel):
+    is_beta_mode_enabled: bool
 
 router = APIRouter(
     prefix="/admin",
@@ -138,6 +140,68 @@ async def get_admin_stats(current_user: dict = Depends(require_admin_role)):
             status_code=500,
             content={"success": False, "error": str(e)}
             )
+
+@router.post("/beta-mode")
+async def set_beta_mode(
+    request: BetaModeToggleRequest,
+    current_user: dict = Depends(require_admin_role)
+):
+    try:
+        settings_collection = get_collection("system_settings")
+
+        await settings_collection.update_one(
+            {"_id": "beta_mode"},
+            {
+                "$set": {
+                    "is_beta_mode_enabled": request.is_beta_mode_enabled,
+                    "updated_at": _now_utc(),
+                    "updated_by": current_user["id"]
+                }
+            },
+            upsert=True
+        )
+
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": True,
+                "message": f"Beta mode set to {'ON' if request.is_beta_mode_enabled else 'OFF'}",
+                "data": {
+                    "is_beta_mode_enabled": request.is_beta_mode_enabled
+                }
+            }
+        )
+
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "error": str(e)}
+        )
+
+@router.get("/beta-mode")
+async def get_beta_mode_status(current_user: dict = Depends(require_admin_role)):
+    try:
+        settings_collection = get_collection("system_settings")
+
+        setting = await settings_collection.find_one({"_id": "beta_mode"})
+        is_beta_mode_enabled = setting.get("is_beta_mode_enabled", False) if setting else False
+
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": True,
+                "data": {
+                    "is_beta_mode_enabled": is_beta_mode_enabled
+                }
+            }
+        )
+
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "error": str(e)}
+        )
+
 
 @router.get("/all-users")
 async def get_all_users(
@@ -604,7 +668,6 @@ async def set_user_beta_status(request: SetBetaRequest, current_user: dict = Dep
             "is_beta": request.is_beta,
             "beta_cohort": request.beta_cohort,
             "beta_status": request.beta_status,
-            "nda_required": request.nda_required,
             "beta_notes": request.beta_notes,
             "beta_updated_at": _now_utc(),
             "beta_updated_by": current_user["id"]
@@ -652,12 +715,14 @@ async def get_beta_users(
     current_user: dict = Depends(require_admin_role),
     cohort: Optional[BetaCohort] = None,
     status: Optional[BetaStatus] = None,
-    nda_required: Optional[bool] = None,
     page: int = 1,
     per_page: int = 20
 ):
     try:
+        users_collection = get_collection("users")
         beta_profiles_collection = get_collection("beta_profiles")
+        qb_tokens_collection = get_collection("quickbooks_tokens")
+        xero_tokens_collection = get_collection("xero_tokens")
 
         if page < 1:
             page = 1
@@ -665,62 +730,54 @@ async def get_beta_users(
 
         # Build match conditions
         match_conditions = {"is_beta": True}
-        if cohort:
-            match_conditions["beta_cohort"] = cohort
-        if status:
-            match_conditions["beta_status"] = status
-        if nda_required is not None:
-            match_conditions["nda_required"] = nda_required
 
         # Get total count
-        total_count = await beta_profiles_collection.count_documents(match_conditions)
+        total_count = await users_collection.count_documents(match_conditions)
         total_pages = (total_count + per_page - 1) // per_page
 
-        # Aggregation pipeline
-        pipeline = [
-            {"$match": match_conditions},
-            {"$lookup": {
-                "from": "users",
-                "localField": "user_id",
-                "foreignField": "_id",
-                "as": "user"
-            }},
-            {"$unwind": "$user"},
-            {"$project": {
-                "user_id": 1,
-                "email": "$user.email",
-                "beta_cohort": 1,
-                "beta_status": 1,
-                "nda_required": 1,
-                "beta_notes": 1,
-                "beta_updated_at": 1,
-                "beta_updated_by": 1
-            }},
-            {"$skip": skip},
-            {"$limit": per_page}
-        ]
-
-        beta_users_cursor = beta_profiles_collection.aggregate(pipeline)
+        # Get beta users
+        beta_users_cursor = users_collection.find(match_conditions).skip(skip).limit(per_page)
         beta_users = await beta_users_cursor.to_list(length=None)
 
-        # Format response
+        # Format response with dynamic beta status calculation
         formatted_users = []
+        thirty_days_ago = datetime.utcnow() - timedelta(days=30)
+        
         for user in beta_users:
+            user_id = user.get("_id")
+            
+            # Calculate beta status based on user state
+            calculated_status = BetaStatus.invited  # Default
+            
+            # Check if user is inactive (last 30 days no activity)
+            last_active = user.get("last_active")
+            if last_active and last_active < thirty_days_ago:
+                calculated_status = BetaStatus.inactive
+            # Check if accounting connected (QB or Xero)
+            elif user_id:
+                qb_tokens = await qb_tokens_collection.find_one({"user_id": user_id})
+                xero_tokens = await xero_tokens_collection.find_one({"user_id": user_id})
+                
+                if qb_tokens or xero_tokens:
+                    calculated_status = BetaStatus.onboarded
+                # Check if verified
+                elif user.get("is_verified", False):
+                    calculated_status = BetaStatus.accepted
+            
+            # Apply filter if status parameter is provided
+            if status and calculated_status != status:
+                continue
+            
             formatted_users.append({
-                "user_id": user["user_id"],
-                "email": user["email"],
+                "user_id": user_id,
+                "email": user.get("email"),
                 "beta_cohort": user.get("beta_cohort"),
-                "beta_status": user.get("beta_status"),
-                "nda_required": user.get("nda_required", False),
+                "beta_status": calculated_status,
                 "beta_notes": user.get("beta_notes") or None,
-                "beta_updated_at": (
-                    user.get("beta_updated_at").isoformat()
-                    if user.get("beta_updated_at")
-                    else None
-                ),
-                "beta_updated_by": user.get("beta_updated_by")
+                "is_verified": user.get("is_verified", False),
+                "last_active": user.get("last_active").isoformat() if user.get("last_active") else None,
+                "created_at": user.get("created_at").isoformat() if user.get("created_at") else None
             })
-
 
         return JSONResponse(
             status_code=200,

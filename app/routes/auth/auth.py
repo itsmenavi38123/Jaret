@@ -254,6 +254,12 @@ async def register(user: UserCreate, request: Request):
             )
 
         user_id = str(uuid4())
+        
+        # Get the global beta mode setting
+        settings_collection = get_collection("system_settings")
+        beta_mode_setting = await settings_collection.find_one({"_id": "beta_mode"})
+        is_beta_mode_enabled = beta_mode_setting.get("is_beta_mode_enabled", False) if beta_mode_setting else False
+        
         to_insert = {
             "_id": user_id,
             "full_name": user.full_name,
@@ -261,7 +267,7 @@ async def register(user: UserCreate, request: Request):
             "password_hash": hash_password(user.password),
             "company_name": user.company_name,
             "is_verified": False,
-            "is_beta": False, 
+            "is_beta": is_beta_mode_enabled,
             "role": "Client",  # Default role for new users
             "signup_source": user.signup_source,
             "is_paused": False,  # New accounts are not paused
