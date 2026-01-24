@@ -11,7 +11,7 @@ class BusinessProfile(BaseModel):
 
     class Config:
         populate_by_name = True
-        orm_mode = True
+        from_attributes = True
         json_encoders = {
             datetime: lambda v: v.isoformat(),
         }

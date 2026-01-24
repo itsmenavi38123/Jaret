@@ -5,6 +5,8 @@ import httpx
 from fastapi import HTTPException
 
 from app.config import settings
+from app.services.system_health_logs_service import system_health_logs_service
+from app.models.system_health_logs import SystemHealthLogCreate
 
 AUTH_BASE_URL = "https://login.xero.com/identity/connect/authorize"
 TOKEN_URL = "https://identity.xero.com/connect/token"
@@ -45,6 +47,14 @@ async def exchange_code_for_tokens(code: str, redirect_uri: Optional[str] = None
         response = await client.post(TOKEN_URL, data=payload, headers=headers)
 
     if response.status_code != httpx.codes.OK:
+        # Log API error
+        await system_health_logs_service.log_error(SystemHealthLogCreate(
+            log_type="api_error",
+            service="xero",
+            endpoint="token_exchange",
+            error_message=f"Xero token exchange failed: {response.text}",
+            status_code=response.status_code
+        ))
         raise HTTPException(status_code=response.status_code, detail=response.text)
 
     return response.json()
@@ -65,6 +75,14 @@ async def refresh_access_token(refresh_token: str) -> Dict[str, Any]:
         response = await client.post(TOKEN_URL, data=payload, headers=headers)
 
     if response.status_code != httpx.codes.OK:
+        # Log API error
+        await system_health_logs_service.log_error(SystemHealthLogCreate(
+            log_type="api_error",
+            service="xero",
+            endpoint="token_refresh",
+            error_message=f"Xero token refresh failed: {response.text}",
+            status_code=response.status_code
+        ))
         raise HTTPException(status_code=response.status_code, detail=response.text)
 
     return response.json()
@@ -78,5 +96,13 @@ async def get_connections(access_token: str) -> list[Dict[str, Any]]:
     async with httpx.AsyncClient(timeout=20.0) as client:
         response = await client.get(CONNECTIONS_URL, headers=headers)
     if response.status_code != httpx.codes.OK:
+        # Log API error
+        await system_health_logs_service.log_error(SystemHealthLogCreate(
+            log_type="api_error",
+            service="xero",
+            endpoint="connections",
+            error_message=f"Xero get connections failed: {response.text}",
+            status_code=response.status_code
+        ))
         raise HTTPException(status_code=response.status_code, detail=response.text)
     return response.json()

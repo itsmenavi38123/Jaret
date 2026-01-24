@@ -1102,3 +1102,21 @@ async def get_usage_signals(current_user: dict = Depends(require_admin_role)):
         )
 
 
+@router.get("/health")
+async def get_system_health(current_user: dict = Depends(require_admin_role), hours: int = 24):
+    """
+    Get comprehensive system health metrics for admin dashboard
+    """
+    try:
+        health_data = await system_health_service.get_health_metrics(hours)
+
+        return JSONResponse(
+            status_code=200,
+            content=health_data
+        )
+
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "error": str(e)}
+        )

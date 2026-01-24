@@ -8,6 +8,8 @@ from typing import Any, Dict, Optional
 import asyncio
 import httpx
 from fastapi import HTTPException, status
+from app.services.system_health_logs_service import system_health_logs_service
+from app.models.system_health_logs import SystemHealthLogCreate
 
 AUTH_BASE_URL = "https://appcenter.intuit.com/connect/oauth2"
 TOKEN_URL = "https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer"
@@ -176,6 +178,15 @@ async def _perform_qbo_request(method: str, url: str, access_token: str, **kwarg
                 else:
                     # Retries exhausted
                     print(f"❌ QuickBooks 429 Throttle Exhausted after {max_retries} retries.")
+                    # Log rate limit error
+                    await system_health_logs_service.log_error(SystemHealthLogCreate(
+                        log_type="rate_limit_warning",
+                        service="quickbooks",
+                        endpoint=endpoint,
+                        error_message="QuickBooks API rate limit exceeded",
+                        status_code=429,
+                        user_id=user_id
+                    ))
                     raise HTTPException(
                         status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                         detail="QuickBooks API rate limit exceeded. Please try again later.",
@@ -183,6 +194,15 @@ async def _perform_qbo_request(method: str, url: str, access_token: str, **kwarg
             
             # Check for other errors
             if response.status_code == 401:
+                # Log auth error
+                await system_health_logs_service.log_error(SystemHealthLogCreate(
+                    log_type="api_error",
+                    service="quickbooks",
+                    endpoint=endpoint,
+                    error_message="Access token expired or invalid",
+                    status_code=401,
+                    user_id=user_id
+                ))
                 raise QuickBooksUnauthorizedError("Access token expired or invalid")
                 
             if response.status_code != 200:
@@ -194,6 +214,16 @@ async def _perform_qbo_request(method: str, url: str, access_token: str, **kwarg
                     msg = fault.get("Message") or fault.get("Detail") or response.text
                 except:
                     msg = response.text
+                
+                # Log API error
+                await system_health_logs_service.log_error(SystemHealthLogCreate(
+                    log_type="api_error",
+                    service="quickbooks",
+                    endpoint=endpoint,
+                    error_message=f"QuickBooks API Error: {msg}",
+                    status_code=response.status_code,
+                    user_id=user_id
+                ))
                     
                 raise HTTPException(
                     status_code=response.status_code,
