@@ -268,7 +268,7 @@ async def register(user: UserCreate, request: Request):
             "company_name": user.company_name,
             "is_verified": False,
             "is_beta": is_beta_mode_enabled,
-            "role": "Client",  # Default role for new users
+            "role": "Viewer",  # Default role for new users
             "signup_source": user.signup_source,
             "is_paused": False,  # New accounts are not paused
             "last_active": _now_utc(),
