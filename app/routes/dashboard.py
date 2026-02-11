@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 
 from app.routes.auth.auth import get_current_user
 from app.services.dashboard_service import dashboard_service
+from app.services.reminders_service import reminders_service
 
 router = APIRouter(tags=["dashboard"])
 
@@ -72,8 +73,19 @@ async def get_dashboard_reminders(
     limit: int = Query(5, ge=1, le=20),
     current_user: dict = Depends(get_current_user),
 ):
+    """
+    Get dynamic reminders from QuickBooks data.
+    
+    Includes:
+    - Overdue invoices
+    - Upcoming bill payments
+    - Pending payroll
+    - Tax calendar deadlines
+    
+    Returns top reminders sorted by priority (overdue first) and due date.
+    """
     try:
-        reminders = await dashboard_service.get_reminders(
+        reminders = await reminders_service.get_dynamic_reminders(
             user_id=current_user["id"],
             limit=limit,
         )

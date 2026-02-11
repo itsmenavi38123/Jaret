@@ -23,7 +23,6 @@ class DashboardService:
     def __init__(self):
         self.qb_financial_service = QuickBooksFinancialService()
         self.manual_entries = get_collection("manual_entries")
-        self.reminders_collection = get_collection("reminders")
         self.gemini_service = GeminiService()
     
     async def get_dashboard_data(
@@ -80,7 +79,6 @@ class DashboardService:
             financial_overview,
             alerts_payload.get("alerts", []),
         )
-        reminders_preview = await self.get_reminders(user_id=user_id, limit=3)
         insights_summary = await self._get_dashboard_insights_summary(user_id, financial_overview)
 
         return {
@@ -91,7 +89,6 @@ class DashboardService:
             "ai_health": ai_components,
             "ai_insights": insights_summary,
             "quick_actions": self._default_quick_actions(),
-            "reminders_preview": reminders_preview,
             "generated_at": datetime.now(timezone.utc).isoformat(),
         }
 
@@ -411,27 +408,7 @@ class DashboardService:
             return value
         return datetime.now(timezone.utc).isoformat()
 
-    def _default_reminders(self, now: datetime) -> List[Dict[str, Any]]:
-        return [
-            {
-                "label": "Quarterly tax estimate",
-                "due_date": now + timedelta(days=10),
-                "action_type": "tax",
-                "category": "compliance",
-            },
-            {
-                "label": "Payroll run",
-                "due_date": now + timedelta(days=14),
-                "action_type": "payroll",
-                "category": "operations",
-            },
-            {
-                "label": "Follow up overdue invoices",
-                "due_date": now + timedelta(days=3),
-                "action_type": "collections",
-                "category": "cash",
-            },
-        ]
+
     
     async def get_contextual_alerts(
         self,
@@ -520,39 +497,7 @@ class DashboardService:
             "generated_at": datetime.now(timezone.utc).isoformat()
         }
 
-    async def get_reminders(
-        self,
-        user_id: str,
-        limit: int = 5,
-    ) -> List[Dict[str, Any]]:
-        """Upcoming reminders from stored config plus derived placeholders."""
-        now = datetime.now(timezone.utc)
-        cursor = (
-            self.reminders_collection.find(
-                {
-                    "user_id": user_id,
-                    "due_date": {"$gte": now},
-                }
-            )
-            .sort("due_date", 1)
-            .limit(limit)
-        )
-        reminders = await cursor.to_list(length=limit)
-        if not reminders:
-            reminders = self._default_reminders(now)
 
-        normalized: List[Dict[str, Any]] = []
-        for reminder in reminders:
-            normalized.append(
-                {
-                    "id": str(reminder.get("_id", "")),
-                    "label": reminder.get("label"),
-                    "due_date": self._serialize_datetime(reminder.get("due_date", now)),
-                    "action_type": reminder.get("action_type", "general"),
-                    "category": reminder.get("category", "general"),
-                }
-            )
-        return normalized[:limit]
 
     async def record_manual_entry(
         self,
