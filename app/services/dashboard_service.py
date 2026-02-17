@@ -12,6 +12,7 @@ from app.db import get_collection
 from app.services.ai_insights_service import ai_insights_service
 from app.services.gemini_service import GeminiService
 from app.services.quickbooks_financial_service import QuickBooksFinancialService
+from app.services.finance_analyst_service import finance_analyst_service
 
 
 class DashboardService:
@@ -24,6 +25,9 @@ class DashboardService:
         self.qb_financial_service = QuickBooksFinancialService()
         self.manual_entries = get_collection("manual_entries")
         self.gemini_service = GeminiService()
+        # Cache for dashboard insights: {user_id: {"data": insights, "timestamp": epoch_ms}}
+        self._insights_cache: Dict[str, Dict[str, Any]] = {}
+        self._cache_ttl_seconds = 5 * 60  # 5 minutes
     
     async def get_dashboard_data(
         self,
@@ -566,12 +570,153 @@ class DashboardService:
         self,
         user_id: str,
     ) -> Dict[str, Any]:
-        financial_overview = await self.qb_financial_service.get_financial_overview(user_id)
-        return await ai_insights_service.get_latest_insights(
-            user_id=user_id,
-            financial_data=financial_overview,
-            business_profile=None,
+        """
+        Get AI-powered dashboard insights with 5-minute caching.
+        
+        Returns summary, alerts, insight_pairs, opportunities, what_changed.
+        """
+        # Check cache first
+        cached = self._get_cached_insights(user_id)
+        if cached:
+            return cached
+        
+        # Get current and prior KPIs
+        (
+            current_kpis,
+            prior_kpis,
+            financial_overview,
+        ) = await asyncio.gather(
+            self.qb_financial_service.get_dashboard_kpis(user_id),
+            self._get_prior_period_kpis(user_id),
+            self.qb_financial_service.get_financial_overview(user_id),
         )
+        
+        # Build context object for Finance Analyst
+        context = self._build_financial_analyst_context(
+            current_kpis,
+            prior_kpis,
+            financial_overview,
+        )
+        
+        # Call Finance Analyst
+        insights = await finance_analyst_service.analyze_dashboard(context)
+        
+        # Cache the result
+        self._cache_insights(user_id, insights)
+        
+        return insights
+    
+    def _get_cached_insights(self, user_id: str) -> Optional[Dict[str, Any]]:
+        """Check if cached insights are still valid (5 min TTL)."""
+        if user_id not in self._insights_cache:
+            return None
+        
+        cached_entry = self._insights_cache[user_id]
+        timestamp = cached_entry.get("timestamp", 0)
+        age_seconds = (datetime.now(timezone.utc).timestamp() * 1000 - timestamp) / 1000
+        
+        if age_seconds < self._cache_ttl_seconds:
+            return cached_entry.get("data")
+        
+        # Cache expired, remove it
+        del self._insights_cache[user_id]
+        return None
+    
+    def _cache_insights(self, user_id: str, insights: Dict[str, Any]) -> None:
+        """Store insights in cache with timestamp."""
+        self._insights_cache[user_id] = {
+            "data": insights,
+            "timestamp": datetime.now(timezone.utc).timestamp() * 1000,
+        }
+    
+    def _build_financial_analyst_context(
+        self,
+        current_kpis: Dict[str, Any],
+        prior_kpis: Dict[str, Any],
+        financial_overview: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Build context object for Financial Analyst agent."""
+        # Extract current period data
+        current_period = {
+            "revenue": current_kpis.get("revenue_mtd", 0),
+            "expenses": financial_overview.get("kpis", {}).get("expenses_mtd", 0),
+            "gross_margin_pct": financial_overview.get("kpis", {}).get("gross_margin_pct", 0),
+            "net_margin_pct": current_kpis.get("net_margin_pct", 0),
+            "cash_balance": current_kpis.get("cash", 0),
+            "runway_months": current_kpis.get("runway_months", 0),
+            "accounts_receivable": financial_overview.get("kpis", {}).get("accounts_receivable", 0),
+            "days_sales_outstanding": financial_overview.get("kpis", {}).get("days_sales_outstanding", 0),
+            "current_ratio": financial_overview.get("liquidity", {}).get("current_ratio"),
+            "debt_service_coverage_ratio": financial_overview.get("kpis", {}).get("debt_service_coverage_ratio"),
+        }
+        
+        # Extract prior period data for comparison
+        prior_period = {
+            "revenue": prior_kpis.get("revenue_mtd", 0),
+            "expenses": prior_kpis.get("expenses_mtd", 0),
+            "net_margin_pct": prior_kpis.get("net_margin_pct", 0),
+            "runway_months": prior_kpis.get("runway_months", 0),
+            "days_sales_outstanding": prior_kpis.get("days_sales_outstanding", 0),
+        }
+        
+        # Extract breakdown data if available
+        breakdown = self._extract_breakdown_data(financial_overview)
+        
+        # Extract flags
+        flags = self._calculate_alert_flags(current_kpis, prior_kpis, financial_overview)
+        
+        return {
+            "current_period": current_period,
+            "prior_period": prior_period,
+            "breakdown": breakdown,
+            "flags": flags,
+        }
+    
+    def _extract_breakdown_data(self, financial_overview: Dict[str, Any]) -> Dict[str, Any]:
+        """Extract revenue/expense breakdown from financial overview."""
+        breakdown = {}
+        
+        # Extract revenue by segment/category if available
+        if "revenue_by_segment" in financial_overview:
+            breakdown["revenue_by_segment"] = financial_overview["revenue_by_segment"]
+        
+        if "revenue_by_product" in financial_overview:
+            breakdown["revenue_by_product"] = financial_overview["revenue_by_product"]
+        
+        # Extract expenses by category if available
+        if "expenses_by_category" in financial_overview:
+            breakdown["expenses_by_category"] = financial_overview["expenses_by_category"]
+        
+        return breakdown
+    
+    def _calculate_alert_flags(
+        self,
+        current_kpis: Dict[str, Any],
+        prior_kpis: Dict[str, Any],
+        financial_overview: Dict[str, Any],
+    ) -> Dict[str, bool]:
+        """Calculate boolean flags for alert conditions."""
+        current_kpis_data = financial_overview.get("kpis", {})
+        
+        runway = current_kpis.get("runway_months", 0)
+        revenue_curr = current_kpis.get("revenue_mtd", 0)
+        revenue_prior = prior_kpis.get("revenue_mtd", 0)
+        margin_curr = current_kpis.get("net_margin_pct", 0)
+        margin_prior = prior_kpis.get("net_margin_pct", 0)
+        dso = current_kpis_data.get("days_sales_outstanding", 0)
+        overdue_invoices = current_kpis_data.get("overdue_invoices_amount", 0)
+        
+        # Check for negative cash flow
+        cash_flow_mtd = current_kpis_data.get("cash_flow_mtd", 0)
+        
+        return {
+            "low_runway": runway < 6 if runway else True,
+            "negative_cash_flow": cash_flow_mtd < 0 if cash_flow_mtd is not None else False,
+            "revenue_decline": revenue_curr < revenue_prior if revenue_prior else False,
+            "margin_compression": margin_curr < margin_prior if margin_prior else False,
+            "ar_aging_issue": dso > 45 if dso else False,
+            "overdue_invoices_amount": float(overdue_invoices) if overdue_invoices else 0,
+        }
 
     async def explain_dashboard_with_gemini(
         self,

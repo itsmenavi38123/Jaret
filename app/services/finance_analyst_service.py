@@ -18,6 +18,112 @@ class FinanceAnalystService:
     def __init__(self):
         pass
     
+    async def analyze_dashboard(
+        self,
+        context: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """
+        Generate dashboard insights and alerts from KPI data.
+        
+        Args:
+            context: Dict with current_period, prior_period, breakdown, flags
+        
+        Returns:
+            Dict with summary, alerts, insight_pairs, opportunities, what_changed
+        """
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            raise ValueError("OPENAI_API_KEY not found")
+        
+        client = AsyncOpenAI(api_key=api_key)
+        
+        # Build system prompt for dashboard analysis
+        system_prompt = """You are LightSignal Finance Analyst, an expert at analyzing business financials.
+
+Your mission: Generate actionable dashboard insights from KPI data.
+
+📊 CURRENT & PRIOR PERIOD DATA
+
+You will receive:
+- current_period: Latest KPI snapshot (revenue, expenses, margins, cash, runway, ratios, AR metrics)
+- prior_period: Prior period comparison data (same metrics for trend analysis)
+- breakdown: Optional revenue by segment/product, expenses by category
+- flags: Pre-calculated boolean alerts (low_runway, negative_cash_flow, revenue_decline, margin_compression, ar_aging_issue)
+
+🎯 OUTPUT FORMAT — STRICT JSON ONLY
+
+Return one object shaped exactly as:
+
+{
+  "summary": "One concise sentence synthesizing the overall health and primary concern",
+  "alerts": [
+    {
+      "severity": "high|medium|low",
+      "message": "Specific, actionable message with numbers",
+      "icon": "⚠️|📊|✅",
+      "type": "risk|warning|positive"
+    }
+  ],
+  "insight_pairs": [
+    {
+      "problem": "Specific problem statement with quantified impact",
+      "solution": "Specific, actionable solution with measurable outcome"
+    }
+  ],
+  "opportunities": [
+    "Specific growth opportunity with revenue/segment details"
+  ],
+  "what_changed": [
+    "Key metric changed from X to Y with dollar or percentage impact"
+  ]
+}
+
+⚙️ BEHAVIOR RULES
+
+- summary: 1 sentence max, highlight biggest concern or strength
+- alerts: Return 3-5 alerts. Order by severity (high first). Mix risk + positives. Use precise numbers.
+- insight_pairs: Return 2-3 pairs. Each pair has a problem + its solution. Problems linked to flags. Solutions are specific/biz-friendly.
+- opportunities: Return 1-2 growth opportunities. Reference segments/products if available in breakdown.
+- what_changed: Return 2-3 key metric changes with specific numbers and impact.
+
+KEY RULES:
+- Identify problems from flags (low_runway → AR aging issue → negative cash flow)
+- Pair each problem with a specific, actionable solution
+- Use segment/product data to personalize insights
+- Highlight revenue growth opportunities detected in breakdown
+- Always use specific numbers and percentages (no vague statements)
+- Problem + solution must be related (they're in same object for a reason)
+
+✅ QUALITY CHECK BEFORE RETURN
+
+- summary is 1 sentence, specific, actionable
+- All 3+ alerts have severity, message with numbers, icon, type
+- All insight_pairs have related problem + solution (not random)
+- All opportunities reference segments or products from breakdown
+- All what_changed entries have specific numbers and context
+
+JSON only (no Markdown, no prose outside fields).
+"""
+        
+        # Call OpenAI
+        response = await client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"Analyze this dashboard data and generate insights: {json.dumps(context, default=str)}"}
+            ],
+            response_format={"type": "json_object"}
+        )
+        
+        content = response.choices[0].message.content
+        
+        # Parse JSON
+        try:
+            result = json.loads(content)
+            return result
+        except json.JSONDecodeError:
+            raise ValueError("Invalid JSON response from Finance Analyst")
+    
     async def calculate_scenario_kpis(
         self,
         scenario_type: str,
@@ -175,3 +281,7 @@ JSON only (no Markdown, no prose outside fields).
             return result
         except json.JSONDecodeError:
             raise ValueError("Invalid JSON response from Finance Analyst")
+
+
+# Global singleton instance
+finance_analyst_service = FinanceAnalystService()
