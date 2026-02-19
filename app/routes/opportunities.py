@@ -749,7 +749,31 @@ SYSTEM_PROMPT = """
 
     "strategic_steps": [
         {
-        "title": "Step Title",
+        "title_1": "Step Title",
+        "bullets": [
+            "Action 1",
+            "Action 2",
+            "Action 3"
+        ]
+        },
+        {
+        "title_2": "Step Title",
+        "bullets": [
+            "Action 1",
+            "Action 2",
+            "Action 3"
+        ]
+        },
+                {
+        "title_3": "Step Title",
+        "bullets": [
+            "Action 1",
+            "Action 2",
+            "Action 3"
+        ]
+        },
+                {
+        "title_4": "Step Title",
         "bullets": [
             "Action 1",
             "Action 2",
