@@ -14,6 +14,7 @@ from app.routes.auth.auth import get_current_user
 from app.db import get_collection
 from app.services.research_scout_service import ResearchScoutService
 from app.services.quickbooks_financial_service import quickbooks_financial_service
+from app.services.finance_analyst_service import finance_analyst_service
 from app.agents.opportunities_agent import research_scout_opportunities
 from app.models.opportunities import Opportunity, OpportunityCreate, OpportunityUpdate
 from app.services.feature_usage_service import feature_usage_service
@@ -22,7 +23,8 @@ from bson import ObjectId
 import os
 from pydantic import BaseModel
 from dotenv import load_dotenv
-from openai import OpenAI
+from openai import OpenAI, AsyncOpenAI
+import json
 from datetime import datetime
 from typing import List, Optional
 from fastapi import FastAPI
@@ -580,72 +582,249 @@ async def delete_opportunity(
         )
 
 
+
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-client = OpenAI(api_key=OPENAI_API_KEY)
+if not OPENAI_API_KEY:
+    raise ValueError("OPENAI_API_KEY not found")
+
+client_async = AsyncOpenAI(api_key=OPENAI_API_KEY)
 
 
-app = FastAPI(title="LightSignal Scenario Planning API")
-
-class QuestionRequest(BaseModel):
-    question: str
-
-SYSTEM_PROMPT = """
-You are the LightSignal Scenario Planning Lab.
-
-You are a calm, experienced decision partner for small business owners.
-You are NOT a chatbot and NOT a motivational speaker.
-
-Your role:
-- Help business owners think through real decisions
-- Speak in plain, simple language
-- Be realistic, practical, and reassuring
-- Avoid jargon and buzzwords
-- Never guarantee outcomes
-
-For every “what if” or decision question:
-You should naturally cover:
-- Is this feasible or risky?
-- What happens to cash, profit, and runway at a high level?
-- Pros and cons
-- Hidden risks or things people miss
-- What similar businesses usually do
-- Alternatives (wait, smaller step, do nothing)
-- A simple, practical recommendation
-
-IMPORTANT RULES:
-- Do NOT invent numbers
-- If data is missing, speak qualitatively
-- Use ranges or directional language only
-- Do NOT mention tools, APIs, models, or data sources
-- Do NOT use markdown
-- Do NOT return JSON
-- Return ONLY natural text, like a real advisor talking
-
-Tone:
-Clear. Calm. Honest. Supportive. Business-practical.
-
-Length:
-3–8 short paragraphs or bullet-style sentences.
-"""
-
+# =========================
+# REQUEST MODELS
+# =========================
 
 class ChatMessage(BaseModel):
     role: str
     content: str
 
+
 class QuestionRequest(BaseModel):
     question: str
     history: Optional[List[ChatMessage]] = []
+
+
+# =========================
+# SYSTEM PROMPT (STRUCTURED)
+# =========================
+
+SYSTEM_PROMPT = """
+    You are the LightSignal Scenario Planning Lab.
+
+    You are a conversational, agent-driven decision partner for small business owners.
+
+    You operate in TWO MODES ONLY.
+
+    ========================================
+    MODE 1: CLARIFICATION
+    ========================================
+
+    If you need additional information before running financial analysis,
+    you MUST return EXACTLY this JSON structure:
+
+    {
+    "type": "clarification",
+    "message": "Your clarification question here"
+    }
+
+    Rules:
+    - Ask maximum 3 clarification questions.
+    - Ask only high-value questions that materially change financial results.
+    - Do NOT include any additional text outside JSON.
+    - Do NOT include explanations outside the JSON.
+    - Do NOT use markdown.
+
+    ========================================
+    MODE 2: SCENARIO RESULT
+    ========================================
+
+    When you have enough information, you MUST return ONE JSON object
+    with EXACTLY the following structure.
+
+    Do NOT include any text outside this JSON.
+
+    {
+    "type": "scenario_result",
+
+    "headline": "Short executive summary sentence (clear, calm, decision-oriented).",
+
+    "confidence": {
+        "score": 0,
+        "label": "High | Moderate | Low",
+        "explanation": "Short explanation of why this confidence level."
+    },
+
+    "risk": {
+        "level": "High | Medium | Low",
+        "score": 0,
+        "factors": [
+        "Risk factor 1",
+        "Risk factor 2"
+        ]
+    },
+
+    "impact_cards": [
+        {
+        "id": "card_1",
+        "label": "Card Title",
+        "value": "Formatted Value",
+        "format": "currency | range_percentage | range_months | months_range | category | range_currency",
+        "severity": "high | medium | low",
+        "details": {
+            "best": 0,
+            "expected": 0,
+            "worst": 0,
+            "baseline_value": 0,
+            "explanation": "Explanation of calculation"
+        }
+        },
+        {
+        "id": "card_2",
+        "label": "Card Title",
+        "value": "Formatted Value",
+        "format": "currency | range_percentage | range_months | months_range | category | range_currency",
+        "severity": "high | medium | low",
+        "details": {
+            "best": 0,
+            "expected": 0,
+            "worst": 0,
+            "baseline_value": 0,
+            "explanation": "Explanation of calculation"
+        }
+        },
+        {
+        "id": "card_3",
+        "label": "Card Title",
+        "value": "Formatted Value",
+        "format": "currency | range_percentage | range_months | months_range | category | range_currency",
+        "severity": "high | medium | low",
+        "details": {
+            "best": 0,
+            "expected": 0,
+            "worst": 0,
+            "baseline_value": 0,
+            "explanation": "Explanation of calculation"
+        }
+        },
+        {
+        "id": "card_4",
+        "label": "Card Title",
+        "value": "Formatted Value",
+        "format": "currency | range_percentage | range_months | months_range | category | range_currency",
+        "severity": "high | medium | low",
+        "details": {
+            "best": 0,
+            "expected": 0,
+            "worst": 0,
+            "baseline_value": 0,
+            "explanation": "Explanation of calculation"
+        }
+        }
+    ],
+
+    "financial_sensitivity": {
+        "type": "line",
+        "title": "Financial Sensitivity (Best/Expected/Worst)",
+        "x_axis": ["Month 1", "Month 2", "Month 3", "Month 4", "Month 5", "Month 6"],
+        "series": {
+        "best": [0,0,0,0,0,0],
+        "expected": [0,0,0,0,0,0],
+        "worst": [0,0,0,0,0,0]
+        }
+    },
+
+    "demand_response_curve": {
+        "type": "curve",
+        "title": "Demand Response Curve",
+        "data": [
+        {"x": 0, "y": 100},
+        {"x": 20, "y": 90},
+        {"x": 40, "y": 75},
+        {"x": 60, "y": 60},
+        {"x": 80, "y": 50},
+        {"x": 100, "y": 40}
+        ]
+    },
+
+    "strategic_steps": [
+        {
+        "title": "Step Title",
+        "bullets": [
+            "Action 1",
+            "Action 2",
+            "Action 3"
+        ]
+        }
+    ],
+
+    "pros": [
+        "Pro 1",
+        "Pro 2",
+        "Pro 3"
+    ],
+
+    "cons": [
+        "Con 1",
+        "Con 2",
+        "Con 3"
+    ],
+
+    "things_to_keep_in_mind": [
+        "Important consideration 1",
+        "Important consideration 2"
+    ],
+
+    "peer_context": "Short paragraph explaining what similar businesses typically experience.",
+
+    "cost_response_insight": "Short practical insight about cost and response tradeoffs.",
+
+    "assumptions_table": [
+        {
+        "key": "assumption_name",
+        "value": 0,
+        "source": "user | accounting | profile | prior",
+        "note": "Explanation of assumption"
+        }
+    ],
+
+    "recommendation": {
+        "decision": "Proceed | Proceed with caution | Delay | Do not proceed",
+        "reasoning": "Clear explanation of recommended action.",
+        "next_steps": [
+        "Next step 1",
+        "Next step 2",
+        "Next step 3"
+        ]
+    }
+    }
+
+    ========================================
+    STRICT RULES
+    ========================================
+
+    - NEVER return markdown.
+    - NEVER return explanation outside JSON.
+    - NEVER hallucinate numbers.
+    - ALWAYS use tools for financial data.
+    - ALWAYS return exactly 4 impact_cards.
+    - ALWAYS include confidence, risk, charts, assumptions_table.
+    - If scenario does not require demand_response_curve, return null.
+    - Output must be valid JSON only.
+    """
+
+# =========================
+# ENDPOINT
+# =========================
 
 @router.post("/scenario")
 async def ask_question(payload: QuestionRequest, current_user: dict = Depends(get_current_user)):
     try:
         user_id = current_user["id"]
 
-        # Log feature usage for scenario planning
         await feature_usage_service.log_usage(user_id, "scenario_planning")
 
+        # Build conversation
         messages = [{"role": "system", "content": SYSTEM_PROMPT}]
 
         for msg in payload.history:
@@ -653,25 +832,235 @@ async def ask_question(payload: QuestionRequest, current_user: dict = Depends(ge
 
         messages.append({"role": "user", "content": payload.question})
 
-        response = client.chat.completions.create(
-            model="gpt-4.1-mini",
-            temperature=0.4,
-            messages=messages
+        # =========================
+        # TOOL DEFINITIONS
+        # =========================
+
+        tools = [
+            {
+                "type": "function",
+                "function": {
+                    "name": "fetchBaseline",
+                    "description": "Fetch baseline financials from accounting",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "company_id": {"type": "string"},
+                            "periods": {"type": "integer"},
+                            "scope": {"type": "string"}
+                        },
+                        "required": ["company_id"]
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "fetchProfile",
+                    "description": "Fetch business profile",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "company_id": {"type": "string"}
+                        },
+                        "required": ["company_id"]
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "getScenarioPriorsFromResearchScout",
+                    "description": "Get market priors",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "company_id": {"type": "string"},
+                            "scenario_type": {"type": "string"},
+                            "industry": {"type": "string"},
+                            "region": {"type": "string"},
+                            "assumption_slots": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string"
+                                }
+                            }
+                        },
+                        "required": ["company_id", "scenario_type"]
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "runFinanceScenario",
+                    "description": "Run Finance Analyst and return STRICT JSON",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "scenario_type": {"type": "string"},
+                            "baseline": {"type": "object"},
+                            "assumptions": {"type": "object"},
+                            "horizon_months": {"type": "integer"},
+                            "location_scope": {"type": "string"},
+                            "stress_cases": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string"
+                                }
+                            }
+                        },
+                        "required": ["scenario_type", "baseline", "assumptions"]
+                    }
+                }
+            }
+        ]
+
+
+        # =========================
+        # TOOL EXECUTION HANDLER
+        # =========================
+
+        async def _execute_tool(function_name: str, args: dict):
+
+            # Always inject company_id from auth
+            args["company_id"] = user_id
+
+            if function_name == "fetchBaseline":
+                try:
+                    return await quickbooks_financial_service.get_financial_overview(user_id)
+                except Exception as e:
+                    return {"error": str(e)}
+
+            if function_name == "fetchProfile":
+                try:
+                    bp_col = get_collection("business_profiles")
+                    op_col = get_collection("opportunities_profiles")
+                    bp = await bp_col.find_one({"user_id": user_id})
+                    op = await op_col.find_one({"user_id": user_id})
+                    return {"business_profile": bp or {}, "opportunities_profile": op or {}}
+                except Exception as e:
+                    return {"error": str(e)}
+
+            if function_name == "getScenarioPriorsFromResearchScout":
+                try:
+                    result = await research_scout.search_opportunities(
+                        query=f"Priors for {args.get('scenario_type')}",
+                        user_id=user_id,
+                        business_profile=None,
+                        opportunities_profile=None,
+                        mode="live",
+                    )
+                    return result
+                except Exception as e:
+                    return {"error": str(e)}
+
+            if function_name == "runFinanceScenario":
+                try:
+                    return await finance_analyst_service.calculate_scenario_kpis(
+                        scenario_type=args.get("scenario_type"),
+                        query=payload.question,
+                        assumptions=args.get("assumptions"),
+                        baseline_financials=args.get("baseline"),
+                        business_profile=None,
+                    )
+                except Exception as e:
+                    return {"error": str(e)}
+
+            return {"error": f"Unknown tool {function_name}"}
+
+        # =========================
+        # TOOL CALL LOOP
+        # =========================
+
+        clarification_count = 0
+        max_clarifications = 3
+
+        response = await client_async.chat.completions.create(
+            model="gpt-4o",
+            messages=messages,
+            tools=tools,
+            tool_choice="auto",
+            temperature=0.2,
         )
 
-        answer = response.choices[0].message.content.strip()
+        while True:
+            message = response.choices[0].message
+            tool_calls = getattr(message, "tool_calls", None)
 
+            if not tool_calls:
+                break
+
+            messages.append(message)
+
+            for tool_call in tool_calls:
+                function_name = tool_call.function.name
+                function_args = json.loads(tool_call.function.arguments)
+
+                tool_result = await _execute_tool(function_name, function_args)
+
+                messages.append({
+                    "tool_call_id": tool_call.id,
+                    "role": "tool",
+                    "name": function_name,
+                    "content": json.dumps(tool_result, default=str),
+                })
+
+            response = await client_async.chat.completions.create(
+                model="gpt-4o",
+                messages=messages,
+                temperature=0.2,
+            )
+
+        # =========================
+        # FINAL RESPONSE HANDLING
+        # =========================
+
+        final_content = response.choices[0].message.content
+
+        try:
+            parsed = json.loads(final_content)
+        except Exception:
+            # treat as clarification text
+            created = datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+            return JSONResponse(
+                status_code=status.HTTP_200_OK,
+                content={
+                    "success": True,
+                    "type": "clarification",
+                    "message": final_content.strip(),
+                    "created_at": created,
+                },
+            )
+
+        # Clarification mode
+        if parsed.get("type") == "clarification":
+            clarification_count += 1
+            created = datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+            return JSONResponse(
+                status_code=status.HTTP_200_OK,
+                content={
+                    "success": True,
+                    "type": "clarification",
+                    "message": parsed.get("message"),
+                    "created_at": created,
+                },
+            )
+
+        # Scenario result mode
+        created = datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
         return JSONResponse(
             status_code=status.HTTP_201_CREATED,
             content={
                 "success": True,
-                "message": "Here is the response for the question you shared.",
-                "data": answer,
-                "created_at": datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
-            }
+                "type": "scenario_result",
+                "data": parsed,
+                "created_at": created,
+            },
         )
+
     except Exception as e:
         return JSONResponse(
             status_code=500,
-            content={"success": False, "error": str(e)}
+            content={"success": False, "error": str(e)},
         )
