@@ -101,3 +101,9 @@ async def create_indexes() -> None:
     await admin_logs.create_index("timestamp")
     await admin_logs.create_index([("admin_user_id", 1), ("timestamp", -1)])
     await admin_logs.create_index([("target_user_id", 1), ("timestamp", -1)])
+
+    # Scenario planning chat threads
+    scenario_chats = get_collection("scenario_chats")
+    await scenario_chats.create_index("user_id")
+    await scenario_chats.create_index("created_at")
+    await scenario_chats.create_index([("user_id", 1), ("updated_at", -1)])

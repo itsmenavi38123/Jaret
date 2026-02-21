@@ -19,6 +19,7 @@ from app.agents.opportunities_agent import research_scout_opportunities
 from app.models.opportunities import Opportunity, OpportunityCreate, OpportunityUpdate
 from app.services.feature_usage_service import feature_usage_service
 from bson import ObjectId
+from app.services.scenario_planning_service import ScenarioPlanningService
 
 import os
 from pydantic import BaseModel
@@ -34,6 +35,7 @@ load_dotenv()
 
 router = APIRouter(tags=["opportunities"])
 research_scout = ResearchScoutService()
+scenario_service = ScenarioPlanningService()
 
 
 @router.get("/overview")
@@ -1073,6 +1075,44 @@ async def ask_question(payload: QuestionRequest, current_user: dict = Depends(ge
 
         # Scenario result mode
         created = datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+
+        # Persist scenario conversation/result (non-fatal)
+        try:
+            # Build saved thread from provided history (user/assistant pairs), then current question
+            saved_messages = []
+            # payload.history contains ChatMessage objects with role/content
+            for msg in (payload.history or []):
+                saved_messages.append({
+                    "role": msg.role,
+                    "content": msg.content,
+                    "timestamp": datetime.utcnow().isoformat() + "Z",
+                })
+
+            # Append current user question
+            saved_messages.append({
+                "role": "user",
+                "content": payload.question,
+                "timestamp": datetime.utcnow().isoformat() + "Z",
+            })
+
+            # Append assistant final JSON response (store as JSON object)
+            saved_messages.append({
+                "role": "assistant",
+                "content": parsed,
+                "timestamp": datetime.utcnow().isoformat() + "Z",
+            })
+
+            # Keep at most the last 6 messages in the thread
+            saved_messages = saved_messages[-6:]
+
+            await scenario_service.save_chat_thread(
+                user_id=user_id,
+                messages=saved_messages,
+                metadata={"source": "opportunities.scenario", "created_at": created},
+            )
+        except Exception as e:
+            print(f"Failed to persist scenario result: {e}")
+
         return JSONResponse(
             status_code=status.HTTP_201_CREATED,
             content={
@@ -1088,3 +1128,36 @@ async def ask_question(payload: QuestionRequest, current_user: dict = Depends(ge
             status_code=500,
             content={"success": False, "error": str(e)},
         )
+
+
+@router.get("/recent-scenarios")
+async def get_recent_scenarios(
+    current_user: dict = Depends(get_current_user),
+    limit: int = Query(5, ge=1, le=10),
+):
+    """Return up to `limit` recent scenario threads (full thread in `thread`)."""
+    try:
+        user_id = current_user["id"]
+        threads = await scenario_service.get_user_threads(user_id, limit=limit)
+
+        result = []
+        for t in threads:
+            result.append({
+                "id": str(t.get("_id")),
+                "created_at": (t.get("created_at").isoformat() + "Z") if t.get("created_at") else None,
+                "updated_at": (t.get("updated_at").isoformat() + "Z") if t.get("updated_at") else None,
+                "metadata": t.get("metadata", {}),
+                "thread": t.get("messages", []),
+            })
+
+        return JSONResponse(status_code=status.HTTP_200_OK, content=jsonable_encoder({"data": result}))
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"error": str(e)},
+        )
+
+
