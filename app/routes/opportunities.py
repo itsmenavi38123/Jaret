@@ -604,7 +604,7 @@ class ChatMessage(BaseModel):
 
 class QuestionRequest(BaseModel):
     question: str
-    history: Optional[List[ChatMessage]] = []
+    history: Optional[List[ChatMessage]] = None
 
 
 # =========================
@@ -853,7 +853,7 @@ async def ask_question(payload: QuestionRequest, current_user: dict = Depends(ge
         # Build conversation
         messages = [{"role": "system", "content": SYSTEM_PROMPT}]
 
-        for msg in payload.history:
+        for msg in (payload.history or []):
             messages.append({"role": msg.role, "content": msg.content})
 
         messages.append({"role": "user", "content": payload.question})
