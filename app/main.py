@@ -22,7 +22,7 @@ from app.routes.opportunities import router as opportunities_router
 from app.routes.ai_opportunities import router as ai_opportunities_router
 from app.routes.ai_scenarios import router as ai_scenarios_router
 from app.routes.ai_health import router as ai_health_router
-from app.routes.demand_forecast import router as demand_forecast_router
+from app.services.new_demand_forecast import router as demand_forecast_router
 from app.routes.asset_management import router as asset_management_router
 from app.routes.preparation import router as preparation_router
 from app.routes.admin import router as admin_router
