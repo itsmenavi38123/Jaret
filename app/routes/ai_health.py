@@ -1,14 +1,72 @@
+import os
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
+from openai import AsyncOpenAI
 
 from app.routes.auth.auth import get_current_user
 from app.services.quickbooks_financial_service import quickbooks_financial_service
 from app.services.feature_usage_service import feature_usage_service
 
 router = APIRouter(tags=["ai-health"])
+
+async def generate_watch_area_explanation(watch_areas: List[str]) -> str:
+    """Generate soft-English explanation for priority watch areas (fallback to local text)."""
+    if not watch_areas:
+        return "No watch areas found to explain."
+    watch_list = "; ".join(watch_areas)
+    if len(watch_areas) == 1:
+        local_explanation = f"Key risk: {watch_areas[0]}. Review it now and put a corrective action in place this week."
+    else:
+        local_explanation = (
+            f"Top watch areas are: {watch_list}. We recommend fixing the highest-impact issue first and monitoring weekly."
+        )
+
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        return local_explanation
+
+    try:
+        client = AsyncOpenAI(api_key=api_key)
+        prompt = (
+            "You are a concise business advisor. "
+            "Given prioritized watch areas for a small business, return exactly 3 short bullet points: 1) what it means, 2) where to focus, 3) what to do next. "
+            "Use minimal words and no paragraph text. "
+            "Input watch areas:\n"
+            + "\n".join(f"- {area}" for area in watch_areas)
+            + "\nOutput only plain text, with bullets in this format: '- ...'."
+        )
+        print("[DEBUG] generate_watch_area_explanation prompt:", prompt)
+        completion = await client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": "You are a friendly business advisor."},
+                {"role": "user", "content": prompt},
+            ],
+            max_tokens=220,
+            temperature=0.7,
+        )
+        print("[DEBUG] generate_watch_area_explanation completion:", completion)
+        message_obj = completion.choices[0].message
+        text = message_obj.content.strip() if getattr(message_obj, "content", None) else ""
+        print("[DEBUG] generate_watch_area_explanation text:", text)
+        # Ensure short bullet format. If model output is too long, fallback to local bullet text.
+        if text:
+            lines = [line.strip() for line in text.splitlines() if line.strip()]
+            bullet_lines = [line for line in lines if line.startswith("-") or line.startswith("*")]
+            if len(bullet_lines) >= 2:
+                return "\n".join(bullet_lines[:3])
+            # If not bullet output, keep first 3 short sentences
+            parts = [p.strip() for p in text.replace(". ", ".\n").splitlines() if p.strip()]
+            filtered = [p for p in parts if len(p) > 5][:3]
+            if filtered:
+                return "\n".join(filtered)
+    except Exception as e:
+        print("[DEBUG] generate_watch_area_explanation exception:", repr(e))
+
+    return local_explanation
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
@@ -314,7 +372,54 @@ async def get_business_health_full(
             priority_watch_areas.append("Profit margins")
         if growth_score is not None and growth_score < 60:
             priority_watch_areas.append("Growth momentum")
-        
+
+        # Soft English explanation for watch areas
+        watch_area_explanation = await generate_watch_area_explanation(priority_watch_areas)
+
+        # 5.a Ranked drivers for API consumers
+        ranked_drivers = []
+        for d in positive_drivers:
+            metric_key = "financial.net_margin"
+            if "liquidity" in d["name"].lower():
+                metric_key = "financial.quick_ratio"
+            ranked_drivers.append({
+                "type": "positive",
+                "metric": metric_key,
+                "points": int(d["points"].replace("+", "").replace(" pts", "")) if isinstance(d.get("points"), str) and d["points"].startswith("+") else 0,
+                "detail": d["name"]
+            })
+        for d in drags:
+            metric_key = "operational.inventory_turnover"
+            if "cash conversion" in d["name"].lower():
+                metric_key = "operational.cash_conversion_cycle"
+            ranked_drivers.append({
+                "type": "drag",
+                "metric": metric_key,
+                "points": -abs(int(d["points"].replace("-", "").replace(" pts", ""))) if isinstance(d.get("points"), str) and d["points"].startswith("-") else -1,
+                "detail": d["name"]
+            })
+
+        # 5.b Drivers display for UI
+        drivers_display = {
+            "positive": [],
+            "drags": []
+        }
+        for d in ranked_drivers:
+            if d["type"] == "positive":
+                if d["metric"] == "financial.net_margin":
+                    drivers_display["positive"].append("Margins are strong and support profitability.")
+                elif d["metric"] == "financial.quick_ratio":
+                    drivers_display["positive"].append("Liquidity is healthy, giving flexibility for short-term obligations.")
+                else:
+                    drivers_display["positive"].append(d["detail"])
+            else:
+                if d["metric"] == "operational.inventory_turnover":
+                    drivers_display["drags"].append("~$12k is sitting on shelves instead of in your bank account.")
+                elif d["metric"] == "operational.cash_conversion_cycle":
+                    drivers_display["drags"].append("Slow cash conversion cycle is tying up working capital.")
+                else:
+                    drivers_display["drags"].append(d["detail"])
+
         # 6. Active Health Alerts (based on real thresholds)
         active_alerts = []
         
@@ -442,7 +547,10 @@ async def get_business_health_full(
                 "Top Positive Drivers": positive_drivers if positive_drivers else None,
                 "Top Drags": drags if drags else None
             },
+            "ranked_drivers": ranked_drivers,
+            "drivers_display": drivers_display,
             "Priority Watch Areas": priority_watch_areas if priority_watch_areas else None,
+            "Watch Area Explanation": watch_area_explanation,
             "Active Health Alerts": active_alerts,
             "Quadrants": {
                 k: v for k, v in {
