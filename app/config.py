@@ -23,6 +23,18 @@ class Settings(BaseSettings):
     xero_client_secret: Optional[str] = None
     xero_redirect_uri: Optional[str] = None
 
+    #POS
+    shopify_client_id: Optional[str] = None
+    shopify_client_secret: Optional[str] = None
+    square_app_id: Optional[str] = None
+    square_app_secret: Optional[str] = None
+    clover_app_id: Optional[str] = None
+    clover_app_secret: Optional[str] = None
+    lightspeed_client_id: Optional[str] = None
+    lightspeed_client_secret: Optional[str] = None
+
+    pos_oauth_callback_url: Optional[str] = None
+
     # Web Search APIs (for Research Scout)
     tavily_api_key: Optional[str] = None
     serper_api_key: Optional[str] = None

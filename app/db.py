@@ -107,3 +107,11 @@ async def create_indexes() -> None:
     await scenario_chats.create_index("user_id")
     await scenario_chats.create_index("created_at")
     await scenario_chats.create_index([("user_id", 1), ("updated_at", -1)])
+
+
+    # POS integrations
+    user_pos_access = get_collection("user_pos_access")
+    await user_pos_access.create_index([("user_id", 1), ("provider", 1)],unique=True)
+
+    oauth_states = get_collection("oauth_states")
+    await oauth_states.create_index("state",unique=True)

@@ -112,12 +112,10 @@ async def get_token_by_realm(realm_id: str, current_user: dict = Depends(get_cur
         })
     )
 
+from fastapi.responses import RedirectResponse
+
 @router.get("/callback")
 async def callback(request: Request):
-    """
-    Handles the callback from QuickBooks after the user authorizes the application.
-    Stores the tokens in the database for the authenticated user.
-    """
     code = request.query_params.get("code")
     realm_id = request.query_params.get("realmId")
     state = request.query_params.get("state")
@@ -132,10 +130,9 @@ async def callback(request: Request):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="State parameter not found in callback.")
         
     try:
-        # Verify and decode the state parameter to get the user ID and redirect URI
         state_data = jwt.decode(state, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         user_id = state_data["user_id"]
-        redirect_uri = state_data.get("redirect_uri")  # Optional redirect URI
+        redirect_uri = state_data.get("redirect_uri")
     except jwt.JWTError:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid state parameter.")
 
@@ -152,22 +149,6 @@ async def callback(request: Request):
         x_refresh_token_expires_in=tokens["x_refresh_token_expires_in"]
     )
     
-    stored_token = await quickbooks_token_service.create_token(token_create)
-    
-    return JSONResponse(
-        status_code=status.HTTP_200_OK,
-        content=jsonable_encoder({
-            "success": True,
-            "data": {
-                "message": "QuickBooks tokens stored successfully",
-                "realm_id": realm_id,
-                "token_id": stored_token.id,
-                "tokens": {
-                    "token_type": tokens["token_type"],
-                    "expires_in": tokens["expires_in"],
-                    "x_refresh_token_expires_in": tokens["x_refresh_token_expires_in"],
-                    # Note: We don't return the actual tokens for security
-                }
-            }
-        })
-    )
+    await quickbooks_token_service.create_token(token_create)
+
+    return RedirectResponse(url="https://lightsignal.app/dashboard")

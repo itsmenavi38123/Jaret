@@ -438,7 +438,7 @@ async def _fetch_last_year_revenue(user_id: str) -> List[float]:
         for item in sales
     ]
 
-    return historical_revenue
+    return historical_revenue   
 
 def _calculate_forecast_metrics(historical_revenue: List[float]) -> Dict[str, Any]:
 
