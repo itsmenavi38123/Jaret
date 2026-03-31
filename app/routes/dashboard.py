@@ -9,9 +9,48 @@ from pydantic import BaseModel, Field
 from app.routes.auth.auth import get_current_user
 from app.services.dashboard_service import dashboard_service
 from app.services.reminders_service import reminders_service
+from typing import Optional, Literal, Any, Dict, List
+from app.services.openai_service import OpenAIService
 
 router = APIRouter(tags=["dashboard"])
 
+class KPIChatRequest(BaseModel):
+    kpi_name: Literal[
+        "revenue_mtd",
+        "net_margin_pct",
+        "cash",
+        "runway_months",
+        "ai_health_score"
+    ]
+    current_value: Optional[float] = None
+    prior_value: Optional[float] = None
+    question: str
+    chat_history: Optional[List[Dict[str, str]]] = []
+    optional_context: Optional[Dict[str, Any]] = None
+
+
+class KPIDrawerContext(BaseModel):
+    financial_overview: Optional[Any] = None
+    benchmarks: Optional[Any] = None
+    already_displayed_insights: Optional[Any] = None
+
+
+class KPIDrawerExplainRequest(BaseModel):
+    kpi_name: str
+    current_value: Optional[float] = None
+    prior_value: Optional[float] = None
+    format_type: Literal["currency", "percentage", "months", "score"]
+    optional_context: Optional[KPIDrawerContext] = None
+
+
+class ManualEntryRequest(BaseModel):
+    company_id: Optional[str] = None
+    entry_type: Literal["income", "expense"]
+    amount: float = Field(gt=0)
+    category: str
+    label: Optional[str] = None
+    occurred_on: datetime
+    notes: Optional[str] = None
 
 class DashboardSummaryResponse(BaseModel):
     """Placeholder for OpenAPI docs (not enforced at runtime)."""
@@ -28,17 +67,6 @@ class QuickForecastRequest(BaseModel):
         le=90,
         description="Forecast horizon in days (30, 60, or 90).",
     )
-
-
-class ManualEntryRequest(BaseModel):
-    company_id: Optional[str] = None
-    entry_type: Literal["income", "expense"]
-    amount: float = Field(gt=0)
-    category: str
-    label: Optional[str] = None
-    occurred_on: datetime
-    notes: Optional[str] = None
-
 
 class GeminiExplainRequest(BaseModel):
     company_id: Optional[str] = None
@@ -225,3 +253,60 @@ async def post_gemini_ai_health_explain(
         content=jsonable_encoder({"success": True, "data": explanation}),
     )
 
+
+
+@router.post("/dashboard/kpi-explain")
+async def explain_kpi_drawer(
+    body: KPIDrawerExplainRequest,
+    current_user: dict = Depends(get_current_user),
+    openai_service: OpenAIService = Depends(),
+):
+    try:
+        result = await openai_service.explain_kpi_drawer(
+            payload=body.model_dump()
+        )
+
+    except ValueError as exc:
+        # JSON parsing / validation error
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Invalid AI response: {exc}",
+        )
+
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate KPI explanation: {exc}",
+        )
+
+    return JSONResponse(
+        status_code=status.HTTP_200_OK,
+        content={"success": True, "data": result},
+    )
+
+
+
+@router.post("/dashboard/kpi-ask-ai")
+async def ask_kpi_ai(
+    body: KPIChatRequest,
+    current_user: dict = Depends(get_current_user),
+    openai_service: OpenAIService = Depends(),
+):
+    try:
+        result = await openai_service.ask_kpi_ai(
+            payload=body.model_dump()
+        )
+
+    except HTTPException as exc:
+        raise exc
+
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate AI response: {exc}",
+        )
+
+    return JSONResponse(
+        status_code=status.HTTP_200_OK,
+        content=jsonable_encoder({"success": True, "data": result}),
+    )

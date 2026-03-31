@@ -985,6 +985,7 @@ class DashboardService:
         return {
             "value": value,
             "delta": delta,
+            "prior_value": prior_value,
             "delta_label": delta_label,
             "color": color,
             "link": link

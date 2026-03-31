@@ -11,6 +11,7 @@ from app.db import get_collection
 from app.models.pos_models import OauthState
 from app.routes.auth.auth import get_current_user
 from app.services import square_service, shopify_service, clover_service, lightspeed_service
+from urllib.parse import quote
 
 router = APIRouter(tags=["integrations"])
 
@@ -27,12 +28,12 @@ class ConnectPosRequest(BaseModel):
         return v
 
 
-@router.get("/integrations/connect")
-async def connect_pos(  
+
+@router.post("/integrations/connect")  
+async def connect_pos(
     body: ConnectPosRequest,
     current_user: dict = Depends(get_current_user),
 ):
-
     user_id = current_user["id"]
     provider = body.provider
 
@@ -56,25 +57,45 @@ async def connect_pos(
     elif provider == "shopify":
         client_id = settings.shopify_client_id
         shop = body.shop
+
+        if not shop:
+            raise HTTPException(status_code=400, detail="Shop domain is required for Shopify")
+
+        shop = shop.replace("https://", "").replace(".myshopify.com", "").replace("admin.shopify.com/store/", "")
+
         base = f"https://{shop}.myshopify.com/admin/oauth/authorize"
 
+        scopes = "read_products,read_orders"
+
+        scopes_encoded = quote(scopes, safe="")
+        
     elif provider == "clover":
         client_id = settings.clover_app_id
         base = "https://sandbox.dev.clover.com/oauth/authorize"
 
     elif provider == "lightspeed":
         client_id = settings.lightspeed_client_id
-        base = "https://cloud.lightspeedapp.com/oauth/authorize.php"
+        base = "https://secure.vendhq.com/connect"
 
     else:
         raise HTTPException(status_code=400, detail="Unsupported provider")
 
-    redirect_url = (
-        f"{base}?client_id={client_id}"
-        f"&redirect_uri={settings.pos_oauth_callback_url}"
-        f"&response_type=code"
-        f"&state={state_val}"
-    )
+    redirect_uri = quote(settings.pos_oauth_callback_url, safe="")
+
+    if provider == "shopify":
+        redirect_url = (
+            f"{base}?client_id={client_id}"
+            f"&scope={scopes_encoded}"
+            f"&redirect_uri={redirect_uri}"
+            f"&state={state_val}"
+        )
+    else:
+        redirect_url = (
+            f"{base}?client_id={client_id}"
+            f"&redirect_uri={settings.pos_oauth_callback_url}"
+            f"&response_type=code"
+            f"&state={state_val}"
+        )
 
     return {
         "success": True,
