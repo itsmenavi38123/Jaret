@@ -4,8 +4,8 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 
 from app.routes.auth.auth import get_current_user
-from app.services.quickbooks_financial_service import quickbooks_financial_service
 from app.services.dashboard_service import dashboard_service
+from app.services.quickbooks_financial_service import quickbooks_financial_service
 
 router = APIRouter(tags=["financial-overview"])
 
@@ -41,21 +41,25 @@ async def get_dashboard_kpis(
 ):
     try:
         user_id = current_user["id"]
-        
-        kpis_data = await quickbooks_financial_service.get_dashboard_kpis(user_id)
-        def build_card(val, format_type="currency"):
+
+        summary = await dashboard_service.get_dashboard_summary(user_id=user_id)
+        summary_kpis = summary.get("kpis", {})
+
+        def build_card(kpi_key: str):
+            card = summary_kpis.get(kpi_key, {})
             return {
-                "value": val,
+                "value": card.get("value"),
+                "prior_value": card.get("prior_value"),
             }
 
         kpi_cards = {
-            "revenue_mtd": build_card(kpis_data.get("revenue_mtd"), "currency"),
-            "net_margin_pct": build_card(kpis_data.get("net_margin_pct"), "percentage"),
-            "cash": build_card(kpis_data.get("cash"), "currency"),
-            "runway_months": build_card(kpis_data.get("runway_months"), "months"),
-            "ai_health_score": build_card(None, "score") # Not calculating score locally to save time
+            "revenue_mtd": build_card("revenue_mtd"),
+            "net_margin_pct": build_card("net_margin_pct"),
+            "cash": build_card("cash"),
+            "runway_months": build_card("runway_months"),
+            "ai_health_score": build_card("ai_health_score"),
         }
-        
+
         dashboard_data = {
             "kpis": kpi_cards,
         }
