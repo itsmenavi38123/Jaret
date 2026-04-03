@@ -4,6 +4,18 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 from jose import jwt
 
+shopify_scopes_list = [
+    "read_orders",
+    "read_products",
+    "read_customers",
+    "read_inventory",
+    "read_reports",
+    "read_locations",
+    "read_shopify_payments_accounts",
+    "read_shopify_payments_payouts",
+    "read_shopify_payments_disputes",
+]
+
 class Settings(BaseSettings):
     app_name: str = "FastAPI Backend"
     app_version: str = "1.0.0"
@@ -44,6 +56,10 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 60
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    @property
+    def shopify_scopes(self):
+        return ",".join(shopify_scopes_list)
 
 settings = Settings()
 # -----------------------

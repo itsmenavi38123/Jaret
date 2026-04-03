@@ -6,10 +6,8 @@ from fastapi import HTTPException
 from app.config import settings
 
 
-async def exchange_code_for_token(code: str) -> dict:
-    shop = getattr(settings, "shopify_shop", None)
+async def exchange_code_for_token(code: str, shop: str) -> dict:
     if not shop:
-        # fallback or raise; adjust as needed
         raise HTTPException(status_code=502, detail="Shopify shop domain not configured")
 
     url = f"https://{shop}.myshopify.com/admin/oauth/access_token"

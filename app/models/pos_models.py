@@ -30,6 +30,7 @@ class OauthState(BaseModel):
     user_id: str
     provider: str
     expires_at: datetime
+    shop: Optional[str] = None
 
     @field_validator("provider")
     @classmethod

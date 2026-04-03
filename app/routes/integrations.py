@@ -1,19 +1,22 @@
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.encoders import jsonable_encoder
-from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field, field_validator
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from pydantic import BaseModel, field_validator
+from urllib.parse import urlencode
+import hashlib
+import hmac
+import re
 
 from app.config import settings
 from app.db import get_collection
 from app.models.pos_models import OauthState
 from app.routes.auth.auth import get_current_user
 from app.services import square_service, shopify_service, clover_service, lightspeed_service
-from urllib.parse import quote
 
 router = APIRouter(tags=["integrations"])
+
+ALLOWED_PROVIDERS = {"square", "shopify", "clover", "lightspeed", "toast"}
 
 
 class ConnectPosRequest(BaseModel):
@@ -22,20 +25,104 @@ class ConnectPosRequest(BaseModel):
 
     @field_validator("provider")
     def validate_provider(cls, v: str) -> str:
-        allowed = {"square", "shopify", "clover", "lightspeed", "toast"}
-        if v not in allowed:
-            raise ValueError("provider must be one of: square, shopify, clover, lightspeed, toast")
+        if v not in ALLOWED_PROVIDERS:
+            raise ValueError("Invalid provider")
+        return v
+
+    @field_validator("shop")
+    def validate_shop(cls, v, info):
+        if info.data.get("provider") == "shopify" and not v:
+            raise ValueError("Shop domain is required for Shopify")
         return v
 
 
+def normalize_shopify_shop(shop: str) -> str:
+    shop = shop.strip().lower()
+    shop = shop.replace("https://", "").replace("http://", "")
+    shop = shop.replace(".myshopify.com", "")
+    shop = shop.split("/")[0]
 
-@router.post("/integrations/connect")  
+    if not re.match(r"^[a-z0-9\-]+$", shop):
+        raise HTTPException(status_code=400, detail="Invalid Shopify shop domain")
+
+    return shop
+
+
+def build_provider_config(provider: str, shop: str | None):
+    if provider == "square":
+        return {
+            "client_id": settings.square_app_id,
+            "base": "https://connect.squareup.com/oauth2/authorize",
+            "extra_params": {"response_type": "code"},
+        }
+    if provider == "shopify":
+        if not shop:
+            raise HTTPException(status_code=400, detail="Shop domain is required for Shopify")
+
+        shop = normalize_shopify_shop(shop)
+
+        return {
+            "client_id": settings.shopify_client_id,
+            "base": f"https://{shop}.myshopify.com/admin/oauth/authorize",
+            "extra_params": {
+                "scope": settings.shopify_scopes,
+                "grant_options[]": "per-user",
+                "host": f"{shop}.myshopify.com",
+            },
+        }
+
+    if provider == "clover":
+        return {
+            "client_id": settings.clover_app_id,
+            "base": "https://www.clover.com/oauth/authorize",
+            "extra_params": {"response_type": "code"},
+        }
+
+    if provider == "lightspeed":
+        return {
+            "client_id": settings.lightspeed_client_id,
+            "base": "https://secure.vendhq.com/connect",
+            "extra_params": {"response_type": "code"},
+        }
+
+    raise HTTPException(status_code=400, detail="Unsupported provider")
+
+
+def build_shopify_hmac_message(query_params: dict[str, str]) -> str:
+    pairs = []
+    for key in sorted(query_params):
+        if key in {"hmac", "signature"}:
+            continue
+        value = str(query_params[key]).replace("%", "%25").replace("&", "%26")
+        pairs.append(f"{key}={value}")
+    return "&".join(pairs)
+
+
+def validate_shopify_callback(query_params: dict[str, str]) -> None:
+    if not settings.shopify_client_secret:
+        raise HTTPException(status_code=500, detail="Shopify client secret is not configured")
+    provided_hmac = query_params.get("hmac")
+    if not provided_hmac:
+        raise HTTPException(status_code=400, detail="Missing Shopify HMAC")
+
+    message = build_shopify_hmac_message(query_params)
+    digest = hmac.new(
+        settings.shopify_client_secret.encode("utf-8"),
+        message.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+    if not hmac.compare_digest(digest, provided_hmac):
+        raise HTTPException(status_code=400, detail="Invalid Shopify callback signature")
+
+
+@router.post("/integrations/connect")
 async def connect_pos(
     body: ConnectPosRequest,
     current_user: dict = Depends(get_current_user),
 ):
-    user_id = current_user["id"]
     provider = body.provider
+    user_id = current_user["id"]
+    normalized_shop = normalize_shopify_shop(body.shop) if provider == "shopify" and body.shop else None
 
     state_val = str(uuid4())
     expires_at = datetime.now(timezone.utc) + timedelta(minutes=10)
@@ -45,129 +132,123 @@ async def connect_pos(
         user_id=user_id,
         provider=provider,
         expires_at=expires_at,
+        shop=normalized_shop,
     )
 
     col = get_collection("oauth_states")
     await col.insert_one(oauth_obj.model_dump())
 
-    if provider == "square":
-        client_id = settings.square_app_id
-        base = "https://connect.squareup.com/oauth2/authorize"
+    config = build_provider_config(provider, normalized_shop)
 
-    elif provider == "shopify":
-        client_id = settings.shopify_client_id
-        shop = body.shop
+    params = {
+        "client_id": config["client_id"],
+        "redirect_uri": settings.pos_oauth_callback_url,
+        "state": state_val,
+        **config["extra_params"],
+    }
 
-        if not shop:
-            raise HTTPException(status_code=400, detail="Shop domain is required for Shopify")
-
-        shop = shop.replace("https://", "").replace(".myshopify.com", "").replace("admin.shopify.com/store/", "")
-
-        base = f"https://{shop}.myshopify.com/admin/oauth/authorize"
-
-        scopes = "read_products,read_orders"
-
-        scopes_encoded = quote(scopes, safe="")
-        
-    elif provider == "clover":
-        client_id = settings.clover_app_id
-        base = "https://sandbox.dev.clover.com/oauth/authorize"
-
-    elif provider == "lightspeed":
-        client_id = settings.lightspeed_client_id
-        base = "https://secure.vendhq.com/connect"
-
-    else:
-        raise HTTPException(status_code=400, detail="Unsupported provider")
-
-    redirect_uri = quote(settings.pos_oauth_callback_url, safe="")
-
-    if provider == "shopify":
-        redirect_url = (
-            f"{base}?client_id={client_id}"
-            f"&scope={scopes_encoded}"
-            f"&redirect_uri={redirect_uri}"
-            f"&state={state_val}"
-        )
-    else:
-        redirect_url = (
-            f"{base}?client_id={client_id}"
-            f"&redirect_uri={settings.pos_oauth_callback_url}"
-            f"&response_type=code"
-            f"&state={state_val}"
-        )
+    redirect_url = f"{config['base']}?{urlencode(params)}"
 
     return {
         "success": True,
-        "redirect_url": redirect_url
+        "redirect_url": redirect_url,
     }
-
 
 @router.get("/integrations/oauth/callback")
 async def oauth_callback(
+    request: Request,
     code: str,
     state: str,
+    shop: Optional[str] = None,
 ):
-
     now = datetime.now(timezone.utc)
     states_col = get_collection("oauth_states")
+
     state_doc = await states_col.find_one({"state": state})
     if not state_doc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or missing state parameter")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or missing state parameter"
+        )
 
-    if state_doc.get("expires_at") and state_doc["expires_at"] < now:
-        await states_col.delete_one({"state": state})
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="State has expired")
+    # ✅ FIXED TIMEZONE ISSUE
+    expires_at = state_doc.get("expires_at")
+    if expires_at:
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+
+        if expires_at < now:
+            await states_col.delete_one({"state": state})
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="State has expired"
+            )
 
     provider = state_doc.get("provider")
     user_id = state_doc.get("user_id")
+    saved_shop = state_doc.get("shop")
 
-    # exchange code for tokens with the appropriate service
     tokens: dict
     if provider == "square":
         tokens = await square_service.exchange_code_for_token(code)
+
     elif provider == "shopify":
-        tokens = await shopify_service.exchange_code_for_token(code)
+        if not shop or not saved_shop:
+            raise HTTPException(status_code=400, detail="Missing Shopify shop domain")
+
+        normalized_shop = normalize_shopify_shop(shop)
+        if normalized_shop != saved_shop:
+            raise HTTPException(status_code=400, detail="Shopify shop does not match request state")
+
+        validate_shopify_callback(dict(request.query_params))
+        tokens = await shopify_service.exchange_code_for_token(code, normalized_shop)
+
     elif provider == "clover":
         tokens = await clover_service.exchange_code_for_token(code)
+
     elif provider == "lightspeed":
         tokens = await lightspeed_service.exchange_code_for_token(code)
+
     else:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported provider")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Unsupported provider"
+        )
 
     access_token = tokens.get("access_token")
     refresh_token = tokens.get("refresh_token")
     expires_at = tokens.get("expires_at")
-    if not access_token:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Failed to obtain access token from provider")
 
-    upsert_doc = {
-        "user_id": user_id,
-        "provider": provider,
-        "access_token": access_token,
-        "refresh_token": refresh_token,
-        "expires_at": expires_at,
-        "updated_at": datetime.now(timezone.utc),
-        "created_at": datetime.now(timezone.utc),
-    }
+    if not access_token:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Failed to obtain access token from provider"
+        )
+
     user_col = get_collection("user_pos_access")
+
     await user_col.update_one(
-    {"user_id": user_id, "provider": provider},
-    {
-        "$set": {
-            "access_token": access_token,
-            "refresh_token": refresh_token,
-            "expires_at": expires_at,
-            "updated_at": datetime.now(timezone.utc),
+        {"user_id": user_id, "provider": provider},
+        {
+            "$set": {
+                "access_token": access_token,
+                "refresh_token": refresh_token,
+                "expires_at": expires_at,
+                "updated_at": datetime.now(timezone.utc),
+            },
+            "$setOnInsert": {
+                "created_at": datetime.now(timezone.utc),
+                "user_id": user_id,
+                "provider": provider,
+            }
         },
-        "$setOnInsert": {
-            "created_at": datetime.now(timezone.utc),
-            "user_id": user_id,
-            "provider": provider,
-        }
-    },
-    upsert=True,
-    )    
+        upsert=True,
+    )
+
     await states_col.delete_one({"state": state})
 
-    return {"success": True, "provider": provider, "message": "POS connected successfully"}
+    return {
+        "success": True,
+        "provider": provider,
+        "message": "POS connected successfully"
+    }
