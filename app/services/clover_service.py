@@ -5,7 +5,7 @@ from app.config import settings
 
 
 async def exchange_code_for_token(code: str) -> dict:
-    url = "https://api.clover.com/oauth/token"
+    url = "https://sandbox.dev.clover.com/oauth/token"
     data = {
         "client_id": settings.clover_app_id,
         "client_secret": settings.clover_app_secret,

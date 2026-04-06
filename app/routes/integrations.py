@@ -70,14 +70,13 @@ def build_provider_config(provider: str, shop: str | None):
                 "host": f"{shop}.myshopify.com",
             },
         }
-
     if provider == "clover":
         return {
             "client_id": settings.clover_app_id,
-            "base": "https://www.clover.com/oauth/authorize",
+            "base": "https://sandbox.dev.clover.com/oauth/authorize",  # ✅ sandbox
             "extra_params": {"response_type": "code"},
         }
-
+    
     if provider == "lightspeed":
         return {
             "client_id": settings.lightspeed_client_id,
