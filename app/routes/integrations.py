@@ -14,6 +14,7 @@ from app.models.pos_models import OauthState
 from app.routes.auth.auth import get_current_user
 from app.services import square_service, shopify_service, clover_service, lightspeed_service
 from fastapi.responses import RedirectResponse
+import base64
 
 router = APIRouter(tags=["integrations"])
 
