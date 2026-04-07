@@ -7,12 +7,13 @@ from urllib.parse import urlencode
 import hashlib
 import hmac
 import re
-
+import requests
 from app.config import settings
 from app.db import get_collection
 from app.models.pos_models import OauthState
 from app.routes.auth.auth import get_current_user
 from app.services import square_service, shopify_service, clover_service, lightspeed_service
+from fastapi.responses import RedirectResponse
 
 router = APIRouter(tags=["integrations"])
 
@@ -73,7 +74,7 @@ def build_provider_config(provider: str, shop: str | None):
     if provider == "clover":
         return {
             "client_id": settings.clover_app_id,
-            "base": "https://sandbox.dev.clover.com/oauth/authorize",  # ✅ sandbox
+            "base": "https://sandbox.dev.clover.com/oauth/authorize",
             "extra_params": {"response_type": "code"},
         }
     
@@ -202,6 +203,25 @@ async def oauth_callback(
         validate_shopify_callback(dict(request.query_params))
         tokens = await shopify_service.exchange_code_for_token(code, normalized_shop)
 
+        def create_shopify_webhook(shop, access_token):
+            url = f"https://{shop}/admin/api/2023-10/webhooks.json"
+
+            payload = {
+                "webhook": {
+                    "topic": "app/uninstalled",
+                    "address": "https://api.lightsignal.app/webhooks/shopify/app-uninstalled",
+                    "format": "json"
+                }
+            }
+
+            headers = {
+                "X-Shopify-Access-Token": access_token,
+                "Content-Type": "application/json"
+            }
+
+            requests.post(url, json=payload, headers=headers)
+        create_shopify_webhook(f"{normalized_shop}.myshopify.com", tokens.get("access_token"))
+
     elif provider == "clover":
         tokens = await clover_service.exchange_code_for_token(code)
 
@@ -246,8 +266,27 @@ async def oauth_callback(
 
     await states_col.delete_one({"state": state})
 
-    return {
-        "success": True,
-        "provider": provider,
-        "message": "POS connected successfully"
-    }
+    return RedirectResponse(
+        url=f"https://api.lightsignal.app?shop={normalized_shop}.myshopify.com",
+        status_code=302
+    )
+
+
+@router.post("/webhooks/shopify/app-uninstalled")
+async def app_uninstalled(request: Request):
+    body = await request.body()
+    hmac_header = request.headers.get("X-Shopify-Hmac-Sha256")
+
+    import base64
+    digest = hmac.new(
+        settings.shopify_client_secret.encode(),
+        body,
+        hashlib.sha256
+    ).digest()
+
+    computed = base64.b64encode(digest).decode()
+
+    if not hmac.compare_digest(computed, hmac_header):
+        raise HTTPException(status_code=401, detail="Invalid HMAC")
+
+    return {"success": True}
