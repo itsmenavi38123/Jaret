@@ -206,20 +206,28 @@ async def oauth_callback(
         def create_shopify_webhook(shop, access_token):
             url = f"https://{shop}/admin/api/2023-10/webhooks.json"
 
-            payload = {
-                "webhook": {
-                    "topic": "app/uninstalled",
-                    "address": "https://api.lightsignal.app/webhooks/shopify/app-uninstalled",
-                    "format": "json"
-                }
-            }
+            topics = [
+                "app/uninstalled",
+                "customers/data_request",
+                "customers/redact",
+                "shop/redact"
+            ]
 
             headers = {
                 "X-Shopify-Access-Token": access_token,
                 "Content-Type": "application/json"
             }
 
-            requests.post(url, json=payload, headers=headers)
+            for topic in topics:
+                payload = {
+                    "webhook": {
+                        "topic": topic,
+                        "address": f"https://api.lightsignal.app/api/integrations/webhooks/shopify/{topic.replace('/', '-')}",
+                        "format": "json"
+                    }
+                }
+
+                requests.post(url, json=payload, headers=headers)
         create_shopify_webhook(f"{normalized_shop}.myshopify.com", tokens.get("access_token"))
 
     elif provider == "clover":
@@ -272,12 +280,12 @@ async def oauth_callback(
     )
 
 
-@router.post("/webhooks/shopify/app-uninstalled")
-async def app_uninstalled(request: Request):
-    body = await request.body()
-    hmac_header = request.headers.get("X-Shopify-Hmac-Sha256")
+import base64
 
-    import base64
+def verify_shopify_hmac(body: bytes, hmac_header: str):
+    if not hmac_header:
+        raise HTTPException(status_code=400, detail="Missing HMAC header")
+
     digest = hmac.new(
         settings.shopify_client_secret.encode(),
         body,
@@ -288,5 +296,39 @@ async def app_uninstalled(request: Request):
 
     if not hmac.compare_digest(computed, hmac_header):
         raise HTTPException(status_code=401, detail="Invalid HMAC")
+    
+@router.post("/webhooks/shopify/app-uninstalled")
+async def app_uninstalled(request: Request):
+    body = await request.body()
+    hmac_header = request.headers.get("X-Shopify-Hmac-Sha256")
+
+    verify_shopify_hmac(body, hmac_header)
+
+    return {"success": True}
+
+@router.post("/webhooks/shopify/customers-data_request")
+async def customers_data_request(request: Request):
+    body = await request.body()
+    hmac_header = request.headers.get("X-Shopify-Hmac-Sha256")
+
+    verify_shopify_hmac(body, hmac_header)
+
+    return {"success": True}
+
+@router.post("/webhooks/shopify/customers-redact")
+async def customers_redact(request: Request):
+    body = await request.body()
+    hmac_header = request.headers.get("X-Shopify-Hmac-Sha256")
+
+    verify_shopify_hmac(body, hmac_header)
+
+    return {"success": True}
+
+@router.post("/webhooks/shopify/shop-redact")
+async def shop_redact(request: Request):
+    body = await request.body()
+    hmac_header = request.headers.get("X-Shopify-Hmac-Sha256")
+
+    verify_shopify_hmac(body, hmac_header)
 
     return {"success": True}
