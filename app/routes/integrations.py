@@ -279,56 +279,97 @@ async def oauth_callback(
         status_code=302
     )
 
-
 import base64
 
 def verify_shopify_hmac(body: bytes, hmac_header: str):
+    print("\n🔐 [SHOPIFY WEBHOOK] Verifying HMAC...")
+
     if not hmac_header:
+        print("❌ Missing HMAC header")
         raise HTTPException(status_code=400, detail="Missing HMAC header")
 
-    digest = hmac.new(
-        settings.shopify_client_secret.encode(),
-        body,
-        hashlib.sha256
-    ).digest()
+    try:
+        digest = hmac.new(
+            settings.shopify_client_secret.encode(),
+            body,
+            hashlib.sha256
+        ).digest()
 
-    computed = base64.b64encode(digest).decode()
+        computed_hmac = base64.b64encode(digest).decode()
 
-    if not hmac.compare_digest(computed, hmac_header):
-        raise HTTPException(status_code=401, detail="Invalid HMAC")
-    
+        print(f"➡️ Received HMAC: {hmac_header}")
+        print(f"➡️ Computed HMAC: {computed_hmac}")
+
+        if not hmac.compare_digest(computed_hmac, hmac_header):
+            print("❌ HMAC verification FAILED")
+            raise HTTPException(status_code=401, detail="Invalid HMAC")
+
+        print("✅ HMAC verification SUCCESS")
+
+    except Exception as e:
+        print(f"🔥 HMAC verification error: {str(e)}")
+        raise HTTPException(status_code=401, detail="HMAC verification failed")
+
+
+# ============================
+# WEBHOOK HANDLERS
+# ============================
+
 @router.post("/webhooks/shopify/app-uninstalled")
 async def app_uninstalled(request: Request):
+    print("\n📩 Webhook: app/uninstalled received")
+
     body = await request.body()
     hmac_header = request.headers.get("X-Shopify-Hmac-Sha256")
 
+    print(f"📦 Body (raw): {body[:200]}")  # truncate for safety
+
     verify_shopify_hmac(body, hmac_header)
 
+    print("✅ app/uninstalled processed successfully")
     return {"success": True}
+
 
 @router.post("/webhooks/shopify/customers-data_request")
 async def customers_data_request(request: Request):
+    print("\n📩 Webhook: customers/data_request received")
+
     body = await request.body()
     hmac_header = request.headers.get("X-Shopify-Hmac-Sha256")
 
+    print(f"📦 Body (raw): {body[:200]}")
+
     verify_shopify_hmac(body, hmac_header)
 
+    print("✅ customers/data_request processed successfully")
     return {"success": True}
+
 
 @router.post("/webhooks/shopify/customers-redact")
 async def customers_redact(request: Request):
+    print("\n📩 Webhook: customers/redact received")
+
     body = await request.body()
     hmac_header = request.headers.get("X-Shopify-Hmac-Sha256")
 
+    print(f"📦 Body (raw): {body[:200]}")
+
     verify_shopify_hmac(body, hmac_header)
 
+    print("✅ customers/redact processed successfully")
     return {"success": True}
+
 
 @router.post("/webhooks/shopify/shop-redact")
 async def shop_redact(request: Request):
+    print("\n📩 Webhook: shop/redact received")
+
     body = await request.body()
     hmac_header = request.headers.get("X-Shopify-Hmac-Sha256")
 
+    print(f"📦 Body (raw): {body[:200]}")
+
     verify_shopify_hmac(body, hmac_header)
 
+    print("✅ shop/redact processed successfully")
     return {"success": True}
