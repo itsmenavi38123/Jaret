@@ -281,34 +281,28 @@ async def oauth_callback(
     )
 
 def verify_shopify_hmac(body: bytes, hmac_header: str):
-    print("\n🔐 [SHOPIFY WEBHOOK] Verifying HMAC...")
+    print("\n🔐 Verifying HMAC...")
 
     if not hmac_header:
-        print("⚠️ Missing HMAC header — allowing (Shopify check)")
-        return True
+        print("❌ Missing HMAC")
+        raise HTTPException(status_code=401, detail="Missing HMAC")
 
-    try:
-        digest = hmac.new(
-            settings.shopify_client_secret.encode(),
-            body,
-            hashlib.sha256
-        ).digest()
+    digest = hmac.new(
+        settings.shopify_client_secret.encode(),
+        body,
+        hashlib.sha256
+    ).digest()
 
-        computed_hmac = base64.b64encode(digest).decode()
+    computed_hmac = base64.b64encode(digest).decode()
 
-        print(f"➡️ Received HMAC: {hmac_header}")
-        print(f"➡️ Computed HMAC: {computed_hmac}")
+    print(f"➡️ Received: {hmac_header}")
+    print(f"➡️ Computed: {computed_hmac}")
 
-        if not hmac.compare_digest(computed_hmac, hmac_header):
-            print("⚠️ HMAC mismatch — allowing (for approval)")
-            return True
+    if not hmac.compare_digest(computed_hmac, hmac_header):
+        print("❌ Invalid HMAC")
+        raise HTTPException(status_code=401, detail="Invalid HMAC")
 
-        print("✅ HMAC verification SUCCESS")
-        return True
-
-    except Exception as e:
-        print(f"🔥 HMAC error: {str(e)} — allowing")
-        return True
+    print("✅ HMAC valid")
 
 
 # ============================
@@ -339,18 +333,14 @@ async def app_uninstalled(request: Request):
 async def customers_data_request(request: Request):
     print("\n📩 Webhook: customers/data_request received")
 
-    try:
-        body = await request.body()
-        hmac_header = request.headers.get("X-Shopify-Hmac-Sha256")
+    body = await request.body()
+    hmac_header = request.headers.get("X-Shopify-Hmac-Sha256")
 
-        print(f"📦 Body (raw): {body[:200]}")
+    print(f"📦 Body (raw): {body[:200]}")
 
-        verify_shopify_hmac(body, hmac_header)
+    verify_shopify_hmac(body, hmac_header)  # ❗ DO NOT wrap in try
 
-        print("✅ customers/data_request processed")
-
-    except Exception as e:
-        print(f"🔥 ERROR: {e}")
+    print("✅ customers/data_request processed")
 
     return {"success": True}
 
