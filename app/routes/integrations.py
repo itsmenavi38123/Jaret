@@ -313,18 +313,14 @@ def verify_shopify_hmac(body: bytes, hmac_header: str):
 async def app_uninstalled(request: Request):
     print("\n📩 Webhook: app/uninstalled received")
 
-    try:
-        body = await request.body()
-        hmac_header = request.headers.get("X-Shopify-Hmac-Sha256")
+    body = await request.body()
+    hmac_header = request.headers.get("X-Shopify-Hmac-Sha256")
 
-        print(f"📦 Body (raw): {body[:200]}")
+    print(f"📦 Body (raw): {body[:200]}")
 
-        verify_shopify_hmac(body, hmac_header)
+    verify_shopify_hmac(body, hmac_header)
 
-        print("✅ app/uninstalled processed")
-
-    except Exception as e:
-        print(f"🔥 ERROR: {e}")
+    print("✅ app/uninstalled processed")
 
     return {"success": True}
 
@@ -349,18 +345,14 @@ async def customers_data_request(request: Request):
 async def customers_redact(request: Request):
     print("\n📩 Webhook: customers/redact received")
 
-    try:
-        body = await request.body()
-        hmac_header = request.headers.get("X-Shopify-Hmac-Sha256")
+    body = await request.body()
+    hmac_header = request.headers.get("X-Shopify-Hmac-Sha256")
 
-        print(f"📦 Body (raw): {body[:200]}")
+    print(f"📦 Body (raw): {body[:200]}")
 
-        verify_shopify_hmac(body, hmac_header)
+    verify_shopify_hmac(body, hmac_header)
 
-        print("✅ customers/redact processed")
-
-    except Exception as e:
-        print(f"🔥 ERROR: {e}")
+    print("✅ customers/redact processed")
 
     return {"success": True}
 
@@ -369,17 +361,25 @@ async def customers_redact(request: Request):
 async def shop_redact(request: Request):
     print("\n📩 Webhook: shop/redact received")
 
-    try:
-        body = await request.body()
-        hmac_header = request.headers.get("X-Shopify-Hmac-Sha256")
+    body = await request.body()
+    hmac_header = request.headers.get("X-Shopify-Hmac-Sha256")
 
-        print(f"📦 Body (raw): {body[:200]}")
+    print(f"📦 Body (raw): {body[:200]}")
 
-        verify_shopify_hmac(body, hmac_header)
+    verify_shopify_hmac(body, hmac_header)
 
-        print("✅ shop/redact processed")
+    print("✅ shop/redact processed")
 
-    except Exception as e:
-        print(f"🔥 ERROR: {e}")
+    return {"success": True}
+
+
+@router.post("/webhooks/shopify")
+async def shopify_webhook(request: Request):
+    print("\n📩 Shopify webhook (base endpoint)")
+
+    body = await request.body()
+    hmac_header = request.headers.get("X-Shopify-Hmac-Sha256")
+
+    verify_shopify_hmac(body, hmac_header)  # will return 401 if invalid
 
     return {"success": True}
