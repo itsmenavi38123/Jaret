@@ -56,6 +56,8 @@ Context:
 
 Optional Context:
 {json.dumps(payload.get("optional_context", {}), indent=2)}
+Benchmark data (if present) is located at optional_context.benchmarks.
+Use this data for vs_peers calculations.
 
 STRICT RULES:
 - Follow DRAWER MODE exactly
@@ -77,6 +79,28 @@ STATUS RULES:
 - runway: >6 healthy, 3–6 watch, <3 critical
 - score: >70 healthy, 50–70 watch, <50 critical
 
+VS_PEERS RULES:
+- Benchmark data is available at optional_context.benchmarks
+
+- If optional_context.benchmarks contains data for this KPI:
+  - Extract the metric object (e.g. {{"median": ..., "p25": ..., "p75": ..., "source": ...}})
+  - Use ONLY the "median" value as benchmark_value
+  - Do NOT use p25 or p75
+
+  - Compare current_value with benchmark_value:
+      above → current_value > benchmark_value
+      below → current_value < benchmark_value
+      at_par → within 5 percent range
+
+  - Generate gap_text like:
+    "X percent above industry median"
+    "X percent below industry median"
+
+  - Use "source" as benchmark_source if available
+
+- If benchmark median is null or benchmark data is missing:
+  - Set all vs_peers fields to null
+
 DATA CONFIDENCE RULES:
 - Score based on:
   - data completeness
@@ -96,10 +120,10 @@ OUTPUT FORMAT:
       "direction": "up" | "down" | "flat"
     }},
     "vs_peers": {{
-      "benchmark_value": null,
-      "benchmark_source": null,
-      "position": null,
-      "gap_text": null
+      "benchmark_value": number or null,
+      "benchmark_source": string or null,
+      "position": "above" | "below" | "at_par" | null,
+      "gap_text": "string" or null
     }},
     "vs_target": {{
       "target_value": null,

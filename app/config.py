@@ -51,6 +51,9 @@ class Settings(BaseSettings):
     tavily_api_key: Optional[str] = None
     serper_api_key: Optional[str] = None
 
+    # Redis
+    redis_url: Optional[str] = "redis://localhost:6379"
+
     jwt_secret_key: str
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60

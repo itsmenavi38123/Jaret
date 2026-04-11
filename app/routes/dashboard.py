@@ -5,14 +5,20 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
-
+import re
 from app.routes.auth.auth import get_current_user
 from app.services.dashboard_service import dashboard_service
 from app.services.reminders_service import reminders_service
+from app.services.benchmark_service import benchmark_service
+from app.db import get_collection
 from typing import Optional, Literal, Any, Dict, List
 from app.services.openai_service import OpenAIService
+import logging
+from app.services.redis_client import get_redis_client
+import json
 
 router = APIRouter(tags=["dashboard"])
+logger = logging.getLogger(__name__)
 
 class KPIChatRequest(BaseModel):
     kpi_name: Literal[
@@ -82,6 +88,60 @@ async def get_dashboard_summary(
     """
     try:
         summary = await dashboard_service.get_dashboard_summary(user_id=current_user["id"])
+
+        print("🔥 SUMMARY API HIT")
+
+        try:
+            business_profiles = get_collection("business_profiles")
+            profile = await business_profiles.find_one({"user_id": current_user["id"]})
+
+            print("👉 PROFILE:", profile)
+
+            if profile and profile.get("onboarding_data"):
+                onboarding = profile["onboarding_data"]
+
+                print("👉 ONBOARDING:", onboarding)
+
+                business_type = (
+                    onboarding.get("industry_description")
+                    or onboarding.get("industry")
+                    or onboarding.get("business_type")
+                )
+                def parse_revenue(value):
+                    if value is None:
+                        return None
+                    if isinstance(value, (int, float)):
+                        return float(value)
+                    value = re.sub(r"[^\d.]", "", str(value))  # remove $, commas
+                    return float(value) if value else None
+
+                monthly_revenue = onboarding.get("monthly_revenue")
+                monthly = parse_revenue(monthly_revenue)
+                annual_revenue = monthly * 12 if monthly else None
+
+                country = onboarding.get("country", "US")
+
+                print("👉 business_type:", business_type)
+                print("👉 annual_revenue:", annual_revenue)
+
+                if business_type and annual_revenue:
+                    print("🚀 CALLING BENCHMARK SERVICE")
+
+                    await benchmark_service.get_or_fetch_benchmarks(
+                        business_type=business_type,
+                        country=country,
+                        annual_revenue_dollars=annual_revenue,
+                    )
+
+                    print("✅ BENCHMARK PRELOADED")
+                else:
+                    print("❌ Missing business_type or annual_revenue")
+
+            else:
+                print("❌ No onboarding_data found")
+
+        except Exception as e:
+            print("⚠️ BENCHMARK PRELOAD FAILED:", e)
     except HTTPException as exc:
         raise exc
     except Exception as exc:
@@ -254,7 +314,6 @@ async def post_gemini_ai_health_explain(
     )
 
 
-
 @router.post("/dashboard/kpi-explain")
 async def explain_kpi_drawer(
     body: KPIDrawerExplainRequest,
@@ -262,12 +321,93 @@ async def explain_kpi_drawer(
     openai_service: OpenAIService = Depends(),
 ):
     try:
-        result = await openai_service.explain_kpi_drawer(
-            payload=body.model_dump()
-        )
+        business_profiles = get_collection("business_profiles")
+        profile = await business_profiles.find_one({"user_id": current_user["id"]})
+
+        enriched_context = body.optional_context.model_dump() if body.optional_context else {}
+
+        redis_client = await get_redis_client()
+
+        def parse_revenue(value):
+            if value is None:
+                return None
+            if isinstance(value, (int, float)):
+                return float(value)
+            value = re.sub(r"[^\d.]", "", str(value))  # remove $, commas
+            return float(value) if value else None
+
+        if profile and profile.get("onboarding_data") and redis_client:
+            onboarding = profile["onboarding_data"]
+
+            business_type = (
+                onboarding.get("industry_description")
+                or onboarding.get("industry")
+                or onboarding.get("business_type")
+            )
+
+            monthly_revenue = onboarding.get("monthly_revenue")
+            monthly = parse_revenue(monthly_revenue)
+            annual_revenue = monthly * 12 if monthly else None
+
+            country = onboarding.get("country", "US")
+
+            if business_type and annual_revenue:
+                try:
+                    revenue_band = benchmark_service._calculate_revenue_band(annual_revenue)
+
+                    cache_key = benchmark_service._build_cache_key(
+                        business_type=business_type,
+                        country=country,
+                        revenue_band=revenue_band,
+                    )
+
+                    print(" KPI CACHE KEY:", cache_key)
+
+                    cached = await redis_client.get(cache_key)
+
+                    if cached:
+                        print("🔥 KPI CACHE HIT")
+
+                        benchmarks = json.loads(cached)
+
+                        kpi_to_metric = {
+                            "current_ratio": "current_ratio",
+                            "quick_ratio": "quick_ratio",
+                            "debt_to_equity": "debt_to_equity",
+                            "interest_coverage": "interest_coverage",
+                            "dso": "dso",
+                            "dpo": "dpo",
+                            "inventory_turnover": "inventory_turnover",
+                            "cash_conversion_cycle": "cash_conversion_cycle",
+                            "revenue_growth_rate": "revenue_growth_rate",
+                            "revenue_mtd": "revenue_growth_rate",
+                            "net_profit_margin": "net_profit_margin",
+                            "net_margin_pct": "net_profit_margin",
+                            "operating_cash_flow_margin": "operating_cash_flow_margin",
+                            "cash_runway": "cash_runway",
+                            "runway_months": "cash_runway",
+                            "cash": "cash_runway",
+                        }
+
+                        metric_name = kpi_to_metric.get(body.kpi_name.lower())
+
+                        if metric_name and metric_name in benchmarks:
+                            metric_data = benchmarks.get(metric_name)
+
+                            if metric_data and metric_data.get("median") is not None:
+                                enriched_context["benchmarks"] = {
+                                    metric_name: metric_data
+                                }
+
+                except Exception as exc:
+                    logger.warning(f"Benchmark cache read failed: {exc}")
+
+        payload = body.model_dump()
+        payload["optional_context"] = enriched_context
+
+        result = await openai_service.explain_kpi_drawer(payload=payload)
 
     except ValueError as exc:
-        # JSON parsing / validation error
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"Invalid AI response: {exc}",
@@ -283,8 +423,6 @@ async def explain_kpi_drawer(
         status_code=status.HTTP_200_OK,
         content={"success": True, "data": result},
     )
-
-
 
 @router.post("/dashboard/kpi-ask-ai")
 async def ask_kpi_ai(
