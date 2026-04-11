@@ -87,63 +87,13 @@ async def get_dashboard_summary(
     Consolidated dashboard payload with KPIs, alerts, badges, insights, and reminders.
     """
     try:
-        summary = await dashboard_service.get_dashboard_summary(user_id=current_user["id"])
+        summary = await dashboard_service.get_dashboard_summary(
+            user_id=current_user["id"]
+        )
 
-        print("🔥 SUMMARY API HIT")
-
-        try:
-            business_profiles = get_collection("business_profiles")
-            profile = await business_profiles.find_one({"user_id": current_user["id"]})
-
-            print("👉 PROFILE:", profile)
-
-            if profile and profile.get("onboarding_data"):
-                onboarding = profile["onboarding_data"]
-
-                print("👉 ONBOARDING:", onboarding)
-
-                business_type = (
-                    onboarding.get("industry_description")
-                    or onboarding.get("industry")
-                    or onboarding.get("business_type")
-                )
-                def parse_revenue(value):
-                    if value is None:
-                        return None
-                    if isinstance(value, (int, float)):
-                        return float(value)
-                    value = re.sub(r"[^\d.]", "", str(value))  # remove $, commas
-                    return float(value) if value else None
-
-                monthly_revenue = onboarding.get("monthly_revenue")
-                monthly = parse_revenue(monthly_revenue)
-                annual_revenue = monthly * 12 if monthly else None
-
-                country = onboarding.get("country", "US")
-
-                print("👉 business_type:", business_type)
-                print("👉 annual_revenue:", annual_revenue)
-
-                if business_type and annual_revenue:
-                    print("🚀 CALLING BENCHMARK SERVICE")
-
-                    await benchmark_service.get_or_fetch_benchmarks(
-                        business_type=business_type,
-                        country=country,
-                        annual_revenue_dollars=annual_revenue,
-                    )
-
-                    print("✅ BENCHMARK PRELOADED")
-                else:
-                    print("❌ Missing business_type or annual_revenue")
-
-            else:
-                print("❌ No onboarding_data found")
-
-        except Exception as e:
-            print("⚠️ BENCHMARK PRELOAD FAILED:", e)
     except HTTPException as exc:
         raise exc
+
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -154,7 +104,6 @@ async def get_dashboard_summary(
         status_code=status.HTTP_200_OK,
         content=jsonable_encoder({"success": True, "data": summary}),
     )
-
 
 @router.get("/dashboard/reminders")
 async def get_dashboard_reminders(

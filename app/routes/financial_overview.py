@@ -8,7 +8,9 @@ from app.services.dashboard_service import dashboard_service
 from app.services.quickbooks_financial_service import quickbooks_financial_service
 
 router = APIRouter(tags=["financial-overview"])
-
+from app.services.benchmark_service import benchmark_service
+from app.db import get_collection
+import re
 
 @router.get("/financial-overview")
 async def get_financial_overview(
@@ -42,6 +44,53 @@ async def get_dashboard_kpis(
     try:
         user_id = current_user["id"]
 
+        try:
+            business_profiles = get_collection("business_profiles")
+            profile = await business_profiles.find_one({"user_id": user_id})
+
+            if profile and profile.get("onboarding_data"):
+                onboarding = profile["onboarding_data"]
+
+                business_type = (
+                    onboarding.get("industry_description")
+                    or onboarding.get("industry")
+                    or onboarding.get("business_type")
+                )
+
+                def parse_revenue(value):
+                    if value is None:
+                        return None
+                    if isinstance(value, (int, float)):
+                        return float(value)
+                    value = re.sub(r"[^\d.]", "", str(value))  # remove $, commas
+                    return float(value) if value else None
+
+                monthly_revenue = onboarding.get("monthly_revenue")
+                monthly = parse_revenue(monthly_revenue)
+                annual_revenue = monthly * 12 if monthly else None
+
+                country = onboarding.get("country", "US")
+
+                if business_type and annual_revenue:
+                    print("🚀 PRELOADING BENCHMARK CACHE")
+
+                    await benchmark_service.get_or_fetch_benchmarks(
+                        business_type=business_type,
+                        country=country,
+                        annual_revenue_dollars=annual_revenue,
+                    )
+
+                    print("✅ BENCHMARK CACHE READY")
+                else:
+                    print("❌ Missing business_type or annual_revenue")
+
+            else:
+                print("❌ No onboarding_data found")
+
+        except Exception as e:
+            print("⚠️ BENCHMARK PRELOAD FAILED:", e)
+
+        # 🔥 STEP 2: FETCH KPI DATA
         summary = await dashboard_service.get_dashboard_summary(user_id=user_id)
         summary_kpis = summary.get("kpis", {})
 
@@ -63,6 +112,7 @@ async def get_dashboard_kpis(
         dashboard_data = {
             "kpis": kpi_cards,
         }
+
     except HTTPException as exc:
         raise exc
     except Exception as exc:
