@@ -350,6 +350,11 @@ async def login(credentials: UserLogin):
             "login_time": _now_utc()
         })
 
+        # Check if user has existing business profile
+        business_profiles = get_collection("business_profiles")
+        profile = await business_profiles.find_one({"user_id": user_doc["_id"]})
+        has_existing_data = bool(profile)
+
         # ✅ Role handling (default Viewer)
         role = user_doc.get("role") or "Viewer"
 
@@ -369,6 +374,7 @@ async def login(credentials: UserLogin):
             status_code=status.HTTP_200_OK,
             content={
                 "success": True,
+                "has_existing_data": has_existing_data,
                 "data": {
                     "user": user_info,
                     "access_token": access_token,
