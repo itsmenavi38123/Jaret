@@ -58,6 +58,7 @@ async def create_or_update_onboarding(
             content={
                 "success": True,
                 "message": message,
+                "has_existing_data": bool(existing),
                 "data": {
                     "user_id": user_id,
                     "onboarding_data": data.onboarding_data
