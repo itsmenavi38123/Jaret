@@ -135,14 +135,19 @@ async def get_onboarding(current_user: dict = Depends(get_current_user)):
         profile = await business_profiles.find_one({"user_id": user_id})
         if not profile:
             return JSONResponse(
-                status_code=status.HTTP_404_NOT_FOUND,
-                content={"success": False, "error": "Onboarding data not found"}
+                status_code=status.HTTP_200_OK,
+                content={
+                    "success": True,
+                    "has_existing_data": False,
+                    "data": None
+                }
             )
 
         return JSONResponse(
             status_code=status.HTTP_200_OK,
             content={
                 "success": True,
+                "has_existing_data": True,
                 "data": {
                     "user_id": profile["user_id"],
                     "onboarding_data": profile["onboarding_data"],
