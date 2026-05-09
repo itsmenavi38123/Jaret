@@ -10,8 +10,10 @@ from app.db import get_collection
 from app.routes.auth.auth import get_current_user
 from app.models.business_profile import BusinessProfile, BusinessProfileCreate, BusinessProfileUpdate
 from app.config import _now_utc
+from app.services.mapbox_service import MapboxService
 
 router = APIRouter(tags=["business_profile"])
+mapbox_service = MapboxService()
 
 @router.post("/onboarding")
 async def create_or_update_onboarding(
@@ -22,35 +24,97 @@ async def create_or_update_onboarding(
     Create or update onboarding data for the current user.
     If onboarding data already exists, it will be updated.
     """
+
     try:
         business_profiles = get_collection("business_profiles")
         user_id = current_user["id"]
 
-        # Check if onboarding data already exists for this user
+        # =========================
+        # Existing onboarding data
+        # =========================
+
+        onboarding_data = data.onboarding_data.copy()
+
+        # =========================
+        # Build address for geocoding
+        # =========================
+
+        city = onboarding_data.get("city")
+        state = onboarding_data.get("state")
+        headquarters = onboarding_data.get("headquarters")
+
+        address_parts = []
+
+        if headquarters:
+            address_parts.append(headquarters)
+
+        if city:
+            address_parts.append(city)
+
+        if state:
+            address_parts.append(state)
+
+        full_address = ", ".join(address_parts)
+
+        # =========================
+        # Geocode business location
+        # =========================
+
+        geo_data = {}
+
+        try:
+            if full_address:
+                geo_data = await mapbox_service.geocode_address(full_address)
+        except Exception as geo_error:
+            print(f"Mapbox geocode failed: {geo_error}")
+
+        # =========================
+        # Store geo data INSIDE onboarding_data
+        # =========================
+
+        onboarding_data["geo"] = {
+            "business_address": full_address,
+            "city": geo_data.get("city"),
+            "state": geo_data.get("state"),
+            "latitude": geo_data.get("lat"),
+            "longitude": geo_data.get("lng"),
+            "company_timezone": geo_data.get("timezone"),
+            "geocode_confidence": geo_data.get("geocode_confidence"),
+        }
+
+        # =========================
+        # Check existing onboarding
+        # =========================
+
         existing = await business_profiles.find_one({"user_id": user_id})
 
         now = _now_utc()
+
         if existing:
             # Update existing
             await business_profiles.update_one(
                 {"user_id": user_id},
                 {
                     "$set": {
-                        "onboarding_data": data.onboarding_data,
+                        "onboarding_data": onboarding_data,
                         "updated_at": now
                     }
                 }
             )
+
             message = "Onboarding data updated successfully"
+
         else:
             # Create new
             profile = BusinessProfile(
                 user_id=user_id,
-                onboarding_data=data.onboarding_data,
+                onboarding_data=onboarding_data,
                 created_at=now,
                 updated_at=now
             )
+
             await business_profiles.insert_one(profile.dict(by_alias=True))
+
             message = "Onboarding data created successfully"
 
         return JSONResponse(
@@ -61,7 +125,7 @@ async def create_or_update_onboarding(
                 "has_existing_data": bool(existing),
                 "data": {
                     "user_id": user_id,
-                    "onboarding_data": data.onboarding_data
+                    "onboarding_data": onboarding_data
                 }
             }
         )
@@ -69,9 +133,12 @@ async def create_or_update_onboarding(
     except Exception as e:
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content={"success": False, "error": str(e)}
+            content={
+                "success": False,
+                "error": str(e)
+            }
         )
-
+    
 @router.put("/onboarding")
 async def update_onboarding(
     data: BusinessProfileUpdate,
@@ -81,25 +148,88 @@ async def update_onboarding(
     Update existing onboarding data for the current user.
     If no onboarding data exists, returns 404.
     """
+
     try:
         business_profiles = get_collection("business_profiles")
         user_id = current_user["id"]
 
         # Check if onboarding data exists
         existing = await business_profiles.find_one({"user_id": user_id})
+
         if not existing:
             return JSONResponse(
                 status_code=status.HTTP_404_NOT_FOUND,
-                content={"success": False, "error": "Onboarding data not found"}
+                content={
+                    "success": False,
+                    "error": "Onboarding data not found"
+                }
             )
 
-        # Update
+        # =========================
+        # Existing onboarding data
+        # =========================
+
+        onboarding_data = data.onboarding_data.copy()
+
+        # =========================
+        # Build address for geocoding
+        # =========================
+
+        city = onboarding_data.get("city")
+        state = onboarding_data.get("state")
+        headquarters = onboarding_data.get("headquarters")
+
+        address_parts = []
+
+        if headquarters:
+            address_parts.append(headquarters)
+
+        if city:
+            address_parts.append(city)
+
+        if state:
+            address_parts.append(state)
+
+        full_address = ", ".join(address_parts)
+
+        # =========================
+        # Geocode business location
+        # =========================
+
+        geo_data = {}
+
+        try:
+            if full_address:
+                geo_data = await mapbox_service.geocode_address(full_address)
+
+        except Exception as geo_error:
+            print(f"Mapbox geocode failed: {geo_error}")
+
+        # =========================
+        # Store geo data INSIDE onboarding_data
+        # =========================
+
+        onboarding_data["geo"] = {
+            "business_address": full_address,
+            "city": geo_data.get("city"),
+            "state": geo_data.get("state"),
+            "latitude": geo_data.get("lat"),
+            "longitude": geo_data.get("lng"),
+            "company_timezone": geo_data.get("timezone"),
+            "geocode_confidence": geo_data.get("geocode_confidence"),
+        }
+
+        # =========================
+        # Update onboarding
+        # =========================
+
         now = _now_utc()
+
         await business_profiles.update_one(
             {"user_id": user_id},
             {
                 "$set": {
-                    "onboarding_data": data.onboarding_data,
+                    "onboarding_data": onboarding_data,
                     "updated_at": now
                 }
             }
@@ -112,7 +242,7 @@ async def update_onboarding(
                 "message": "Onboarding data updated successfully",
                 "data": {
                     "user_id": user_id,
-                    "onboarding_data": data.onboarding_data
+                    "onboarding_data": onboarding_data
                 }
             }
         )
@@ -120,7 +250,10 @@ async def update_onboarding(
     except Exception as e:
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content={"success": False, "error": str(e)}
+            content={
+                "success": False,
+                "error": str(e)
+            }
         )
 
 @router.get("/onboarding")

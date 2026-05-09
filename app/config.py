@@ -50,6 +50,8 @@ class Settings(BaseSettings):
     # Web Search APIs (for Research Scout)
     tavily_api_key: Optional[str] = None
     serper_api_key: Optional[str] = None
+    # Mapbox
+    mapbox_api_key: Optional[str] = None
 
     # Redis
     redis_url: Optional[str] = "redis://localhost:6379"

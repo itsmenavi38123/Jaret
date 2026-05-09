@@ -20,6 +20,8 @@ from app.models.opportunities import Opportunity, OpportunityCreate, Opportunity
 from app.services.feature_usage_service import feature_usage_service
 from bson import ObjectId
 from app.services.scenario_planning_service import ScenarioPlanningService
+from app.services.mapbox_service import MapboxService
+
 
 import os
 from pydantic import BaseModel
@@ -44,7 +46,7 @@ def serialize_mongo(data):
 router = APIRouter(tags=["opportunities"])
 research_scout = ResearchScoutService()
 scenario_service = ScenarioPlanningService()
-
+mapbox_service = MapboxService()
 
 @router.get("/overview")
 async def get_opportunities_overview(
@@ -444,24 +446,67 @@ async def save_opportunity(
     opportunity_data: OpportunityCreate,
     current_user: dict = Depends(get_current_user),
 ):
-    user_id = current_user["id"]
 
-    opportunity = Opportunity(
-        user_id=user_id,
-        **opportunity_data.dict()
-    )
+    try:
 
-    opportunities_collection = get_collection("opportunities")
-    result = await opportunities_collection.insert_one(opportunity.dict(by_alias=True))
+        user_id = current_user["id"]
 
-    return JSONResponse(
-        status_code=status.HTTP_201_CREATED,
-        content={
-            "message": "Opportunity saved successfully",
-            "opportunity_id": opportunity.id
-        },
-    )
+        business_profiles = get_collection("business_profiles")
 
+        business_profile = await business_profiles.find_one({
+            "user_id": user_id
+        })
+
+        onboarding_data = (
+            business_profile.get("onboarding_data", {})
+            if business_profile else {}
+        )
+
+        company_geo = onboarding_data.get("geo", {})
+
+        company_latitude = company_geo.get("latitude")
+        company_longitude = company_geo.get("longitude")
+
+        geo = await mapbox_service.build_opportunity_geo(
+            location_text=opportunity_data.location_text,
+            company_latitude=company_latitude,
+            company_longitude=company_longitude,
+            start_date=opportunity_data.start_date,
+            opportunity_type=opportunity_data.opportunity_type,
+        )
+
+        opportunity = Opportunity(
+            user_id=user_id,
+            geo=geo,
+            **opportunity_data.dict()
+        )
+
+        opportunities_collection = get_collection("opportunities")
+
+        await opportunities_collection.insert_one(
+            opportunity.dict(by_alias=True)
+        )
+
+        return JSONResponse(
+            status_code=status.HTTP_201_CREATED,
+            content={
+                "message": "Opportunity saved successfully",
+                "opportunity_id": opportunity.id
+            },
+        )
+
+    except Exception as e:
+
+        import traceback
+        traceback.print_exc()
+
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={
+                "error": str(e)
+            },
+        )
+    
 @router.get("/saved")
 async def get_saved_opportunities(
     current_user: dict = Depends(get_current_user),
