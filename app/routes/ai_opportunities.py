@@ -9,18 +9,39 @@ from app.routes.auth.auth import get_current_user
 from app.db import get_collection
 from app.services.research_scout_service import ResearchScoutService
 
+from app.services.firecrawl_service import (firecrawl_service)
 
 router = APIRouter(tags=["ai-opportunities"])
 research_scout = ResearchScoutService()
 
 
-async def web_search(search_term: str, recency_days: int = 30, max_results: int = 10) -> List[Dict[str, Any]]:
-    import os
-    from openai import AsyncOpenAI
-    return []
+async def firecrawl_search(search_term: str, recency_days: int = 30, max_results: int = 10,) -> List[Dict[str, Any]]:
+
+    try:
+        results = await firecrawl_service.search(
+            query=search_term,
+            recency_days=recency_days,
+            max_results=max_results,
+        )
+
+        return results
+
+    except Exception as e:
+        print(f"firecrawl_search error: {e}")
+        return []
 
 
+async def firecrawl_scrape(url: str) -> Dict[str, Any]:
 
+    try:
+        result = await firecrawl_service.scrape(url=url)
+        return result
+
+    except Exception as e:
+        print(f"firecrawl_scrape error: {e}")
+        return {"url": None, "markdown": None, "metadata": {}, "success": False}
+    
+    
 class OpportunitySearchRequest(BaseModel):
     query: str
     opportunity_types: Optional[List[str]] = None

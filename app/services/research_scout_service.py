@@ -113,8 +113,8 @@ class ResearchScoutService:
             {
                 "type": "function",
                 "function": {
-                    "name": "search_web",
-                    "description": "Search the web for real-time information about opportunities, events, market data, and benchmarks.",
+                    "name": "firecrawl_search",
+                    "description": "Search the web for real-time information about opportunities, events, market data, and benchmarks using Firecrawl.",
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -138,6 +138,23 @@ class ResearchScoutService:
             {
                 "type": "function",
                 "function": {
+                    "name": "firecrawl_scrape",
+                    "description": "Scrape a URL to obtain parsed page content for deeper opportunity or benchmark verification.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "url": {
+                                "type": "string",
+                                "description": "The URL to scrape for page content."
+                            }
+                        },
+                        "required": ["url"]
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
                     "name": "getWeather",
                     "description": "Get weather forecast for a specific location and date to determine event viability.",
                     "parameters": {
@@ -151,12 +168,16 @@ class ResearchScoutService:
                                 "type": "number",
                                 "description": "Longitude of the location."
                             },
-                            "date": {
+                            "start_date": {
                                 "type": "string",
-                                "description": "Date of the event (YYYY-MM-DD)."
+                                "description": "Event start date in YYYY-MM-DD format."
+                            },
+                            "end_date": {
+                                "type": "string",
+                                "description": "Event end date in YYYY-MM-DD format."
                             }
                         },
-                        "required": ["lat", "lng"]
+                        "required": ["lat", "lng", "start_date", "end_date"]
                     }
                 }
             }
@@ -183,11 +204,14 @@ Every claim must be grounded in real data. No invented events, RFPs, or benchmar
 
 🧰 TOOLS
 
-- search_web(query, recency_days, max_results)
+- firecrawl_search(query, recency_days, max_results)
   → Use for all live web research (events, RFPs, grants, partnerships, benchmarks, peer practices).
 
+- firecrawl_scrape(url)
+  → Use when the model needs page content from a specific URL to verify details, providers, or source information.
+
 - getWeather(lat, lng, date)
-  → Use only for weather-sensitive businesses or clearly outdoor, in-person events to set event weather_badge (good|mixed|poor) based on forecast. (Note: If tool not available, leave badge null).
+  → Use only for weather-sensitive businesses or clearly outdoor, in-person events to set event weather_badge based on forecast. Return full Open-Meteo weather data whenever possible.
 
 🧩 INPUTS
 
@@ -199,7 +223,7 @@ Every claim must be grounded in real data. No invented events, RFPs, or benchmar
 
 🌐 WEB RESEARCH & BENCHMARKS
 
-Use search_web to:
+Use firecrawl_search to:
 
 - Find specific opportunities:
   - Events, markets, tournaments, expos
@@ -212,6 +236,8 @@ Use search_web to:
 - Find benchmarks & peer practices:
   - Typical margins, revenue per event or job, close rates, utilization, ticket sizes (when available).
   - “What successful [industry] operators do” (e.g., playbooks, best-practice articles, case studies).
+
+Use firecrawl_scrape when a specific link needs deeper content extraction for accuracy or source validation.
 
 Populate:
 - benchmarks[] with simple numeric or directional benchmarks.
@@ -344,9 +370,10 @@ Ops Plan:
 
 ⚙️ BEHAVIOR RULES
 
-- Use search_web for:
+- Use firecrawl_search for:
   • opportunities (events, RFPs, grants, partnerships, listings, training), and
   • benchmarks & peer practices.
+- Use firecrawl_scrape when a referenced URL requires deeper content extraction for accuracy or source validation.
 - Vary sources by type (event platforms, city calendars, SAM.gov/grants.gov/state portals, trade associations, marketplaces, vendor/franchise listings, certification/training registries, industry reports).
 - Always include 3–8 sources with valid titles + URLs + dates.
 - If nothing is found, return empty cards with an advisor that explains why and suggests new filters (change dates/types/radius, try different channels).
@@ -417,26 +444,38 @@ NEVER estimate event revenue without stating conversion_rate and attendance expl
         if tool_calls:
             messages.append(response_message)
             
-            # Import web_search here to avoid circular import
-            from app.routes.ai_opportunities import web_search
+            # Import Firecrawl helpers here to avoid circular import
+            from app.routes.ai_opportunities import firecrawl_search, firecrawl_scrape
             
             for tool_call in tool_calls:
                 function_name = tool_call.function.name
                 function_args = json.loads(tool_call.function.arguments)
                 
-                if function_name == "search_web":
+                if function_name == "firecrawl_search":
                     search_term = function_args.get("query")
                     recency = function_args.get("recency_days", 30)
                     max_results = function_args.get("max_results", 10)
                     
                     # Execute search
-                    search_results = await web_search(search_term, recency, max_results)
+                    search_results = await firecrawl_search(search_term, recency, max_results)
                     
                     messages.append({
                         "tool_call_id": tool_call.id,
                         "role": "tool",
                         "name": function_name,
                         "content": json.dumps(search_results)
+                    })
+
+                elif function_name == "firecrawl_scrape":
+                    url = function_args.get("url")
+                    
+                    scrape_result = await firecrawl_scrape(url)
+                    
+                    messages.append({
+                        "tool_call_id": tool_call.id,
+                        "role": "tool",
+                        "name": function_name,
+                        "content": json.dumps(scrape_result)
                     })
                 
                 elif function_name == "getWeather":
@@ -445,13 +484,13 @@ NEVER estimate event revenue without stating conversion_rate and attendance expl
                     date = function_args.get("date")
                     
                     # Execute weather check
-                    weather_badge = await self._get_weather_badge({"lat": lat, "lng": lng}, date)
+                    weather_data = await self._get_weather_badge({"lat": lat, "lng": lng}, date)
                     
                     messages.append({
                         "tool_call_id": tool_call.id,
                         "role": "tool",
                         "name": function_name,
-                        "content": json.dumps({"weather_badge": weather_badge})
+                        "content": json.dumps(weather_data or {})
                     })
             
             # Get final response
@@ -475,63 +514,131 @@ NEVER estimate event revenue without stating conversion_rate and attendance expl
         self,
         location: Dict[str, Any],
         date: Optional[str] = None,
-    ) -> Optional[str]:
-        """
-        getWeather(lat, lng, date) tool - Get weather badge for events.
-        Returns: "good" | "mixed" | "poor" | None
-        
-        Exact logic from agent prompt:
-        - good: precip <20%, wind <15 mph, temp 55-85°F
-        - mixed: precip <50% or wind 15-25 mph
-        - poor: else
-        """
-        if not location.get("lat") or not location.get("lng"):
+    ) -> Optional[Dict[str, Any]]:
+
+        if ( location.get("lat") is None or location.get("lng") is None):
             return None
-        
+
         try:
-            import os
             import httpx
-            
-            weather_api_key = os.getenv("OPENWEATHER_API_KEY") or os.getenv("WEATHERAPI_KEY")
-            if weather_api_key:
-                # Call weather API
-                lat = location.get("lat")
-                lng = location.get("lng")
-                
-                # Try OpenWeatherMap first
-                try:
-                    async with httpx.AsyncClient(timeout=10.0) as client:
-                        url = "https://api.openweathermap.org/data/2.5/forecast"
-                        params = {
-                            "lat": lat,
-                            "lon": lng,
-                            "appid": weather_api_key,
-                            "units": "imperial",  # For Fahrenheit
-                        }
-                        response = await client.get(url, params=params)
-                        if response.status_code == 200:
-                            data = response.json()
-                            forecast = data.get("list", [{}])[0]
-                            main = forecast.get("main", {})
-                            weather = forecast.get("weather", [{}])[0]
-                            wind = forecast.get("wind", {})
-                            
-                            temp = main.get("temp", 70)
-                            wind_speed = wind.get("speed", 5)
-                            pop = forecast.get("pop", 0) * 100
-                            
-                            if pop < 20 and wind_speed < 15 and 55 <= temp <= 85:
-                                return "good"
-                            elif pop < 50 or (15 <= wind_speed <= 25):
-                                return "mixed"
-                            else:
-                                return "poor"
-                except Exception as e:
-                    print(f"Weather API error: {e}")
-                    pass
-            
-            return None
-        except Exception:
+            from datetime import datetime
+
+            lat = location.get("lat")
+            lng = location.get("lng")
+
+            target_date = date if date else datetime.utcnow().strftime("%Y-%m-%d")
+
+            url = "https://api.open-meteo.com/v1/forecast"
+
+            params = {
+                "latitude": lat,
+                "longitude": lng,
+                "daily": "precipitation_probability_max,temperature_2m_max,temperature_2m_min,weathercode,windspeed_10m_max",
+                "start_date": target_date,
+                "end_date": target_date,
+                "timezone": "auto",
+                "temperature_unit": "fahrenheit",
+                "wind_speed_unit": "mph",
+            }
+
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                response = await client.get(
+                    url,
+                    params=params,
+                )
+
+            if response.status_code != 200:
+                return None
+
+            data = response.json()
+
+            daily = data.get("daily", {})
+
+            precipitation = daily.get(
+                "precipitation_probability_max",
+                [0],
+            )[0]
+
+            wind_speed = daily.get(
+                "windspeed_10m_max",
+                [0],
+            )[0]
+
+            temp_max = daily.get(
+                "temperature_2m_max",
+                [70],
+            )[0]
+
+            temp_min = daily.get(
+                "temperature_2m_min",
+                [60],
+            )[0]
+
+            weather_code = daily.get(
+                "weathercode",
+                [0],
+            )[0]
+
+            avg_temp = (temp_max + temp_min) / 2
+
+            if 65 <= temp_max <= 80:
+                comfort_score = 1.0
+            elif 55 <= temp_max <= 64:
+                comfort_score = 0.8
+            elif 80 <= temp_max <= 90:
+                comfort_score = 0.7
+            elif 45 <= temp_max <= 54:
+                comfort_score = 0.5
+            elif 90 <= temp_max <= 100:
+                comfort_score = 0.4
+            else:
+                comfort_score = 0.2
+
+            severe_weather = False
+            severe_description = None
+
+            if weather_code >= 95:
+                severe_weather = True
+                severe_description = "Thunderstorm"
+            elif weather_code >= 80:
+                severe_weather = True
+                severe_description = "Heavy Rain Showers"
+            elif weather_code >= 73:
+                severe_weather = True
+                severe_description = "Heavy Snow"
+            elif weather_code >= 65:
+                severe_weather = True
+                severe_description = "Heavy Rain"
+
+            if (
+                precipitation < 20
+                and wind_speed < 15
+                and 55 <= avg_temp <= 85
+            ):
+                weather_badge = "good"
+
+            elif (
+                precipitation < 50
+                or (15 <= wind_speed <= 25)
+            ):
+                weather_badge = "mixed"
+
+            else:
+                weather_badge = "poor"
+
+            return {
+                "precipitation_probability": precipitation / 100,
+                "temperature_max_f": temp_max,
+                "temperature_min_f": temp_min,
+                "temperature_comfort_score": comfort_score,
+                "severe_weather_flag": severe_weather,
+                "severe_weather_description": severe_description,
+                "windspeed_mph": wind_speed,
+                "weather_badge": weather_badge,
+            }
+
+        except Exception as e:
+            print(f"Open-Meteo weather error: {e}")
             return None
 
     async def get_scenario_priors(
@@ -568,19 +675,19 @@ NEVER estimate event revenue without stating conversion_rate and attendance expl
 
 Your mission: Fill missing assumptions for financial scenario planning using real web data.
 
-🧰 TOOLS
+TOOLS
 
-- search_web(query, recency_days, max_results)
+- firecrawl_search(query, recency_days, max_results)
   → Use to find real-world data: equipment prices, interest rates, labor rates, market benchmarks.
 
-📊 INPUTS
+INPUTS
 
 - **Scenario Type**: {scenario_type}
 - **User Query**: "{query}"
 - **Industry**: {industry}
 - **Business Profile**: {json.dumps(business_profile, default=str) if business_profile else "None"}
 
-🎯 OUTPUT FORMAT — STRICT JSON ONLY
+OUTPUT FORMAT — STRICT JSON ONLY
 
 Return one object shaped as:
 
@@ -609,10 +716,11 @@ Return one object shaped as:
   ]
 }}
 
-⚙️ BEHAVIOR RULES
+BEHAVIOR RULES
 
 - **CRITICAL**: DO NOT USE 'example.com' or 'test.com'. If you cannot find a source, leave the source field null or omit the assumption.
-- Use search_web to find real data for ALL assumptions.
+- Use firecrawl_search to find real data for ALL assumptions.
+- Use firecrawl_scrape when a specific source URL needs deeper content verification.
 - Common assumptions by scenario type:
   - **CapEx**: equipment_cost, financing_rate, useful_life_years, maintenance_cost_annual
   - **Hiring**: salary_annual, benefits_cost_pct, training_cost, productivity_ramp_months
@@ -622,7 +730,7 @@ Return one object shaped as:
 - Confidence should reflect data quality (0.0-1.0).
 - If data is not available, use industry averages and note the assumption.
 
-✅ QUALITY CHECK BEFORE RETURN
+QUALITY CHECK BEFORE RETURN
 
 - At least 3-5 assumptions populated.
 - All assumptions have sources.
@@ -636,8 +744,8 @@ JSON only (no Markdown, no prose outside fields).
             {
                 "type": "function",
                 "function": {
-                    "name": "search_web",
-                    "description": "Search the web for real-time information about prices, rates, and market data.",
+                    "name": "firecrawl_search",
+                    "description": "Search the web for real-time information about prices, rates, and market data using Firecrawl.",
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -655,6 +763,23 @@ JSON only (no Markdown, no prose outside fields).
                             }
                         },
                         "required": ["query"]
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "firecrawl_scrape",
+                    "description": "Scrape a URL to obtain parsed page content for deeper verification of prices or market sources.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "url": {
+                                "type": "string",
+                                "description": "The URL to scrape for page content."
+                            }
+                        },
+                        "required": ["url"]
                     }
                 }
             }
@@ -681,26 +806,38 @@ JSON only (no Markdown, no prose outside fields).
         if tool_calls:
             messages.append(response_message)
             
-            # Import web_search here to avoid circular import
-            from app.routes.ai_opportunities import web_search
+            # Import Firecrawl helpers here to avoid circular import
+            from app.routes.ai_opportunities import firecrawl_search, firecrawl_scrape
             
             for tool_call in tool_calls:
                 function_name = tool_call.function.name
                 function_args = json.loads(tool_call.function.arguments)
                 
-                if function_name == "search_web":
+                if function_name == "firecrawl_search":
                     search_term = function_args.get("query")
                     recency = function_args.get("recency_days", 30)
                     max_results = function_args.get("max_results", 10)
                     
                     # Execute search
-                    search_results = await web_search(search_term, recency, max_results)
+                    search_results = await firecrawl_search(search_term, recency, max_results)
                     
                     messages.append({
                         "tool_call_id": tool_call.id,
                         "role": "tool",
                         "name": function_name,
                         "content": json.dumps(search_results)
+                    })
+
+                elif function_name == "firecrawl_scrape":
+                    url = function_args.get("url")
+                    
+                    scrape_result = await firecrawl_scrape(url)
+                    
+                    messages.append({
+                        "tool_call_id": tool_call.id,
+                        "role": "tool",
+                        "name": function_name,
+                        "content": json.dumps(scrape_result)
                     })
             
             # Get final response

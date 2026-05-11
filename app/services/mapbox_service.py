@@ -31,6 +31,7 @@ class MapboxService:
             "q": address,
             "access_token": self.api_key,
             "limit": 1,
+            "country": "US",
         }
 
         try:
@@ -117,7 +118,7 @@ class MapboxService:
         depart_at: Optional[str] = None,
     ) -> Dict[str, Any]:
 
-        if not all([
+        if any(v is None for v in [
             origin_lat,
             origin_lng,
             destination_lat,
