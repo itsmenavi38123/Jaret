@@ -4,9 +4,16 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 from app.db import create_indexes, close_client
+import asyncio
+from contextlib import suppress
+from datetime import datetime
+load_dotenv()
+
+from app.services.scout_scheduler_service import ScoutSchedulerService
+
 
 # load .env (install python-dotenv if you don't have it: pip install python-dotenv)
-load_dotenv()
+
 
 # import routers (make sure backend/app/routes/auth/auth.py exposes `router`)
 from app.routes.auth.auth import router as auth_router
@@ -27,6 +34,9 @@ from app.routes.asset_management import router as asset_management_router
 from app.routes.preparation import router as preparation_router
 from app.routes.admin import router as admin_router
 from app.routes.integrations import router as integrations_router
+
+scout_scheduler = ScoutSchedulerService()
+scheduler_task = None
 
 app = FastAPI(
     title=os.getenv("APP_NAME", "FastAPI Backend"),
@@ -69,16 +79,37 @@ app.include_router(integrations_router, prefix="/api")
 app.include_router(admin_router)
 
 
-
 @app.on_event("startup")
 async def on_startup():
+    global scheduler_task
+
     await create_indexes()
+    async def scheduler_loop():
+
+        while True:
+            now = datetime.utcnow()
+            if now.hour == 2 and now.minute == 0:
+                try:
+                    await scout_scheduler.run_daily_scout_pipeline()
+                except Exception as e:
+                    print(f"Scout scheduler error: {e}")
+                await asyncio.sleep(60)
+            await asyncio.sleep(20)
+
+    scheduler_task = asyncio.create_task(
+        scheduler_loop()
+    )
 
 
 @app.on_event("shutdown")
 async def on_shutdown():
-    close_client()
 
+    global scheduler_task
+    if scheduler_task:
+        scheduler_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await scheduler_task
+    close_client()
 
 @app.get("/")
 async def root():

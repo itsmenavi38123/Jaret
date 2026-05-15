@@ -26,6 +26,7 @@ class ResearchScoutService:
         business_profile: Optional[Dict[str, Any]] = None,
         opportunities_profile: Optional[Dict[str, Any]] = None,
         mode: str = "live",
+        run_type: str = "on_demand",
     ) -> Dict[str, Any]:
         """
         Main Research Scout function that returns structured JSON matching the agent prompt.
@@ -40,7 +41,10 @@ class ResearchScoutService:
         Returns:
             Structured JSON matching the Research Scout format
         """
-        scope = self._build_scope(user_id, business_profile, opportunities_profile, mode)
+        scope = self._assemble_scout_context( user_id, business_profile, opportunities_profile, mode)
+        
+        scope["run_type"] = run_type
+        scope["user_query"] = query
         
         try:
             return await self._generate_live_response(query, scope, business_profile, opportunities_profile)
@@ -50,46 +54,86 @@ class ResearchScoutService:
             # but for this cleanup, we are removing the legacy manual fallback.
             raise e
 
-    def _build_scope(
+    def _assemble_scout_context(
         self,
         user_id: str,
         business_profile: Optional[Dict[str, Any]],
         opportunities_profile: Optional[Dict[str, Any]],
         mode: str,
     ) -> Dict[str, Any]:
-        """Build scope object"""
-        # Extract industry/NAICS from business profile
-        industry = "Unknown"
-        naics = None
-        if business_profile and business_profile.get("onboarding_data"):
-            onboarding = business_profile["onboarding_data"]
-            industry = onboarding.get("industry", onboarding.get("business_type", "Unknown"))
-            naics = onboarding.get("naics")
-        
-        # Extract location
-        location = {"city": "", "state": "", "lat": 0, "lng": 0}
-        if opportunities_profile:
-            region = opportunities_profile.get("operating_region", "")
-            if region:
-                # Try to parse city/state
-                parts = region.split(",")
-                if len(parts) >= 2:
-                    location["city"] = parts[0].strip()
-                    location["state"] = parts[1].strip()
-                else:
-                    location["state"] = region
-        
-        # Extract types and radius
+
+        onboarding = business_profile.get("onboarding_data", {}) if business_profile else {}
+
+        industry = onboarding.get("industry_description", "Unknown")
+        naics = onboarding.get("naics_code")
+
+        geo = onboarding.get("geo", {})
+
+        location = {
+            "city": geo.get("city", onboarding.get("city", "")),
+            "state": geo.get("state", onboarding.get("state", "")),
+            "lat": geo.get("latitude", 0),
+            "lng": geo.get("longitude", 0),
+        }
+
         types = opportunities_profile.get("preferred_opportunity_types", []) if opportunities_profile else []
+
         radius_miles = opportunities_profile.get("radius", 50) if opportunities_profile else 50
-        
+
+        try:
+            monthly_revenue = float(onboarding.get("monthly_revenue", 0))
+        except (ValueError, TypeError):
+            monthly_revenue = 0
+
+        try:
+            monthly_expenses = float(onboarding.get("monthly_expenses", 0))
+        except (ValueError, TypeError):
+            monthly_expenses = 0
+
+        monthly_profit = monthly_revenue - monthly_expenses
+
         return {
             "company_id": user_id,
+
+            "business_name": onboarding.get("business_name"),
+            "legal_entity_type": onboarding.get("business_entity"),
+            "years_in_business": onboarding.get("founded_date"),
+
             "industry": industry,
+            "industry_description": onboarding.get("industry_description"),
             "naics": naics,
+
             "location": location,
+
+            "business_keywords": onboarding.get("main_products", ""),
+            "main_products": onboarding.get("main_products"),
+
+            "strategic_mode": onboarding.get("current_priority", []),
+            "priorities": onboarding.get("priorities", []),
+
+            "staff_count": onboarding.get("full_time_employees"),
+            "market_focus": onboarding.get("market_focus"),
+
+            "monthly_revenue": monthly_revenue,
+            "monthly_expenses": monthly_expenses,
+            "monthly_profit": monthly_profit,
+
+            "competitors": onboarding.get("competitors"),
+
+            "goals_12_months": onboarding.get("goals_12_months"),
+            "goals_3_years": onboarding.get("goals_3_years"),
+            "long_term_vision": onboarding.get("long_term_vision"),
+
+            "growth_limits": onboarding.get("growth_limits", []),
+
+            "max_budget": opportunities_profile.get("max_budget") if opportunities_profile else None,
+            "travel_range": opportunities_profile.get("travel_range") if opportunities_profile else None,
+            "staffing_capacity": opportunities_profile.get("staffing_capacity") if opportunities_profile else None,
+            "risk_appetite": opportunities_profile.get("risk_appetite") if opportunities_profile else None,
+
             "radius_miles": radius_miles,
-            "window_days": 14,  # Default 2-week window
+            "window_days": 14,
+
             "types": types,
             "mode": mode,
         }
@@ -433,8 +477,8 @@ NEVER estimate event revenue without stating conversion_rate and attendance expl
             model="gpt-4o",
             messages=messages,
             tools=tools,
-            tool_choice="auto",
-            response_format={"type": "json_object"}
+            tool_choice="required",
+            # response_format={"type": "json_object"}
         )
         
         response_message = response.choices[0].message
@@ -450,7 +494,7 @@ NEVER estimate event revenue without stating conversion_rate and attendance expl
             for tool_call in tool_calls:
                 function_name = tool_call.function.name
                 function_args = json.loads(tool_call.function.arguments)
-                
+                            
                 if function_name == "firecrawl_search":
                     search_term = function_args.get("query")
                     recency = function_args.get("recency_days", 30)
@@ -463,7 +507,7 @@ NEVER estimate event revenue without stating conversion_rate and attendance expl
                         "tool_call_id": tool_call.id,
                         "role": "tool",
                         "name": function_name,
-                        "content": json.dumps(search_results)
+                        "content": json.dumps(search_results, default=str)
                     })
 
                 elif function_name == "firecrawl_scrape":
@@ -475,7 +519,7 @@ NEVER estimate event revenue without stating conversion_rate and attendance expl
                         "tool_call_id": tool_call.id,
                         "role": "tool",
                         "name": function_name,
-                        "content": json.dumps(scrape_result)
+                        "content": json.dumps(scrape_result, default=str)
                     })
                 
                 elif function_name == "getWeather":
@@ -505,7 +549,12 @@ NEVER estimate event revenue without stating conversion_rate and attendance expl
             
         # Parse JSON
         try:
-            return json.loads(final_content)
+            parsed = json.loads(final_content)
+            max_cards = 8 if scope.get("run_type") == "on_demand" else 12
+            if ( parsed.get("opportunities") and parsed["opportunities"].get("cards") ):
+                parsed["opportunities"]["cards"] = (parsed["opportunities"]["cards"][:max_cards])
+            return parsed
+        
         except json.JSONDecodeError:
             print("Failed to parse OpenAI JSON response")
             raise ValueError("Invalid JSON response from OpenAI")

@@ -4,28 +4,26 @@ import certifi
 from typing import Optional
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase, AsyncIOMotorCollection
 
+# from app.routes import opportunities
+
 _client: Optional[AsyncIOMotorClient] = None
 _db: Optional[AsyncIOMotorDatabase] = None
 
 
 def get_client() -> AsyncIOMotorClient:
-    """
-    Returns a singleton AsyncIOMotorClient. Creates it if not already created.
-    """
     global _client
     if _client is None:
         mongo_uri = os.getenv("MONGO_URI")
         if not mongo_uri:
             raise RuntimeError("MONGO_URI not set in environment")
-        # Use certifi for SSL certificates to avoid handshake errors
-        _client = AsyncIOMotorClient(mongo_uri, tlsCAFile=certifi.where())
+        _client = AsyncIOMotorClient(
+            mongo_uri,
+            tlsCAFile=certifi.where(),
+        )
     return _client
 
 
 def get_database() -> AsyncIOMotorDatabase:
-    """
-    Returns the configured database object.
-    """
     global _db
     if _db is None:
         db_name = os.getenv("MONGO_DB_NAME")
@@ -36,17 +34,10 @@ def get_database() -> AsyncIOMotorDatabase:
 
 
 def get_collection(name: str) -> AsyncIOMotorCollection:
-    """
-    Convenience to get a collection from the configured DB.
-    Usage: users = get_collection('users'); await users.find_one({...})
-    """
     return get_database()[name]
 
 
 def close_client() -> None:
-    """
-    Close the motor client - call this on application shutdown.
-    """
     global _client
     if _client is not None:
         _client.close()
@@ -54,6 +45,7 @@ def close_client() -> None:
 
 
 async def create_indexes() -> None:
+
     users = get_collection("users")
     await users.create_index("email", unique=True)
 
@@ -76,7 +68,6 @@ async def create_indexes() -> None:
     await xero_tokens.create_index([("user_id", 1), ("is_active", 1)])
     await xero_tokens.create_index("created_at")
 
-    # Assets (built-in Asset Hub and external sync target)
     assets = get_collection("assets")
     await assets.create_index("user_id")
     await assets.create_index("asset_id")
@@ -93,6 +84,20 @@ async def create_indexes() -> None:
     await opportunities.create_index("deadline")
     await opportunities.create_index("created_at")
     await opportunities.create_index("updated_at")
+    await opportunities.create_index("opportunity_type")
+    await opportunities.create_index("scoring_data.match_score")
+    await opportunities.create_index([("user_id", 1), ("deadline", 1)])
+
+    scout_runs = get_collection("scout_runs")
+    await scout_runs.create_index("business_id")
+    await scout_runs.create_index("started_at")
+
+    scout_rate_limits = get_collection("scout_rate_limits")
+    await scout_rate_limits.create_index([("business_id", 1), ("date", 1)])
+
+    execution_checkpoints = get_collection("execution_checkpoints")
+    await execution_checkpoints.create_index("opportunity_id")
+    await execution_checkpoints.create_index("scheduled_at")
 
     admin_logs = get_collection("admin_logs")
     await admin_logs.create_index("admin_user_id")
@@ -102,16 +107,13 @@ async def create_indexes() -> None:
     await admin_logs.create_index([("admin_user_id", 1), ("timestamp", -1)])
     await admin_logs.create_index([("target_user_id", 1), ("timestamp", -1)])
 
-    # Scenario planning chat threads
     scenario_chats = get_collection("scenario_chats")
     await scenario_chats.create_index("user_id")
     await scenario_chats.create_index("created_at")
     await scenario_chats.create_index([("user_id", 1), ("updated_at", -1)])
 
-
-    # POS integrations
     user_pos_access = get_collection("user_pos_access")
-    await user_pos_access.create_index([("user_id", 1), ("provider", 1)],unique=True)
+    await user_pos_access.create_index([("user_id", 1), ("provider", 1)], unique=True)
 
     oauth_states = get_collection("oauth_states")
-    await oauth_states.create_index("state",unique=True)
+    await oauth_states.create_index("state", unique=True)
