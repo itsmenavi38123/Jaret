@@ -8,8 +8,10 @@ import re
 from app.routes.auth.auth import get_current_user
 from app.db import get_collection
 from app.services.research_scout_service import ResearchScoutService
-from app.services.firecrawl_service import (firecrawl_service)
+from app.services.firecrawl_service import firecrawl_service
 from datetime import datetime, timedelta
+from app.services.tagging_service import tagging_service
+
 
 router = APIRouter(tags=["ai-opportunities"])
 research_scout = ResearchScoutService()
@@ -90,6 +92,33 @@ async def process_scout_output(
         start_date = card.get("start_date")
 
         opportunity_type = card.get("opportunity_type")
+        event_metadata = {
+            "event_prestige_tier": card.get("event_prestige_tier"),
+            "event_audience": card.get("event_audience"),
+            "event_service_fit": card.get("event_service_fit", []),
+        }
+
+        risk_data = {
+            "adjacent_match": card.get("adjacent_match", False),
+        }
+
+        scoring_data = {
+            "industry_jaccard_score": card.get(
+                "industry_jaccard_score",
+                0,
+            ),
+        }
+
+        portfolio_data = {
+            "business_tags": card.get(
+                "business_tags",
+                [],
+            ),
+            "opportunity_tags": card.get(
+                "opportunity_tags",
+                [],
+            ),
+        }
 
         dedup_query = {
             "user_id": user_id,
@@ -134,6 +163,24 @@ async def process_scout_output(
             "user_id": user_id,
             "normalized_title": normalized_title,
             "updated_at": datetime.utcnow(),
+
+            "event_metadata": event_metadata,
+
+            "risk_data": {
+                **card.get("risk_data", {}),
+                **risk_data,
+            },
+
+            "scoring_data": {
+                **card.get("scoring_data", {}),
+                **scoring_data,
+            },
+
+            "portfolio_data": {
+                **card.get("portfolio_data", {}),
+                **portfolio_data,
+            },
+
             "weather_data": {
                 **card.get("weather_data", {}),
                 "weather_risk_detected": severe_weather_flag,

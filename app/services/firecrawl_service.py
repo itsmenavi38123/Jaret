@@ -85,9 +85,7 @@ class FirecrawlService:
             return formatted_results
 
         except Exception as e:
-
             print(f"Firecrawl search exception: {e}")
-
             return []
 
     async def scrape(

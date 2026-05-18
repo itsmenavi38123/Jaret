@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional
 import json
 from openai import AsyncOpenAI
 import os
-
+from app.services.tagging_service import tagging_service
 
 class ResearchScoutService:
     """
@@ -92,12 +92,17 @@ class ResearchScoutService:
 
         monthly_profit = monthly_revenue - monthly_expenses
 
+        business_classifications = self._build_business_classifications(onboarding)
+        business_tags = tagging_service.extract_business_tags(onboarding)
+
         return {
             "company_id": user_id,
 
             "business_name": onboarding.get("business_name"),
             "legal_entity_type": onboarding.get("business_entity"),
             "years_in_business": onboarding.get("founded_date"),
+            "business_classifications": business_classifications,
+            "business_tags": business_tags,
 
             "industry": industry,
             "industry_description": onboarding.get("industry_description"),
@@ -137,6 +142,107 @@ class ResearchScoutService:
             "types": types,
             "mode": mode,
         }
+    def _build_business_classifications(
+        self,
+        onboarding: Dict[str, Any],
+    ) -> List[str]:
+
+        classifications = []
+
+        industry = (
+            onboarding.get("industry_description", "") or ""
+        ).lower()
+
+        naics = str(
+            onboarding.get("naics_code", "") or ""
+        )
+
+        main_products = (
+            onboarding.get("main_products", "") or ""
+        ).lower()
+
+        staff_count = onboarding.get("full_time_employees")
+
+        try:
+            staff_count = int(staff_count)
+        except (TypeError, ValueError):
+            staff_count = None
+
+        if staff_count is not None:
+
+            if staff_count <= 2:
+                classifications.append("solo_operator")
+
+            elif 3 <= staff_count <= 10:
+                classifications.append("small_team")
+
+            elif staff_count >= 10:
+                classifications.append("established_smb")
+
+        if (
+            "food" in industry
+            or "cafe" in industry
+            or naics.startswith("722")
+            or naics.startswith("311")
+        ):
+            classifications.append("food_hospitality")
+
+        if (
+            naics.startswith("236")
+            or naics.startswith("237")
+            or naics.startswith("238")
+        ):
+            classifications.append("trades_contractor")
+
+        if (
+            naics.startswith("541")
+            or naics.startswith("561")
+        ):
+            classifications.append("professional_services")
+
+        if "arts" in industry or "creative" in industry:
+            classifications.append("creative_arts")
+
+        if (
+            naics.startswith("621")
+            or naics.startswith("713")
+            or naics.startswith("812")
+        ):
+            classifications.append("health_wellness")
+
+        product_keywords = [
+            "product",
+            "retail",
+            "packaged",
+            "manufacturing",
+            "goods",
+            "coffee",
+            "beverage",
+            "food",
+        ]
+
+        is_product_business = any(
+            keyword in main_products
+            for keyword in product_keywords
+        )
+
+        if is_product_business:
+            classifications.append("product_business")
+
+        manufacturing_naics = (
+            naics.startswith("31")
+            or naics.startswith("32")
+            or naics.startswith("33")
+        )
+
+        if (
+            not is_product_business
+            and "food" not in industry
+            and not manufacturing_naics
+        ):
+            classifications.append("service_business")
+
+        return list(set(classifications))
 
     async def _generate_live_response(
         self,
@@ -294,12 +400,13 @@ Return one object shaped as:
 {{
   "query": "original user text",
   "scope": {{
-    "company_id": "demo|{{id}}",
+    "company_id": "string",
     "industry": "string",
     "naics": "string|null",
     "location": {{"city":"", "state":"", "lat":0, "lng":0}},
-    "radius_miles": 50,
-    "window_days": 14,
+    "business_classifications": ["solo_operator","food_hospitality"],
+    "radius_miles": 0,
+    "window_days": 0,
     "types": ["event","rfp","grant","partnership","listing","training"],
     "mode": "demo|live"
   }},
@@ -412,6 +519,17 @@ Ops Plan:
 - State key assumptions under ops_plan.assumptions.
 - Make sure the ops_plan clearly answers: “How much should we prepare for this opportunity?” and “What are the tradeoffs?”
 
+Business classifications influence scoring priority.
+
+Examples:
+- food_hospitality boosts events and food grants
+- solo_operator suppresses large RFPs
+- established_smb boosts supplier diversity and large contracts
+- product_business boosts retail placements
+- service_business suppresses shelf-placement opportunities
+
+Use provided business_classifications when ranking opportunities.
+
 ⚙️ BEHAVIOR RULES
 
 - Use firecrawl_search for:
@@ -428,7 +546,7 @@ Ops Plan:
 
 - mode=demo: you may use conservative ranges and generic providers but still return real, current examples when possible. Mark assumptions clearly.
 - mode=live: strictly current items only; prefer official portals/providers.
-
+- Use actual values from provided business profile scope. Schema values are examples only.
 ✅ QUALITY CHECK BEFORE RETURN
 
 - All top-level keys present (query, scope, digest, opportunities, benchmarks, so_what, sources).
@@ -550,6 +668,36 @@ NEVER estimate event revenue without stating conversion_rate and attendance expl
         # Parse JSON
         try:
             parsed = json.loads(final_content)
+            if parsed.get("opportunities") and parsed["opportunities"].get("cards"):
+
+                business_tags = scope.get("business_tags", [])
+
+                for card in parsed["opportunities"]["cards"]:
+
+                    metadata = tagging_service.extract_full_opportunity_metadata(
+                        title=card.get("title", ""),
+                        notes=card.get("notes", ""),
+                        opportunity_type=card.get("type", ""),
+                    )
+
+                    opportunity_tags = metadata.get("opportunity_tags", [])
+
+                    card["opportunity_tags"] = opportunity_tags
+                    card["business_tags"] = business_tags
+                    card["event_prestige_tier"] = metadata.get("event_prestige_tier")
+                    card["event_audience"] = metadata.get("event_audience")
+                    card["event_service_fit"] = metadata.get("event_service_fit", [])
+
+                    card["industry_jaccard_score"] = tagging_service.calculate_jaccard_similarity(
+                        business_tags,
+                        opportunity_tags,
+                    )
+
+                    card["adjacent_match"] = tagging_service.has_adjacent_match(
+                        business_tags,
+                        opportunity_tags,
+                    )
+
             max_cards = 8 if scope.get("run_type") == "on_demand" else 12
             if ( parsed.get("opportunities") and parsed["opportunities"].get("cards") ):
                 parsed["opportunities"]["cards"] = (parsed["opportunities"]["cards"][:max_cards])
