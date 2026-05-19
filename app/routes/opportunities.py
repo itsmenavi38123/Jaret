@@ -536,7 +536,9 @@ async def get_saved_opportunities(
         )
 
         opportunities = await cursor.to_list(length=page_size)
-
+        
+        for item in opportunities:
+            item["_id"] = str(item["_id"])
 
         return JSONResponse(
             status_code=status.HTTP_200_OK,
