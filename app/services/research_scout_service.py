@@ -122,6 +122,15 @@ class ResearchScoutService:
             "monthly_revenue": monthly_revenue,
             "monthly_expenses": monthly_expenses,
             "monthly_profit": monthly_profit,
+            "cash_balance": opportunities_profile.get("cash_balance", 0) if opportunities_profile else 0,
+            "outstanding_ar": opportunities_profile.get("outstanding_ar", []) if opportunities_profile else [],
+            "runway_trend": opportunities_profile.get("runway_trend", "stable") if opportunities_profile else "stable",
+
+            "demand_strain_next_30d": opportunities_profile.get("demand_strain_next_30d"),
+            "demand_strain_next_60d": opportunities_profile.get("demand_strain_next_60d"),
+            "demand_strain_next_90d": opportunities_profile.get("demand_strain_next_90d"),
+
+            "permits_and_licenses": opportunities_profile.get("permits_and_licenses", []) if opportunities_profile else [],
 
             "competitors": onboarding.get("competitors"),
 
@@ -135,7 +144,12 @@ class ResearchScoutService:
             "travel_range": opportunities_profile.get("travel_range") if opportunities_profile else None,
             "staffing_capacity": opportunities_profile.get("staffing_capacity") if opportunities_profile else None,
             "risk_appetite": opportunities_profile.get("risk_appetite") if opportunities_profile else None,
-
+            "service_model": opportunities_profile.get("service_model") if opportunities_profile else None,
+            "price_tier": opportunities_profile.get("price_tier") if opportunities_profile else None,
+            "audience": opportunities_profile.get("audience") if opportunities_profile else None,
+            "proven_capabilities": opportunities_profile.get("proven_capabilities", []) if opportunities_profile else [],
+            "historical_outcomes": opportunities_profile.get("historical_outcomes", []) if opportunities_profile else [],
+            
             "radius_miles": radius_miles,
             "window_days": 14,
 
@@ -687,6 +701,21 @@ NEVER estimate event revenue without stating conversion_rate and attendance expl
                     card["event_prestige_tier"] = metadata.get("event_prestige_tier")
                     card["event_audience"] = metadata.get("event_audience")
                     card["event_service_fit"] = metadata.get("event_service_fit", [])
+                    card["business_classifications"] = scope.get("business_classifications",[],)
+                    card["service_model"] = scope.get("service_model")
+                    card["price_tier"] = scope.get("price_tier")
+                    card["audience"] = scope.get("audience")
+                    card["proven_capabilities"] = scope.get("proven_capabilities", [])
+                    card["historical_outcomes"] = scope.get("historical_outcomes", [])
+                    card["cash_balance"] = scope.get("cash_balance", 0)
+                    card["outstanding_ar"] = scope.get("outstanding_ar", [])
+                    card["runway_trend"] = scope.get("runway_trend", "stable")
+
+                    card["demand_strain_next_30d"] = scope.get("demand_strain_next_30d")
+                    card["demand_strain_next_60d"] = scope.get("demand_strain_next_60d")
+                    card["demand_strain_next_90d"] = scope.get("demand_strain_next_90d")
+
+                    card["permits_and_licenses"] = scope.get("permits_and_licenses", [])
 
                     card["industry_jaccard_score"] = tagging_service.calculate_jaccard_similarity(
                         business_tags,

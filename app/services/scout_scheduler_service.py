@@ -4,6 +4,7 @@ from datetime import datetime
 from app.db import get_collection
 from app.services.research_scout_service import ResearchScoutService
 from app.routes.ai_opportunities import process_scout_output
+from app.services.opportunity_rescore_service import opportunity_rescore_service
 
 
 class ScoutSchedulerService:
@@ -142,3 +143,7 @@ class ScoutSchedulerService:
                 )
 
             await asyncio.sleep(5)
+
+    async def run_daily_opportunity_rescore(self):
+
+        return await opportunity_rescore_service.daily_rescore_active_opportunities()

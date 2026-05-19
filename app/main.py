@@ -84,22 +84,33 @@ async def on_startup():
     global scheduler_task
 
     await create_indexes()
-    async def scheduler_loop():
 
+    async def scheduler_loop():
         while True:
+
             now = datetime.utcnow()
+
             if now.hour == 2 and now.minute == 0:
                 try:
                     await scout_scheduler.run_daily_scout_pipeline()
                 except Exception as e:
                     print(f"Scout scheduler error: {e}")
+
                 await asyncio.sleep(60)
+
+            if now.hour == 3 and now.minute == 0:
+                try:
+                    await scout_scheduler.run_daily_opportunity_rescore()
+                except Exception as e:
+                    print(f"Opportunity rescore error: {e}")
+
+                await asyncio.sleep(60)
+
             await asyncio.sleep(20)
 
     scheduler_task = asyncio.create_task(
         scheduler_loop()
     )
-
 
 @app.on_event("shutdown")
 async def on_shutdown():

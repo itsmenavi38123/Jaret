@@ -10,8 +10,8 @@ from app.db import get_collection
 from app.services.research_scout_service import ResearchScoutService
 from app.services.firecrawl_service import firecrawl_service
 from datetime import datetime, timedelta
-from app.services.tagging_service import tagging_service
-
+# from app.services.tagging_service import tagging_service
+from app.services.scoring_service import scoring_service
 
 router = APIRouter(tags=["ai-opportunities"])
 research_scout = ResearchScoutService()
@@ -74,7 +74,7 @@ async def process_scout_output(
     for card in cards:
 
         normalized_title = normalize_opportunity_title(
-            card.get("opportunity_name", "")
+            card.get("title", "")
         )
 
         if normalized_title in tracked_titles:
@@ -110,16 +110,16 @@ async def process_scout_output(
         }
 
         portfolio_data = {
-            "business_tags": card.get(
-                "business_tags",
-                [],
-            ),
-            "opportunity_tags": card.get(
-                "opportunity_tags",
-                [],
-            ),
-        }
+            "business_tags": card.get("business_tags", []),
+            "opportunity_tags": card.get("opportunity_tags", []),
 
+            "service_model": card.get("service_model"),
+            "price_tier": card.get("price_tier"),
+            "audience": card.get("event_audience") or card.get("audience"),
+
+            "proven_capabilities": card.get("proven_capabilities", []),
+            "historical_outcomes": card.get("historical_outcomes", []),
+        }
         dedup_query = {
             "user_id": user_id,
             "normalized_title": normalized_title,
@@ -158,22 +158,79 @@ async def process_scout_output(
                 or "Severe weather risk detected."
             )
 
+        business_context = {
+            "business_classifications": card.get(
+                "business_classifications",
+                [],
+            ),
+        }
+
+        scoring_result = scoring_service.score_opportunity(
+            opportunity=card,
+            business_context=business_context,
+            trigger="initial_scout",
+        )
+        why_reason_codes = []
+
+        if card.get("adjacent_match"):
+            why_reason_codes.append("adjacent_industry_match")
+
+        if card.get("industry_jaccard_score", 0) >= 0.5:
+            why_reason_codes.append("strong_industry_match")
+
+        if card.get("event_prestige_tier") in [
+            "premium",
+            "elite",
+        ]:
+            why_reason_codes.append("high_prestige_event")
+
+        if card.get("event_audience") == "b2b":
+            why_reason_codes.append("b2b_alignment")
+
+        if card.get("weather_badge") == "good":
+            why_reason_codes.append("favorable_weather")
+
         update_data = {
             **card,
             "user_id": user_id,
             "normalized_title": normalized_title,
             "updated_at": datetime.utcnow(),
 
+            "match_score": scoring_result["match_score"],
+            "readiness_score": scoring_result["readiness_score"],
+            "portfolio_adjusted_readiness": scoring_result.get("portfolio_adjusted_readiness"),
+            "event_readiness_score": scoring_result["event_readiness_score"],
+            "event_readiness_label": scoring_result.get("event_readiness_label"),
+            "data_trust_indicator": scoring_result["data_trust_indicator"],
+            "last_scored_at": scoring_result["last_scored_at"],
+            "why_reason_codes": scoring_result.get("why_reason_codes", []),
+            "expected_roi_mult": scoring_result.get("expected_roi_mult"),
+            "expected_roi_display": scoring_result.get("expected_roi_display"),
             "event_metadata": event_metadata,
 
             "risk_data": {
                 **card.get("risk_data", {}),
                 **risk_data,
+                "why_reason_codes": why_reason_codes,
             },
 
             "scoring_data": {
                 **card.get("scoring_data", {}),
                 **scoring_data,
+
+                "score_history": [
+                    *(existing.get("scoring_data", {}).get("score_history", []) if existing else []),
+                    *scoring_result["score_history"],
+                ],
+
+                "original_preliminary_fit_score": (
+                    existing.get("scoring_data", {}).get(
+                        "original_preliminary_fit_score",
+                        card.get("fit_score", 0),
+                    )
+                    if existing
+                    else card.get("fit_score", 0)
+                ),
             },
 
             "portfolio_data": {
@@ -185,7 +242,12 @@ async def process_scout_output(
                 **card.get("weather_data", {}),
                 "weather_risk_detected": severe_weather_flag,
                 "weather_risk_message": weather_risk_message,
-            }
+            },
+
+            "verification_data": {
+                **card.get("verification_data", {}),
+                "data_trust_indicator": scoring_result["data_trust_indicator"],
+            },
         }
 
         if existing:
@@ -226,7 +288,6 @@ async def firecrawl_search(search_term: str, recency_days: int = 30, max_results
         print(f"firecrawl_search error: {e}")
         return []
 
-
 async def firecrawl_scrape(url: str) -> Dict[str, Any]:
 
     try:
@@ -237,12 +298,10 @@ async def firecrawl_scrape(url: str) -> Dict[str, Any]:
         print(f"firecrawl_scrape error: {e}")
         return {"url": None, "markdown": None, "metadata": {}, "success": False}
     
-    
 class OpportunitySearchRequest(BaseModel):
     query: str
     opportunity_types: Optional[List[str]] = None
     limit: Optional[int] = 10
-
 
 @router.post("/search")
 async def ai_opportunities_search(
@@ -367,7 +426,6 @@ async def ai_opportunities_search(
             media_type="application/json",
         )
 
-
 @router.get("/search")
 async def ai_opportunities_search_get(
     query: str = Query(..., description="Search query"),
@@ -386,3 +444,86 @@ async def ai_opportunities_search_get(
     
     return await ai_opportunities_search(request, current_user, mode)
 
+@router.get("/event-readiness-kpi")
+async def get_event_readiness_kpi(
+    current_user: dict = Depends(get_current_user),
+):
+
+    try:
+        opportunities = get_collection("opportunities")
+        user_id = current_user["id"]
+        now = datetime.utcnow()
+        next_30_days = now + timedelta(days=30)
+        upcoming_events = await opportunities.find(
+            {
+                "user_id": user_id,
+                "type": "event",
+                "start_date": {
+                    "$gte": now.isoformat(),
+                    "$lte": next_30_days.isoformat(),
+                },
+                "event_readiness_score": {
+                    "$ne": None,
+                },
+            }
+        ).to_list(length=None)
+
+        fallback_used = False
+
+        if not upcoming_events:
+
+            next_120_days = now + timedelta(days=120)
+            upcoming_events = await opportunities.find(
+                {
+                    "user_id": user_id,
+                    "type": "event",
+                    "start_date": {
+                        "$gte": now.isoformat(),
+                        "$lte": next_120_days.isoformat(),
+                    },
+                    "event_readiness_score": {
+                        "$ne": None,
+                    },
+                }
+            ).to_list(length=None)
+            fallback_used = True
+
+        if not upcoming_events:
+
+            return JSONResponse(
+                status_code=status.HTTP_200_OK,
+                content={
+                    "success": True,
+                    "message": "No upcoming events.",
+                    "event_readiness_index": None,
+                    "events_count": 0,
+                },
+            )
+
+        scores = [
+            event.get("event_readiness_score", 0)
+            for event in upcoming_events
+            if event.get("event_readiness_score") is not None
+        ]
+
+        average_score = round(sum(scores) / max(len(scores), 1))
+
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content={
+                "success": True,
+                "event_readiness_index": average_score,
+                "events_count": len(scores),
+                "fallback_120d_used": fallback_used,
+            },
+        )
+
+    except Exception as e:
+
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={
+                "success": False,
+                "error": str(e),
+            },
+        )
