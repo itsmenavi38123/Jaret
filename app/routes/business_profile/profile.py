@@ -237,6 +237,21 @@ async def update_onboarding(
         )
 
         now = _now_utc()
+        existing_onboarding = existing.get("onboarding_data", {})
+
+        previous_service_model = existing_onboarding.get("service_model")
+        previous_price_tier = existing_onboarding.get("price_tier")
+        previous_audience = existing_onboarding.get("market_focus")
+
+        new_service_model = onboarding_data.get("service_model")
+        new_price_tier = onboarding_data.get("price_tier")
+        new_audience = onboarding_data.get("market_focus")
+
+        profile_dimensions_changed = any([
+            previous_service_model != new_service_model,
+            previous_price_tier != new_price_tier,
+            previous_audience != new_audience,
+        ])
 
         await business_profiles.update_one(
             {"user_id": user_id},
@@ -250,17 +265,17 @@ async def update_onboarding(
                 }
             }
         )
-
-        await internal_event_bus.publish(
-            "business.profile_classified",
-            {
-                "business_id": user_id,
-                "business_classifications": classification_result["business_classifications"],
-                "business_tags": classification_result["business_tags"],
-                "proven_capabilities": classification_result["proven_capabilities"],
-                "classified_at": now.isoformat(),
-            }
-        )
+        if profile_dimensions_changed:
+            await internal_event_bus.publish(
+                "business.profile_classified",
+                {
+                    "business_id": user_id,
+                    "business_classifications": classification_result["business_classifications"],
+                    "business_tags": classification_result["business_tags"],
+                    "proven_capabilities": classification_result["proven_capabilities"],
+                    "classified_at": now.isoformat(),
+                }
+            )
 
         return JSONResponse(
             status_code=status.HTTP_200_OK,

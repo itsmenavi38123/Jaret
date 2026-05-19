@@ -21,7 +21,7 @@ from app.services.feature_usage_service import feature_usage_service
 from bson import ObjectId
 from app.services.scenario_planning_service import ScenarioPlanningService
 from app.services.mapbox_service import MapboxService
-
+from app.services.portfolio_recalculation_service import portfolio_recalculation_service
 
 import os
 from pydantic import BaseModel
@@ -584,6 +584,18 @@ async def update_opportunity(
         )
 
         updated_doc = await opportunities_collection.find_one({"_id": opportunity_id})
+        status_value = update_data.get("status")
+
+        if status_value in ["Tracked", "Selected", None]:
+
+            await portfolio_recalculation_service.recalculate_portfolio_readiness(
+                user_id=user_id,
+                opportunities_collection=opportunities_collection,
+            )
+
+            updated_doc = await opportunities_collection.find_one({
+                "_id": opportunity_id
+            })
 
         if result.matched_count == 0:
             return JSONResponse(

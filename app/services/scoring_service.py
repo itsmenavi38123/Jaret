@@ -1074,13 +1074,6 @@ class ScoringService:
             trigger=trigger,
         )
 
-        existing_history = opportunity.get("scoring_data", {}).get("score_history", [])
-
-        scoring_result["score_history"] = [
-            *existing_history,
-            *scoring_result["score_history"],
-        ]
-
         scoring_result["last_scored_at"] = datetime.utcnow()
 
         return scoring_result

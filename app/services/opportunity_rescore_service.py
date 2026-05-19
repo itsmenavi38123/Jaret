@@ -40,7 +40,10 @@ class OpportunityRescoreService:
             "portfolio_adjusted_readiness": scoring_result.get("portfolio_adjusted_readiness"),
             "event_readiness_score": scoring_result["event_readiness_score"],
             "last_scored_at": scoring_result["last_scored_at"],
-
+            "event_readiness_label": scoring_result.get("event_readiness_label"),
+            "expected_roi_mult": scoring_result.get("expected_roi_mult"),
+            "expected_roi_display": scoring_result.get("expected_roi_display"),
+            "why_reason_codes": scoring_result.get("why_reason_codes", []),
             "scoring_data": updated_scoring_data,
 
             "verification_data": {
