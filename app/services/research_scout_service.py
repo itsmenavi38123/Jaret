@@ -635,11 +635,25 @@ NEVER estimate event revenue without stating conversion_rate and attendance expl
                     # Execute search
                     search_results = await firecrawl_search(search_term, recency, max_results)
                     
+                    trimmed_results = []
+
+                    for item in (search_results or [])[:5]:
+
+                        trimmed_results.append({
+                            "title": item.get("title"),
+                            "url": item.get("url"),
+                            "snippet": (
+                                (item.get("markdown") or "")[:1200]
+                                or (item.get("content") or "")[:1200]
+                            )
+                        })
+
+
                     messages.append({
                         "tool_call_id": tool_call.id,
                         "role": "tool",
                         "name": function_name,
-                        "content": json.dumps(search_results, default=str)
+                        "content": json.dumps(trimmed_results, default=str)
                     })
 
                 elif function_name == "firecrawl_scrape":
@@ -651,7 +665,11 @@ NEVER estimate event revenue without stating conversion_rate and attendance expl
                         "tool_call_id": tool_call.id,
                         "role": "tool",
                         "name": function_name,
-                        "content": json.dumps(scrape_result, default=str)
+                        "content": json.dumps({
+                            "url": scrape_result.get("url"),
+                            "title": scrape_result.get("metadata", {}).get("title"),
+                            "content": (scrape_result.get("markdown") or "")[:2000]
+                        }, default=str)
                     })
                 
                 elif function_name == "getWeather":

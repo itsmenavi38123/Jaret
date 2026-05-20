@@ -7,7 +7,7 @@ from typing import Any, Dict, Optional
 import json
 import os
 from openai import AsyncOpenAI
-
+import re
 
 class FinanceAnalystService:
     """
@@ -282,6 +282,99 @@ JSON only (no Markdown, no prose outside fields).
         except json.JSONDecodeError:
             raise ValueError("Invalid JSON response from Finance Analyst")
 
+    async def generate_opportunity_why_suggested(
+        self,
+        why_reason_codes,
+    ):
+
+        api_key = os.getenv("OPENAI_API_KEY")
+
+        if not api_key:
+            raise ValueError("OPENAI_API_KEY not found")
+
+        client = AsyncOpenAI(api_key=api_key)
+
+        system_prompt = """
+          You are LightSignal Financial Analyst.
+
+          MODE: opportunity_why_suggested
+
+          You receive a why_reason_codes array.
+
+          Rules:
+          - Convert each code to exactly ONE bullet.
+          - Use only values found inside the data object.
+          - Never invent numbers.
+          - Never add extra bullets.
+          - Never add advice, commentary, recommendations, or strategy.
+          - Keep each bullet factual and brief.
+          - Output plain text bullets only.
+          """
+
+        response = await client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {
+                    "role": "system",
+                    "content": system_prompt,
+                },
+                {
+                    "role": "user",
+                    "content": json.dumps({
+                        "mode": "opportunity_why_suggested",
+                        "why_reason_codes": why_reason_codes,
+                    }, default=str)
+                }
+            ]
+        )
+
+        output = response.choices[0].message.content
+
+        validated = self.validate_why_suggested_output(
+            output,
+            why_reason_codes,
+        )
+
+        return validated
+    
+
+    def validate_why_suggested_output(
+        self,
+        output: str,
+        why_reason_codes,
+    ):
+        allowed_numbers = []
+        for item in why_reason_codes:
+            data = item.get("data", {})
+            for value in data.values():
+                if isinstance(value, (int, float)):
+                    allowed_numbers.append(str(value))
+
+        detected_numbers = re.findall(r"\d+(?:\.\d+)?", output)
+        corrected_output = output
+
+        for number in detected_numbers:
+            if number not in allowed_numbers:
+                corrected_output = corrected_output.replace(
+                    number,
+                    "[value]",
+                )
+                print(f"AgentOutputValidator replaced invalid number: {number}")
+
+        bullets = [
+            line for line in corrected_output.split("\n")
+            if line.strip()
+        ]
+
+        max_bullets = len(why_reason_codes)
+
+        if len(bullets) > max_bullets:
+
+            bullets = bullets[:max_bullets]
+
+            print("AgentOutputValidator removed extra bullets")
+
+        return "\n".join(bullets)
 
 # Global singleton instance
 finance_analyst_service = FinanceAnalystService()

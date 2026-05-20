@@ -31,6 +31,7 @@ import json
 from datetime import datetime
 from typing import List, Optional
 from fastapi import FastAPI
+import asyncio
 
 load_dotenv()
 
@@ -268,7 +269,26 @@ def _transform_opportunity_card(
         fit_label = "Low"
     
     # Build why_suggested from pros/cons
-    why_suggested = card.get("pros", [])[:3]  # Top 3 reasons
+    why_reason_codes = card.get(
+        "why_reason_codes",
+        [],
+    )
+
+    why_suggested = []
+
+    try:
+
+        generated = asyncio.run(
+            finance_analyst_service.generate_opportunity_why_suggested(
+                why_reason_codes,
+            )
+        )
+
+        why_suggested = generated.split("\n")
+
+    except:
+
+        why_suggested = card.get("pros", [])[:3]  # Top 3 reasons
     
     # Calculate readiness
     readiness_score = _calculate_event_readiness(card, cash, runway_months)
