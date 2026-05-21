@@ -20,6 +20,8 @@ class Opportunity(BaseModel):
     ingested_at: datetime = Field(default_factory=datetime.utcnow)
     status_user: Optional[str] = None
     normalized_title: Optional[str] = None
+    prep_agent_output: Optional[Dict[str, Any]] = None
+    prep_agent_last_run_at: Optional[datetime] = None
     expected_roi: float
     location_text: Optional[str] = None
     geo: Optional[Dict[str, Any]] = None

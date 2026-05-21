@@ -22,6 +22,7 @@ from bson import ObjectId
 from app.services.scenario_planning_service import ScenarioPlanningService
 from app.services.mapbox_service import MapboxService
 from app.services.portfolio_recalculation_service import portfolio_recalculation_service
+from app.services.prep_agent_service import prep_agent_service
 
 import os
 from pydantic import BaseModel
@@ -616,6 +617,35 @@ async def update_opportunity(
             updated_doc = await opportunities_collection.find_one({
                 "_id": opportunity_id
             })
+
+            if status_value in ["Tracked", "Selected"]:
+
+                business_profiles = get_collection("business_profiles")
+
+                business_profile = await business_profiles.find_one({
+                    "user_id": user_id
+                })
+
+                prep_output = await prep_agent_service.generate_preparation_guidance(
+                    opportunity=updated_doc,
+                    business_profile=business_profile or {},
+                )
+
+                await opportunities_collection.update_one(
+                    {
+                        "_id": opportunity_id
+                    },
+                    {
+                        "$set": {
+                            "prep_agent_output": prep_output,
+                            "prep_agent_last_run_at": datetime.utcnow(),
+                        }
+                    }
+                )
+
+                updated_doc = await opportunities_collection.find_one({
+                    "_id": opportunity_id
+                })
 
         if result.matched_count == 0:
             return JSONResponse(
@@ -1435,4 +1465,85 @@ async def get_recent_scenarios(
             content={"error": str(e)},
         )
 
+@router.get("/prep/{opportunity_id}")
+async def get_opportunity_prep(
+    opportunity_id: str,
+    current_user: dict = Depends(get_current_user),
+):
 
+    try:
+
+        user_id = current_user["id"]
+
+        opportunities_collection = get_collection("opportunities")
+
+        business_profiles = get_collection("business_profiles")
+
+        opportunity = await opportunities_collection.find_one({
+            "_id": opportunity_id,
+            "user_id": user_id,
+        })
+
+        if not opportunity:
+
+            return JSONResponse(
+                status_code=status.HTTP_404_NOT_FOUND,
+                content={
+                    "error": "Opportunity not found"
+                },
+            )
+
+        cached_output = opportunity.get("prep_agent_output")
+
+        if cached_output:
+
+            return JSONResponse(
+                status_code=status.HTTP_200_OK,
+                content={
+                    "success": True,
+                    "cached": True,
+                    "data": cached_output,
+                },
+            )
+
+        business_profile = await business_profiles.find_one({
+            "user_id": user_id
+        })
+
+        prep_output = await prep_agent_service.generate_preparation_guidance(
+            opportunity=opportunity,
+            business_profile=business_profile or {},
+        )
+
+        await opportunities_collection.update_one(
+            {
+                "_id": opportunity_id
+            },
+            {
+                "$set": {
+                    "prep_agent_output": prep_output,
+                    "prep_agent_last_run_at": datetime.utcnow(),
+                }
+            }
+        )
+
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content={
+                "success": True,
+                "cached": False,
+                "data": prep_output,
+            },
+        )
+
+    except Exception as e:
+
+        import traceback
+        traceback.print_exc()
+
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={
+                "error": str(e)
+            },
+        )
