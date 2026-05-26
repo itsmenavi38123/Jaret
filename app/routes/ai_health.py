@@ -1,6 +1,5 @@
 import os
-from datetime import datetime, timezone
-from typing import Dict, Any, List, Optional
+from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
@@ -12,10 +11,23 @@ from app.services.feature_usage_service import feature_usage_service
 
 router = APIRouter(tags=["ai-health"])
 
+def get_health_label(score: int) -> str:
+    """
+    Universal Business Health label mapping.
+    """
+    if score >= 85:
+        return "Strong"
+    elif score >= 75:
+        return "Good"
+    elif score >= 60:
+        return "Stable"
+    else:
+        return "At Risk"
+
 async def generate_watch_area_explanation(watch_areas: List[str]) -> str:
     """Generate soft-English explanation for priority watch areas (fallback to local text)."""
     if not watch_areas:
-        return "No watch areas found to explain."
+        return None
     watch_list = "; ".join(watch_areas)
     if len(watch_areas) == 1:
         local_explanation = f"Key risk: {watch_areas[0]}. Review it now and put a corrective action in place this week."
@@ -32,13 +44,13 @@ async def generate_watch_area_explanation(watch_areas: List[str]) -> str:
         client = AsyncOpenAI(api_key=api_key)
         prompt = (
             "You are a concise business advisor. "
+            
             "Given prioritized watch areas for a small business, return exactly 3 short bullet points: 1) what it means, 2) where to focus, 3) what to do next. "
             "Use minimal words and no paragraph text. "
             "Input watch areas:\n"
             + "\n".join(f"- {area}" for area in watch_areas)
             + "\nOutput only plain text, with bullets in this format: '- ...'."
         )
-        print("[DEBUG] generate_watch_area_explanation prompt:", prompt)
         completion = await client.chat.completions.create(
             model="gpt-4o",
             messages=[
@@ -46,12 +58,10 @@ async def generate_watch_area_explanation(watch_areas: List[str]) -> str:
                 {"role": "user", "content": prompt},
             ],
             max_tokens=220,
-            temperature=0.7,
+            temperature=0.2,
         )
-        print("[DEBUG] generate_watch_area_explanation completion:", completion)
         message_obj = completion.choices[0].message
         text = message_obj.content.strip() if getattr(message_obj, "content", None) else ""
-        print("[DEBUG] generate_watch_area_explanation text:", text)
         # Ensure short bullet format. If model output is too long, fallback to local bullet text.
         if text:
             lines = [line.strip() for line in text.splitlines() if line.strip()]
@@ -159,10 +169,17 @@ async def get_business_health_full(
             fin_health_score = None
             
         if fin_health_score is not None:
-            fin_label = "good" if fin_health_score > 75 else ("caution" if fin_health_score > 50 else "critical")
+            fin_label = get_health_label(fin_health_score)
             margin_display = f"{margin_pct*100:.1f}%" if margin_pct is not None else "N/A"
             runway_display = f"{runway_months:.1f} mo" if runway_months is not None else "N/A"
-            fin_summary = f"Strong margins; healthy liquidity" if fin_health_score > 75 else f"Margins {margin_display}; Runway {runway_display}"
+            if margin_pct is not None and runway_months is not None:
+                fin_summary = f"Net margin {margin_display}; Runway {runway_display}"
+            elif margin_pct is not None:
+                fin_summary = f"Net margin {margin_display}"
+            elif runway_months is not None:
+                fin_summary = f"Runway {runway_display}"
+            else:
+                fin_summary = "Financial metrics available"
         else:
             fin_health_score = None
             fin_label = None
@@ -199,8 +216,13 @@ async def get_business_health_full(
         
         if ops_score_components:
             ops_score = int(sum(ops_score_components) / len(ops_score_components))
-            ops_label = "good" if ops_score > 75 else ("caution" if ops_score > 50 else "critical")
-            ops_summary = "Good uptime" if ops_score > 75 else "Minor delays; good uptime"
+            ops_label = get_health_label(ops_score)
+            if ccc_days is not None:
+                ops_summary = f"Cash conversion cycle at {ccc_days:.0f} days"
+            elif inventory_turns is not None:
+                ops_summary = f"Inventory turnover at {inventory_turns:.1f}x"
+            else:
+                ops_summary = "Operational metrics available"
         else:
             ops_score = None
             ops_label = None
@@ -227,28 +249,41 @@ async def get_business_health_full(
         
         if risk_score_components:
             risk_score = int(sum(risk_score_components) / len(risk_score_components))
-            risk_label = "good" if risk_score > 75 else ("caution" if risk_score > 50 else "critical")
+            risk_label = get_health_label(risk_score)
             runway_display = f"{runway_months:.1f} months" if runway_months is not None else "N/A"
-            risk_summary = f"2 open compliance items" if risk_score < 75 else f"Runway {runway_display}"
+
+            if runway_months is not None:
+                risk_summary = f"Cash runway at {runway_months:.1f} months"
+                risk_missing_notice = None
+
+            elif quick_ratio is not None:
+                risk_summary = f"Quick ratio at {quick_ratio:.2f}"
+                risk_missing_notice = "Cash runway data is unavailable."
+
+            else:
+                risk_summary = "Risk metrics available"
+                risk_missing_notice = "Additional financial data is required to fully assess risk exposure."
+
         else:
             risk_score = None
             risk_label = None
             risk_summary = "Insufficient risk data"
+            risk_missing_notice = "Connect financial data sources to calculate risk exposure."
 
         # D. Growth Momentum - based on revenue trend
         if net_trend_3mo:
             if net_trend_3mo == "positive":
                 growth_score = 85
-                growth_label = "good"
                 growth_summary = "Steady upward trend"
             elif net_trend_3mo == "negative":
                 growth_score = 45
-                growth_label = "critical"
                 growth_summary = "Declining trend"
-            else:  # flat
+            else:
                 growth_score = 65
-                growth_label = "caution"
                 growth_summary = "Flat growth"
+
+            growth_label = get_health_label(growth_score)
+
         else:
             growth_score = None
             growth_label = None
@@ -277,12 +312,12 @@ async def get_business_health_full(
             weights_map.append(0.1)
         
         if available_scores:
-            # Normalize weights
-            total_weight = sum(weights_map)
-            normalized_weights = [w / total_weight for w in weights_map]
-            
-            overall_score = int(sum(score * weight for score, weight in zip(available_scores, normalized_weights)))
-            overall_label = "good" if overall_score > 80 else ("average" if overall_score > 60 else "poor")
+            weighted_score = sum(score * weight for score, weight in zip(available_scores, weights_map))
+
+            total_available_weight = sum(weights_map)
+            overall_score = int(weighted_score / total_available_weight)
+
+            overall_label = get_health_label(overall_score)
         else:
             overall_score = None
             overall_label = "insufficient-data"
@@ -359,19 +394,36 @@ async def get_business_health_full(
         
         # 5. Priority Watch Areas (based on real metrics)
         priority_watch_areas = []
-        
+
         if inventory_turns is not None and inventory_turns < 4:
-            priority_watch_areas.append("Inventory efficiency")
+            priority_watch_areas.append(
+                f"Inventory turnover is low at {inventory_turns:.1f}x, which may slow cash recovery and increase holding costs."
+            )
+
         if ccc_days is not None and ccc_days > 60:
-            priority_watch_areas.append("Cash conversion cycle")
+            priority_watch_areas.append(
+                f"Cash conversion cycle is elevated at {ccc_days:.0f} days, delaying cash returning into the business."
+            )
+
         if quick_ratio is not None and quick_ratio < 1.0:
-            priority_watch_areas.append("Liquidity risk")
+            priority_watch_areas.append(
+                f"Quick ratio is below 1.0 ({quick_ratio:.2f}), which may create short-term cash pressure."
+            )
+
         if runway_months is not None and runway_months < 6:
-            priority_watch_areas.append("Cash runway")
+            priority_watch_areas.append(
+                f"Cash runway is below 6 months ({runway_months:.1f} months remaining), limiting financial flexibility."
+            )
+
         if margin_pct is not None and margin_pct < 0.10:
-            priority_watch_areas.append("Profit margins")
+            priority_watch_areas.append(
+                f"Net margin is below target at {margin_pct*100:.1f}%, reducing profitability cushion."
+            )
+
         if growth_score is not None and growth_score < 60:
-            priority_watch_areas.append("Growth momentum")
+            priority_watch_areas.append(
+                "Revenue trend has weakened over recent months, which may impact near-term growth momentum."
+            )
 
         # Soft English explanation for watch areas
         watch_area_explanation = await generate_watch_area_explanation(priority_watch_areas)
@@ -404,64 +456,63 @@ async def get_business_health_full(
             "positive": [],
             "drags": []
         }
-        for d in ranked_drivers:
-            if d["type"] == "positive":
-                if d["metric"] == "financial.net_margin":
-                    drivers_display["positive"].append("Margins are strong and support profitability.")
-                elif d["metric"] == "financial.quick_ratio":
-                    drivers_display["positive"].append("Liquidity is healthy, giving flexibility for short-term obligations.")
-                else:
-                    drivers_display["positive"].append(d["detail"])
-            else:
-                if d["metric"] == "operational.inventory_turnover":
-                    drivers_display["drags"].append("~$12k is sitting on shelves instead of in your bank account.")
-                elif d["metric"] == "operational.cash_conversion_cycle":
-                    drivers_display["drags"].append("Slow cash conversion cycle is tying up working capital.")
-                else:
-                    drivers_display["drags"].append(d["detail"])
 
+        for d in ranked_drivers:
+            entry = {
+                "metric": d["metric"],
+                "points": d["points"],
+                "description": d["detail"]
+            }
+
+            if d["type"] == "positive":
+                drivers_display["positive"].append(entry)
+            else:
+                drivers_display["drags"].append(entry)
+                
         # 6. Active Health Alerts (based on real thresholds)
         active_alerts = []
-        
+
         if runway_months is not None and runway_months < 3:
             active_alerts.append({
                 "type": "critical",
-                "message": f"Critical: Cash runway below 3 months ({runway_months:.1f} months remaining)"
+                "message": f"Cash runway has fallen to {runway_months:.1f} months, creating elevated financial pressure if expenses remain unchanged."
             })
+
         elif runway_months is not None and runway_months < 6:
             active_alerts.append({
                 "type": "warning",
-                "message": f"Warning: Cash runway below 6 months ({runway_months:.1f} months remaining)"
+                "message": f"Cash runway is currently {runway_months:.1f} months, limiting financial flexibility if revenue slows or costs increase."
             })
-        
+
         if margin_pct is not None and margin_pct < 0.05:
             active_alerts.append({
                 "type": "critical",
-                "message": f"Critical: Net margin critically low ({margin_pct*100:.1f}%)"
+                "message": f"Net margin has fallen to {margin_pct*100:.1f}%, leaving less room to absorb unexpected costs or revenue swings."
             })
+
         elif margin_pct is not None and margin_pct < 0.10:
             active_alerts.append({
                 "type": "warning",
-                "message": f"Warning: Net margin below target ({margin_pct*100:.1f}%)"
+                "message": f"Net margin is currently {margin_pct*100:.1f}%, which may reduce profitability cushion if operating costs rise."
             })
-        
+
         if quick_ratio is not None and quick_ratio < 1.0:
             active_alerts.append({
                 "type": "warning",
-                "message": f"Warning: Quick ratio below 1.0 ({quick_ratio:.2f})"
+                "message": f"Liquidity is becoming tight. Quick ratio is {quick_ratio:.2f}, which may make short-term obligations harder to cover."
             })
-        
+
         if burn_rate_monthly is not None and burn_rate_monthly > revenue_mtd:
             active_alerts.append({
                 "type": "critical",
-                "message": f"Critical: Monthly burn exceeds revenue"
+                "message": "Monthly cash outflows are currently exceeding incoming revenue, which may reduce financial flexibility if sustained."
             })
-        
+
         # If no alerts, add success message
         if not active_alerts:
             active_alerts.append({
                 "type": "success",
-                "message": "No critical health alerts at this time"
+                "message": "Current financial signals do not indicate any immediate business health concerns."
             })
         
         # 7. Calculate AI Confidence based on data availability
@@ -472,28 +523,98 @@ async def get_business_health_full(
         available_count = sum(1 for m in available_metrics if m is not None)
         total_metrics = len(available_metrics)
         confidence_pct = int((available_count / total_metrics) * 100)
+
+        if confidence_pct >= 80:
+            confidence_label = "High data completeness"
+        elif confidence_pct >= 60:
+            confidence_label = "Moderate data completeness"
+        else:
+            confidence_label = "Limited data completeness"
+
         ai_confidence = f"{confidence_pct}%"
-        ai_confidence_details = f"Based on {available_count}/{total_metrics} key metrics"
+        ai_confidence_details = confidence_label
         
         # 8. Generate AI Summary
         if overall_score is not None:
-            if overall_score > 80:
-                ai_summary = f"Overall health is strong ({overall_score}), driven by solid financial metrics."
-            elif overall_score > 60:
-                ai_summary = f"Overall health is moderate ({overall_score}). Some areas need attention."
+
+            summary_parts = []
+
+            if confidence_pct < 60:
+                summary_parts.append(
+                    "Business health assessment is currently based on partial financial data."
+                )
+
+            if overall_score >= 85:
+                summary_parts.append(
+                    f"Business health is strong at {overall_score}."
+                )
+            elif overall_score >= 60:
+                summary_parts.append(
+                    f"Business health is stable at {overall_score}."
+                )
             else:
-                ai_summary = f"Overall health needs improvement ({overall_score}). Multiple areas require focus."
-            
-            # Add specific insights
-            if positive_drivers:
-                top_driver = positive_drivers[0]["name"]
-                ai_summary += f" Key strength: {top_driver}."
-            if drags:
-                top_drag = drags[0]["name"]
-                ai_summary += f" Main concern: {top_drag}."
+                summary_parts.append(
+                    f"Business health is at risk at {overall_score}."
+                )
+
+            if quick_ratio is not None:
+                if quick_ratio < 1.0:
+                    summary_parts.append(
+                        f"Liquidity is tight with a quick ratio of {quick_ratio:.2f}, which may create short-term cash pressure."
+                    )
+                elif quick_ratio > 1.5:
+                    summary_parts.append(
+                        f"Liquidity remains healthy with a quick ratio of {quick_ratio:.2f}."
+                    )
+
+            if runway_months is not None:
+                summary_parts.append(
+                    f"Current cash runway is approximately {runway_months:.1f} months."
+                )
+
+            if ccc_days is not None and ccc_days > 60:
+                summary_parts.append(
+                    f"Cash is taking {ccc_days:.0f} days to cycle back into the business, slowing operating flexibility."
+                )
+
+            if margin_pct is not None:
+                summary_parts.append(
+                    f"Net margin is currently {margin_pct*100:.1f}%."
+                )
+
+            if confidence_pct < 80:
+                summary_parts.append(
+                    "Some business health signals are incomplete because not all financial data is available yet."
+                )
+
+            ai_summary = " ".join(summary_parts)
+
         else:
-            ai_summary = "Insufficient data to generate comprehensive health assessment."
-        
+            ai_summary = (
+                "Business health could not be fully calculated because insufficient financial data is available."
+            )
+        # 8.a Data Gap Guidance
+        data_gap_guidance = []
+
+        if margin_pct is None:
+            data_gap_guidance.append(
+                "Profitability metrics are incomplete. Ensure income and expense accounts are fully synced from QuickBooks."
+            )
+
+        if inventory_turns is None:
+            data_gap_guidance.append(
+                "Inventory efficiency metrics are unavailable because inventory tracking data is missing."
+            )
+
+        if runway_months is None:
+            data_gap_guidance.append(
+                "Cash runway could not be calculated because expense or cash balance data is incomplete."
+            )
+
+        if ccc_days is None:
+            data_gap_guidance.append(
+                "Cash conversion cycle metrics require receivables, payables, and inventory data."
+            )
         # 9. Construct Response (NO dummy data)
         response = {
             "Business Health": {
@@ -503,45 +624,58 @@ async def get_business_health_full(
                     "trend": "↑" if net_trend_3mo == "positive" else ("↓" if net_trend_3mo == "negative" else "→"),
                     "peer_avg": None,  # We don't have peer data
                     "yours": overall_score,
-                    "time_period": range
+                    "time_period": range,
+                    "data_completeness": confidence_pct,
+                    "incomplete_data": confidence_pct < 80,
                 },
+
                 "Financial Health": {
                     "score": fin_health_score,
                     "summary": fin_summary,
-                    "label": fin_label
-                } if fin_health_score is not None else None,
+                    "label": fin_label,
+                    "missing_data_notice": (
+                        None if fin_health_score is not None
+                        else "Connect financial data sources to calculate this score."
+                    )
+                },
                 "Operational Health": {
                     "score": ops_score,
                     "summary": ops_summary,
-                    "label": ops_label
-                } if ops_score is not None else None,
+                    "label": ops_label,
+                    "missing_data_notice": (
+                        None if ops_score is not None
+                        else "Connect operational and inventory data sources to calculate this score."
+                    )
+                },
                 "Customer Health": {
                     "score": cust_score,
                     "summary": cust_summary,
-                    "label": cust_label
-                } if cust_score is not None else None,
+                    "label": cust_label,
+                    "missing_data_notice": (
+                        "Connect customer and review data sources to calculate this score."
+                    )
+                },
                 "Risk Exposure": {
                     "score": risk_score,
                     "summary": risk_summary,
-                    "label": risk_label
-                } if risk_score is not None else None,
+                    "label": risk_label,
+                    "missing_data_notice": risk_missing_notice
+                },
                 "Growth Momentum": {
                     "score": growth_score,
                     "summary": growth_summary,
-                    "label": growth_label
-                } if growth_score is not None else None
+                    "label": growth_label,
+                    "missing_data_notice": (
+                        None if growth_score is not None
+                        else "Connect historical revenue data to calculate this score."
+                    )
+                },
             },
             "AI Confidence Index": ai_confidence,
             "AI Confidence Details": ai_confidence_details,
             "Overview Dashboard": {
                 "AI summary": ai_summary,
-                "AI diagnosis": f"Score is {overall_score} ({overall_label})." if overall_score is not None else "Insufficient data",
-                "12-month Health Score": None,  # Would need historical data
-                "MoM deltas": {
-                    "health score": overall_score, 
-                    "delta": None,  # Would need prior month data
-                    "peer": None  # No peer data available
-                }
+                "AI diagnosis": f"Score is {overall_score} ({overall_label})." if overall_score is not None else "Insufficient data"
             },
             "Drivers": {
                 "Top Positive Drivers": positive_drivers if positive_drivers else None,
@@ -550,17 +684,54 @@ async def get_business_health_full(
             "ranked_drivers": ranked_drivers,
             "drivers_display": drivers_display,
             "Priority Watch Areas": priority_watch_areas if priority_watch_areas else None,
-            "Watch Area Explanation": watch_area_explanation,
+            "Watch Area Explanation": watch_area_explanation if watch_area_explanation else None,
             "Active Health Alerts": active_alerts,
             "Quadrants": {
-                k: v for k, v in {
-                    "Financial Health": {"score": fin_health_score, "summary": fin_summary, "label": fin_label} if fin_health_score is not None else None,
-                    "Operational Health": {"score": ops_score, "summary": ops_summary, "label": ops_label} if ops_score is not None else None,
-                    "Customer Health": {"score": cust_score, "summary": cust_summary, "label": cust_label} if cust_score is not None else None,
-                    "Risk Exposure": {"score": risk_score, "summary": risk_summary, "label": risk_label} if risk_score is not None else None,
-                    "Growth Momentum": {"score": growth_score, "summary": growth_summary, "label": growth_label} if growth_score is not None else None
-                }.items() if v is not None
+                "Financial Health": {
+                    "score": fin_health_score,
+                    "summary": fin_summary,
+                    "label": fin_label,
+                    "missing_data_notice": (
+                        None if fin_health_score is not None
+                        else "Connect financial data sources to calculate this score."
+                    )
+                },
+                "Operational Health": {
+                    "score": ops_score,
+                    "summary": ops_summary,
+                    "label": ops_label,
+                    "missing_data_notice": (
+                        None if ops_score is not None
+                        else "Connect operational and inventory data sources to calculate this score."
+                    )
+                },
+                "Customer Health": {
+                    "score": cust_score,
+                    "summary": cust_summary,
+                    "label": cust_label,
+                    "missing_data_notice": (
+                        "Connect customer and review data sources to calculate this score."
+                    )
+                },
+                "Risk Exposure": {
+                    "score": risk_score,
+                    "summary": risk_summary,
+                    "label": risk_label,
+                    "missing_data_notice": risk_missing_notice
+                },
+                "Growth Momentum": {
+                    "score": growth_score,
+                    "summary": growth_summary,
+                    "label": growth_label,
+                    "missing_data_notice": (
+                        None if growth_score is not None
+                        else "Connect historical revenue data to calculate this score."
+                    )
+                }
             },
+
+            "Data Gap Guidance": data_gap_guidance if data_gap_guidance else None,
+            
             "Real Data Metrics": {
                 "revenue_mtd": revenue_mtd,
                 "net_margin_pct": margin_pct,
@@ -579,7 +750,6 @@ async def get_business_health_full(
         
         # Remove None values from response
         response = {k: v for k, v in response.items() if v is not None}
-        response["Business Health"] = {k: v for k, v in response["Business Health"].items() if v is not None}
 
         # Log successful insights view
         await feature_usage_service.log_usage(user_id, "insights")
@@ -593,4 +763,29 @@ async def get_business_health_full(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to generate health report: {str(exc)}",
+        )
+
+@router.post("/refresh")
+async def refresh_business_health(
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Manually refresh Business Health data.
+    Forces latest QuickBooks pull and regenerates health metrics.
+    """
+    try:
+        user_id = current_user["id"]
+
+        # Trigger fresh QB fetch
+        await quickbooks_financial_service.get_financial_overview(user_id)
+
+        return {
+            "success": True,
+            "message": "Business Health refreshed successfully"
+        }
+
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to refresh Business Health: {str(exc)}",
         )
