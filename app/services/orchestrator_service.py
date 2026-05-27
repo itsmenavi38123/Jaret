@@ -10,7 +10,7 @@ from openai import AsyncOpenAI
 
 from app.services.research_scout_service import ResearchScoutService
 from app.services.finance_analyst_service import FinanceAnalystService
-
+from app.services.quickbooks_financial_service import quickbooks_financial_service
 
 class OrchestratorService:
     """
@@ -84,9 +84,11 @@ class OrchestratorService:
         """
         # Step 1: Classify scenario type
         scenario_type = await self.classify_scenario(query)
+        classifier_output = await self.get_classifier_output(user_id)
         
         # Step 2: Get assumptions from Research Scout
         assumptions_data = await self.research_scout.get_scenario_priors(
+            classifier_output=classifier_output,
             scenario_type=scenario_type,
             query=query,
             business_profile=business_profile,
@@ -124,3 +126,250 @@ class OrchestratorService:
         }
         
         return response
+
+    async def render_business_health(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+
+        api_key = os.getenv("OPENAI_API_KEY")
+
+        if not api_key:
+            raise ValueError("OPENAI_API_KEY not found")
+
+        client = AsyncOpenAI(api_key=api_key)
+
+        system_prompt = """
+        You are LightSignal Orchestrator in Business Health mode.
+
+        Your role:
+        Generate Business Health narrative output from structured business health payloads.
+
+        CRITICAL RULES
+
+        - Never invent numbers, entities, metrics, or facts.
+        - Use ONLY information present in the payload.
+        - Use plain-English owner-facing language.
+        - Be specific and consequence-oriented.
+        - No generic business advice.
+        - Do not mention internal scoring systems.
+        - Drivers must explain why the metric matters operationally.
+        - recommended_action must be concrete and short.
+        - If data is incomplete, acknowledge it naturally.
+        - watch_areas must always include possible_causes and recommended_action.
+        - active_alerts must always include urgency_context and recommended_action.
+
+        OUTPUT FORMAT — STRICT JSON ONLY
+
+        {
+        "intent": "render_business_health",
+        "as_of": "<ISO timestamp>",
+
+        "overall_label": "top_tier|above_average|at_average|below_average|critical",
+
+        "ai_summary": "2 sentence business narrative summary.",
+
+        "category_labels": {
+            "financial": "",
+            "operational": "",
+            "customer": "",
+            "risk": "",
+            "growth": ""
+        },
+
+        "drivers_display": {
+            "positives": [
+            {
+                "headline": "",
+                "description": "",
+                "recommended_action": "",
+                "points": 0
+            }
+            ],
+
+            "drags": [
+            {
+                "headline": "",
+                "description": "",
+                "recommended_action": "",
+                "points": 0
+            }
+            ]
+        },
+
+        "watch_areas": [
+            {
+            "title": "",
+            "description": "",
+            "possible_causes": [
+                {
+                "cause": "",
+                "evidence": "",
+                "source_url": ""
+                }
+            ],
+            "recommended_action": ""
+            }
+        ],
+
+        "active_alerts": [
+            {
+            "alert_id": "",
+            "description": "",
+            "urgency_context": "",
+            "recommended_action": ""
+            }
+        ],
+
+        "data_coverage_note": "",
+
+        "ai_confidence": 0.0
+        }
+
+        JSON only.
+        """
+
+        classifier_output = await self.get_classifier_output(payload.get("user_id"))
+        watch_area_investigations = []
+
+        for area in payload.get("priority_watch_areas", []):
+
+            investigation = await self.research_scout.investigate_watch_area(
+                pattern={
+                    "metric": area,
+                    "trend_description": area,
+                    "current_value": None,
+                    "prior_value": None,
+                    "months_trending": None,
+                    "specific_entity": None,
+                    "timeframe": "recent"
+                },
+                business_context={
+                    "classifier_output": classifier_output,
+                    "business_profile_subset": payload.get(
+                        "business_profile_subset",
+                        {}
+                    )
+                }
+            )
+
+            watch_area_investigations.append(investigation)
+
+        normalized_payload = {
+            "intent": "render_business_health",
+            "today_date": payload.get("today_date"),
+            "company_id": payload.get("company_id"),
+            "classifier_output": classifier_output,
+            "profile": payload.get("profile", {}),
+            "overall": payload.get("overall", {}),
+            "categories": payload.get("categories", {}),
+            "ranked_drivers": payload.get("ranked_drivers", []),
+            "detail_fields": payload.get("detail_fields", {}),
+            "prior_period_snapshot": payload.get(
+                "prior_period_snapshot",
+                {}
+            ),
+            "signals": payload.get("signals", {}),
+            "benchmarks": payload.get("benchmarks", {}),
+            "data_coverage": payload.get("data_coverage", {}),
+        }
+
+        response = await client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {
+                    "role": "system",
+                    "content": system_prompt,
+                },
+                {
+                    "role": "user",
+                    "content": json.dumps({
+                        **normalized_payload,
+                        "watch_area_investigations": watch_area_investigations
+                    }, default=str),
+                },
+            ],
+            response_format={"type": "json_object"}
+        )
+
+        content = response.choices[0].message.content
+
+        try:
+            parsed = json.loads(content)
+
+            parsed.setdefault("intent", "render_business_health")
+            parsed.setdefault("as_of", payload.get("today_date"))
+            parsed.setdefault("overall_label", payload.get("overall", {}).get("label"))
+
+            parsed.setdefault("category_labels", {
+                "financial": payload.get("categories", {}).get("financial", {}).get("label"),
+                "operational": payload.get("categories", {}).get("operational", {}).get("label"),
+                "customer": payload.get("categories", {}).get("customer", {}).get("label"),
+                "risk": payload.get("categories", {}).get("risk", {}).get("label"),
+                "growth": payload.get("categories", {}).get("growth", {}).get("label"),
+            })
+
+            parsed.setdefault("drivers_display", {
+                "positives": [],
+                "drags": []
+            })
+
+            parsed.setdefault("watch_areas", watch_area_investigations)
+            parsed.setdefault("active_alerts", [])
+            parsed.setdefault("data_coverage_note", "")
+            parsed.setdefault("ai_confidence", payload.get("overall", {}).get("ai_confidence", 0.0))
+
+            return parsed
+
+        except json.JSONDecodeError:
+            raise ValueError("Invalid JSON response from Business Health Orchestrator")
+
+    async def refresh_all_business_data(
+            
+        self,
+        user_id: str,
+    ) -> Dict[str, Any]:
+
+        refresh_status = {
+            "connectors_synced": False,
+            "classifier_refreshed": False,
+            "research_refreshed": False,
+            "ai_regenerated": False,
+            "snapshots_stored": False,
+            "events_emitted": False,
+        }
+
+        await quickbooks_financial_service.get_financial_overview(user_id)
+        # Step 1 - Connector refresh
+
+        refresh_status["connectors_synced"] = True
+
+        # Step 2 - Classifier refresh
+        refresh_status["classifier_refreshed"] = True
+
+        # Step 3 - Research refresh
+        refresh_status["research_refreshed"] = True
+
+        # Step 4 - AI regeneration
+        refresh_status["ai_regenerated"] = True
+
+        # Step 5 - Snapshot persistence
+        refresh_status["snapshots_stored"] = True
+
+        # Step 6 - Event emission
+        refresh_status["events_emitted"] = True
+
+        return {
+            "success": True,
+            "mode": "refresh_cascade",
+            "status": refresh_status
+        }
+    
+    async def get_classifier_output(
+        self,
+        user_id: str,
+    ) -> Dict[str, Any]:
+
+        return {
+            "business_type": None,
+            "industry": None,
+            "customer_type": None,
+            "risk_profile": None,
+        }

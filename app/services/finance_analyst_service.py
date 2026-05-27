@@ -21,6 +21,7 @@ class FinanceAnalystService:
     async def analyze_dashboard(
         self,
         context: Dict[str, Any],
+        classifier_output: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         Generate dashboard insights and alerts from KPI data.
@@ -110,7 +111,13 @@ JSON only (no Markdown, no prose outside fields).
             model="gpt-4o",
             messages=[
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"Analyze this dashboard data and generate insights: {json.dumps(context, default=str)}"}
+                {
+                    "role": "user",
+                    "content": json.dumps({
+                        "context": context,
+                        "classifier_output": classifier_output,
+                    }, default=str),
+                }
             ],
             response_format={"type": "json_object"}
         )
@@ -131,6 +138,7 @@ JSON only (no Markdown, no prose outside fields).
         assumptions: Dict[str, Any],
         baseline_financials: Dict[str, Any],
         business_profile: Optional[Dict[str, Any]] = None,
+        classifier_output: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         Calculate financial KPIs for a scenario.
@@ -268,7 +276,17 @@ JSON only (no Markdown, no prose outside fields).
             model="gpt-4o",
             messages=[
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"Calculate KPIs for this scenario: {query}"}
+                {
+                    "role": "user",
+                    "content": json.dumps({
+                        "query": query,
+                        "scenario_type": scenario_type,
+                        "assumptions": assumptions,
+                        "baseline_financials": baseline_financials,
+                        "business_profile": business_profile,
+                        "classifier_output": classifier_output,
+                    }, default=str)
+                }            
             ],
             response_format={"type": "json_object"}
         )

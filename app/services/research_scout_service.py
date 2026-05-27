@@ -890,7 +890,9 @@ NEVER estimate event revenue without stating conversion_rate and attendance expl
         scenario_type: str,
         query: str,
         business_profile: Optional[Dict[str, Any]] = None,
+        classifier_output: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
+        
         """
         Get assumptions/priors for scenario planning using web search.
         
@@ -917,71 +919,71 @@ NEVER estimate event revenue without stating conversion_rate and attendance expl
         # Build system prompt for Research Scout (priors mode)
         system_prompt = f"""You are LightSignal Research Scout in Scenario Priors mode.
 
-Your mission: Fill missing assumptions for financial scenario planning using real web data.
+        Your mission: Fill missing assumptions for financial scenario planning using real web data.
 
-TOOLS
+        TOOLS
 
-- firecrawl_search(query, recency_days, max_results)
-  → Use to find real-world data: equipment prices, interest rates, labor rates, market benchmarks.
+        - firecrawl_search(query, recency_days, max_results)
+        → Use to find real-world data: equipment prices, interest rates, labor rates, market benchmarks.
 
-INPUTS
+        INPUTS
 
-- **Scenario Type**: {scenario_type}
-- **User Query**: "{query}"
-- **Industry**: {industry}
-- **Business Profile**: {json.dumps(business_profile, default=str) if business_profile else "None"}
+        - **Scenario Type**: {scenario_type}
+        - **User Query**: "{query}"
+        - **Industry**: {industry}
+        - **Business Profile**: {json.dumps(business_profile, default=str) if business_profile else "None"}
 
-OUTPUT FORMAT — STRICT JSON ONLY
+        OUTPUT FORMAT — STRICT JSON ONLY
 
-Return one object shaped as:
+        Return one object shaped as:
 
-{{
-  "assumptions": [
-    {{
-      "key": "equipment_cost",
-      "value": 50000,
-      "source": "https://valid-supplier.com/item",
-      "confidence": 0.8
-    }},
-    {{
-      "key": "labor_rate_hourly",
-      "value": 25.0,
-      "source": "https://bls.gov/wages",
-      "confidence": 0.9
-    }}
-  ],
-  "sources": [
-    {{
-      "title": "Equipment Pricing Guide 2024",
-      "url": "https://valid-supplier.com/item",
-      "date": "2024-01-15",
-      "note": "Used for equipment cost estimates"
-    }}
-  ]
-}}
+        {{
+        "assumptions": [
+            {{
+            "key": "equipment_cost",
+            "value": 50000,
+            "source": "https://valid-supplier.com/item",
+            "confidence": 0.8
+            }},
+            {{
+            "key": "labor_rate_hourly",
+            "value": 25.0,
+            "source": "https://bls.gov/wages",
+            "confidence": 0.9
+            }}
+        ],
+        "sources": [
+            {{
+            "title": "Equipment Pricing Guide 2024",
+            "url": "https://valid-supplier.com/item",
+            "date": "2024-01-15",
+            "note": "Used for equipment cost estimates"
+            }}
+        ]
+        }}
 
-BEHAVIOR RULES
+        BEHAVIOR RULES
 
-- **CRITICAL**: DO NOT USE 'example.com' or 'test.com'. If you cannot find a source, leave the source field null or omit the assumption.
-- Use firecrawl_search to find real data for ALL assumptions.
-- Use firecrawl_scrape when a specific source URL needs deeper content verification.
-- Common assumptions by scenario type:
-  - **CapEx**: equipment_cost, financing_rate, useful_life_years, maintenance_cost_annual
-  - **Hiring**: salary_annual, benefits_cost_pct, training_cost, productivity_ramp_months
-  - **Pricing**: competitor_prices, price_elasticity, market_avg_price
-  - **Expansion**: location_rent, build_out_cost, time_to_revenue_months
-- Always include sources with valid URLs.
-- Confidence should reflect data quality (0.0-1.0).
-- If data is not available, use industry averages and note the assumption.
+        - **CRITICAL**: DO NOT USE 'example.com' or 'test.com'. If you cannot find a source, leave the source field null or omit the assumption.
+        - Use firecrawl_search to find real data for ALL assumptions.
+        - Use firecrawl_scrape when a specific source URL needs deeper content verification.
+        - Common assumptions by scenario type:
+        - **CapEx**: equipment_cost, financing_rate, useful_life_years, maintenance_cost_annual
+        - **Hiring**: salary_annual, benefits_cost_pct, training_cost, productivity_ramp_months
+        - **Pricing**: competitor_prices, price_elasticity, market_avg_price
+        - **Expansion**: location_rent, build_out_cost, time_to_revenue_months
+        - Always include sources with valid URLs.
+        - Confidence should reflect data quality (0.0-1.0).
+        - If data is not available, use industry averages and note the assumption.
 
-QUALITY CHECK BEFORE RETURN
+        QUALITY CHECK BEFORE RETURN
 
-- At least 3-5 assumptions populated.
-- All assumptions have sources.
-- Sources have valid URLs (NO example.com).
+        - At least 3-5 assumptions populated.
+        - All assumptions have sources.
+        - Sources have valid URLs (NO example.com).
 
-JSON only (no Markdown, no prose outside fields).
-"""
+        JSON only (no Markdown, no prose outside fields).
+        """
 
         # Define tools
         tools = [
@@ -1031,7 +1033,7 @@ JSON only (no Markdown, no prose outside fields).
         
         messages = [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": f"Find assumptions for: {query}"}
+            {"role": "user", "content": json.dumps({ "query": query, "classifier_output": classifier_output}, default=str)}
         ]
         
         # Initial call
@@ -1100,6 +1102,77 @@ JSON only (no Markdown, no prose outside fields).
         except json.JSONDecodeError:
             raise ValueError("Invalid JSON response from Research Scout")
     
+    async def investigate_watch_area(
+        self,
+        pattern: Dict[str, Any],
+        business_context: Dict[str, Any],
+    ) -> Dict[str, Any]:
+
+        api_key = os.getenv("OPENAI_API_KEY")
+
+        if not api_key:
+            raise ValueError("OPENAI_API_KEY not found")
+
+        client = AsyncOpenAI(api_key=api_key)
+
+        system_prompt = """
+        You are Research Scout in WATCH_AREA_INVESTIGATION mode.
+
+        Your job:
+        Analyze a business watch-area pattern and identify realistic possible causes.
+
+        CRITICAL RULES:
+        - Use only provided payload information.
+        - Never invent metrics or business entities.
+        - Focus on operational/business causes.
+        - Return grounded explanations.
+        - Keep causes concise and practical.
+
+        STRICT JSON ONLY
+
+        {
+        "mode": "watch_area_investigation",
+        "pattern": {},
+        "possible_causes": [
+            {
+            "cause": "string",
+            "evidence": "string",
+            "source_url": "string or null",
+            "as_of": "string or null"
+            }
+        ]
+        }
+        """
+
+        payload = {
+            "mode": "watch_area_investigation",
+            "pattern": pattern,
+            "business_context": business_context,
+        }
+
+        response = await client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {
+                    "role": "system",
+                    "content": system_prompt,
+                },
+                {
+                    "role": "user",
+                    "content": json.dumps(payload, default=str),
+                }
+            ],
+            response_format={"type": "json_object"}
+        )
+
+        content = response.choices[0].message.content
+
+        try:
+            return json.loads(content)
+
+        except json.JSONDecodeError:
+            raise ValueError("Invalid JSON response from watch area investigation")
+
     async def get_peer_seasonal_trends(
         self,
         industry: str,

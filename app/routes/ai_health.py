@@ -4,12 +4,14 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from openai import AsyncOpenAI
-
 from app.routes.auth.auth import get_current_user
 from app.services.quickbooks_financial_service import quickbooks_financial_service
 from app.services.feature_usage_service import feature_usage_service
+from app.services.orchestrator_service import OrchestratorService
+from datetime import datetime
 
 router = APIRouter(tags=["ai-health"])
+orchestrator_service = OrchestratorService()
 
 def get_health_label(score: int) -> str:
     """
@@ -432,89 +434,111 @@ async def get_business_health_full(
         ranked_drivers = []
         for d in positive_drivers:
             metric_key = "financial.net_margin"
+
             if "liquidity" in d["name"].lower():
                 metric_key = "financial.quick_ratio"
+
             ranked_drivers.append({
                 "type": "positive",
                 "metric": metric_key,
                 "points": int(d["points"].replace("+", "").replace(" pts", "")) if isinstance(d.get("points"), str) and d["points"].startswith("+") else 0,
-                "detail": d["name"]
+                "detail": d["name"],
+                "sub_metric_data": {
+                    "margin_pct": margin_pct,
+                    "quick_ratio": quick_ratio,
+                    "inventory_turns": inventory_turns,
+                    "ccc_days": ccc_days,
+                    "trend_3mo": net_trend_3mo,
+                }
             })
+
         for d in drags:
             metric_key = "operational.inventory_turnover"
+
             if "cash conversion" in d["name"].lower():
                 metric_key = "operational.cash_conversion_cycle"
+
             ranked_drivers.append({
                 "type": "drag",
                 "metric": metric_key,
                 "points": -abs(int(d["points"].replace("-", "").replace(" pts", ""))) if isinstance(d.get("points"), str) and d["points"].startswith("-") else -1,
-                "detail": d["name"]
+                "detail": d["name"],
+                "sub_metric_data": {
+                    "margin_pct": margin_pct,
+                    "quick_ratio": quick_ratio,
+                    "inventory_turns": inventory_turns,
+                    "ccc_days": ccc_days,
+                    "trend_3mo": net_trend_3mo,
+                }
             })
 
-        # 5.b Drivers display for UI
-        drivers_display = {
-            "positive": [],
-            "drags": []
-        }
-
-        for d in ranked_drivers:
-            entry = {
-                "metric": d["metric"],
-                "points": d["points"],
-                "description": d["detail"]
-            }
-
-            if d["type"] == "positive":
-                drivers_display["positive"].append(entry)
-            else:
-                drivers_display["drags"].append(entry)
                 
         # 6. Active Health Alerts (based on real thresholds)
         active_alerts = []
 
         if runway_months is not None and runway_months < 3:
             active_alerts.append({
+                "alert_id": "low_runway_critical",
                 "type": "critical",
-                "message": f"Cash runway has fallen to {runway_months:.1f} months, creating elevated financial pressure if expenses remain unchanged."
+                "description": f"Cash runway has fallen to {runway_months:.1f} months, creating elevated financial pressure if expenses remain unchanged.",
+                "urgency_context": "Liquidity pressure may worsen quickly if expenses continue at the current pace.",
+                "recommended_action": "Review operating expenses and cash preservation actions immediately."
             })
 
         elif runway_months is not None and runway_months < 6:
             active_alerts.append({
+                "alert_id": "low_runway_warning",
                 "type": "warning",
-                "message": f"Cash runway is currently {runway_months:.1f} months, limiting financial flexibility if revenue slows or costs increase."
+                "description": f"Cash runway is currently {runway_months:.1f} months, limiting financial flexibility if revenue slows or costs increase.",
+                "urgency_context": "Reduced runway may limit flexibility during slower revenue periods.",
+                "recommended_action": "Monitor cash flow weekly and identify controllable expense reductions."
             })
 
         if margin_pct is not None and margin_pct < 0.05:
             active_alerts.append({
+                "alert_id": "low_margin_critical",
                 "type": "critical",
-                "message": f"Net margin has fallen to {margin_pct*100:.1f}%, leaving less room to absorb unexpected costs or revenue swings."
+                "description": f"Net margin has fallen to {margin_pct*100:.1f}%, leaving less room to absorb unexpected costs or revenue swings.",
+                "urgency_context": "Sustained low profitability may weaken long-term financial stability.",
+                "recommended_action": "Review pricing, operating costs, and low-margin activities immediately."
             })
 
         elif margin_pct is not None and margin_pct < 0.10:
             active_alerts.append({
+                "alert_id": "low_margin_warning",
                 "type": "warning",
-                "message": f"Net margin is currently {margin_pct*100:.1f}%, which may reduce profitability cushion if operating costs rise."
+                "description": f"Net margin is currently {margin_pct*100:.1f}%, which may reduce profitability cushion if operating costs rise.",
+                "urgency_context": "Margin compression may reduce available cash flexibility over time.",
+                "recommended_action": "Review expense trends and improve operational efficiency this month."
             })
 
         if quick_ratio is not None and quick_ratio < 1.0:
             active_alerts.append({
+                "alert_id": "liquidity_warning",
                 "type": "warning",
-                "message": f"Liquidity is becoming tight. Quick ratio is {quick_ratio:.2f}, which may make short-term obligations harder to cover."
+                "description": f"Liquidity is becoming tight. Quick ratio is {quick_ratio:.2f}, which may make short-term obligations harder to cover.",
+                "urgency_context": "Short-term obligations may become harder to manage if cash inflows slow.",
+                "recommended_action": "Prioritize receivables collection and preserve short-term liquidity."
             })
 
         if burn_rate_monthly is not None and burn_rate_monthly > revenue_mtd:
             active_alerts.append({
+                "alert_id": "burn_rate_critical",
                 "type": "critical",
-                "message": "Monthly cash outflows are currently exceeding incoming revenue, which may reduce financial flexibility if sustained."
+                "description": "Monthly cash outflows are currently exceeding incoming revenue, which may reduce financial flexibility if sustained.",
+                "urgency_context": "Sustained negative cash flow may reduce runway faster than expected.",
+                "recommended_action": "Review recurring expenses and improve near-term cash inflows immediately."
             })
 
-        # If no alerts, add success message
         if not active_alerts:
             active_alerts.append({
+                "alert_id": "healthy_business",
                 "type": "success",
-                "message": "Current financial signals do not indicate any immediate business health concerns."
+                "description": "Current financial signals do not indicate any immediate business health concerns.",
+                "urgency_context": "No major threshold breaches are currently detected.",
+                "recommended_action": "Continue monitoring performance trends and maintain current controls."
             })
-        
+                
         # 7. Calculate AI Confidence based on data availability
         available_metrics = [
             margin_pct, runway_months, quick_ratio, current_ratio,
@@ -533,66 +557,227 @@ async def get_business_health_full(
 
         ai_confidence = f"{confidence_pct}%"
         ai_confidence_details = confidence_label
+
+
+        business_health = {
+            "Financial Health": {
+                "score": fin_health_score,
+                "summary": fin_summary,
+                "label": fin_label,
+            },
+            "Operational Health": {
+                "score": ops_score,
+                "summary": ops_summary,
+                "label": ops_label,
+            },
+            "Customer Health": {
+                "score": cust_score,
+                "summary": cust_summary,
+                "label": cust_label,
+            },
+            "Risk Exposure": {
+                "score": risk_score,
+                "summary": risk_summary,
+                "label": risk_label,
+            },
+            "Growth Momentum": {
+                "score": growth_score,
+                "summary": growth_summary,
+                "label": growth_label,
+            }
+        }
+
+        missing_categories = []
+
+        if fin_health_score is None:
+            missing_categories.append("financial")
+
+        if ops_score is None:
+            missing_categories.append("operational")
+
+        if cust_score is None:
+            missing_categories.append("customer")
+
+        if risk_score is None:
+            missing_categories.append("risk")
+
+        if growth_score is None:
+            missing_categories.append("growth")
+
+        business_health_ai = await orchestrator_service.render_business_health({
+            "intent": "render_business_health",
+            "today_date": datetime.utcnow().date().isoformat(),
+            "company_id": user_id,
+
+            "user_id": user_id,
+
+            "profile": {
+                "owner_goals": [],
+                "owner_priorities": [],
+            },
+
+            "overall": {
+                "score": overall_score,
+                "label": overall_label,
+                "prior_score": None,
+                "peer_avg": None,
+                "trend_direction": "stable",
+                "months_trending": 0,
+                "period_high": None,
+                "period_low": None,
+                "crossed_peer_avg": False,
+                "crossed_peer_avg_month": None,
+                "ai_confidence": confidence_pct / 100,
+                "data_completeness": confidence_pct,
+                "incomplete_data": confidence_pct < 80,
+            },
+
+            "categories": {
+                "financial": {
+                    "score": fin_health_score,
+                    "label": fin_label,
+                    "prior_score": None,
+                    "peer_avg": None,
+                    "trend_direction": "stable",
+                    "months_trending": 0,
+                    "period_high": None,
+                    "period_low": None,
+                    "crossed_peer_avg": False,
+                    "crossed_peer_avg_month": None,
+                    "sub_metrics": [],
+                    "missing": [] if fin_health_score is not None else ["financial_data"],
+                },
+
+                "operational": {
+                    "score": ops_score,
+                    "label": ops_label,
+                    "prior_score": None,
+                    "peer_avg": None,
+                    "trend_direction": "stable",
+                    "months_trending": 0,
+                    "period_high": None,
+                    "period_low": None,
+                    "crossed_peer_avg": False,
+                    "crossed_peer_avg_month": None,
+                    "sub_metrics": [],
+                    "missing": [] if ops_score is not None else ["operational_data"],
+                },
+
+                "customer": {
+                    "score": cust_score,
+                    "label": cust_label,
+                    "prior_score": None,
+                    "peer_avg": None,
+                    "trend_direction": "stable",
+                    "months_trending": 0,
+                    "period_high": None,
+                    "period_low": None,
+                    "crossed_peer_avg": False,
+                    "crossed_peer_avg_month": None,
+                    "sub_metrics": [],
+                    "missing": [] if cust_score is not None else ["customer_data"],
+                },
+
+                "risk": {
+                    "score": risk_score,
+                    "label": risk_label,
+                    "prior_score": None,
+                    "peer_avg": None,
+                    "trend_direction": "stable",
+                    "months_trending": 0,
+                    "period_high": None,
+                    "period_low": None,
+                    "crossed_peer_avg": False,
+                    "crossed_peer_avg_month": None,
+                    "sub_metrics": [],
+                    "missing": [] if risk_score is not None else ["risk_data"],
+                },
+
+                "growth": {
+                    "score": growth_score,
+                    "label": growth_label,
+                    "prior_score": None,
+                    "peer_avg": None,
+                    "trend_direction": "stable",
+                    "months_trending": 0,
+                    "period_high": None,
+                    "period_low": None,
+                    "crossed_peer_avg": False,
+                    "crossed_peer_avg_month": None,
+                    "sub_metrics": [],
+                    "missing": [] if growth_score is not None else ["growth_data"],
+                },
+            },
+
+            "ranked_drivers": ranked_drivers,
+
+            "detail_fields": {
+                "revenue_by_customer": [],
+                "overdue_invoices": [],
+                "expense_by_vendor": [],
+                "top_client_detail": {
+                    "name": None,
+                    "share": None,
+                    "prior_share": None,
+                    "trend": None,
+                },
+                "revenue_by_product": [],
+            },
+
+            "prior_period_snapshot": {
+                "overall_score": None,
+                "financial_score": None,
+                "operational_score": None,
+                "customer_score": None,
+                "risk_score": None,
+                "growth_score": None,
+            },
+
+            "signals": {
+                "hard": active_alerts,
+                "soft": priority_watch_areas,
+                "stable": ranked_drivers,
+            },
+
+            "benchmarks": {
+                "peer_pool": {},
+                "metrics": [],
+            },
+
+            "data_coverage": {
+                "connectors": {
+                    "qbo": "connected",
+                    "pos": "missing",
+                    "reviews": "missing",
+                },
+                "missing_categories": missing_categories,
+            },
+
+            "priority_watch_areas": priority_watch_areas,
+
+            "real_data_metrics": {
+                "margin_pct": margin_pct,
+                "runway_months": runway_months,
+                "quick_ratio": quick_ratio,
+                "inventory_turns": inventory_turns,
+                "ccc_days": ccc_days,
+                "trend_3mo": net_trend_3mo,
+            }
+        })
+
+        drivers_display = business_health_ai.get(
+            "drivers_display",
+            {
+                "positive": [],
+                "drags": []
+            }
+        )
+
+        ai_summary = business_health_ai.get(
+            "ai_summary",
+            "Business health insights generated successfully."
+        )
         
-        # 8. Generate AI Summary
-        if overall_score is not None:
-
-            summary_parts = []
-
-            if confidence_pct < 60:
-                summary_parts.append(
-                    "Business health assessment is currently based on partial financial data."
-                )
-
-            if overall_score >= 85:
-                summary_parts.append(
-                    f"Business health is strong at {overall_score}."
-                )
-            elif overall_score >= 60:
-                summary_parts.append(
-                    f"Business health is stable at {overall_score}."
-                )
-            else:
-                summary_parts.append(
-                    f"Business health is at risk at {overall_score}."
-                )
-
-            if quick_ratio is not None:
-                if quick_ratio < 1.0:
-                    summary_parts.append(
-                        f"Liquidity is tight with a quick ratio of {quick_ratio:.2f}, which may create short-term cash pressure."
-                    )
-                elif quick_ratio > 1.5:
-                    summary_parts.append(
-                        f"Liquidity remains healthy with a quick ratio of {quick_ratio:.2f}."
-                    )
-
-            if runway_months is not None:
-                summary_parts.append(
-                    f"Current cash runway is approximately {runway_months:.1f} months."
-                )
-
-            if ccc_days is not None and ccc_days > 60:
-                summary_parts.append(
-                    f"Cash is taking {ccc_days:.0f} days to cycle back into the business, slowing operating flexibility."
-                )
-
-            if margin_pct is not None:
-                summary_parts.append(
-                    f"Net margin is currently {margin_pct*100:.1f}%."
-                )
-
-            if confidence_pct < 80:
-                summary_parts.append(
-                    "Some business health signals are incomplete because not all financial data is available yet."
-                )
-
-            ai_summary = " ".join(summary_parts)
-
-        else:
-            ai_summary = (
-                "Business health could not be fully calculated because insufficient financial data is available."
-            )
         # 8.a Data Gap Guidance
         data_gap_guidance = []
 
@@ -776,13 +961,11 @@ async def refresh_business_health(
     try:
         user_id = current_user["id"]
 
-        # Trigger fresh QB fetch
-        await quickbooks_financial_service.get_financial_overview(user_id)
+        refresh_result = await orchestrator_service.refresh_all_business_data(
+            user_id=user_id
+        )
 
-        return {
-            "success": True,
-            "message": "Business Health refreshed successfully"
-        }
+        return refresh_result
 
     except Exception as exc:
         raise HTTPException(

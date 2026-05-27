@@ -13,6 +13,7 @@ class PrepAgentService:
         self,
         opportunity: Dict[str, Any],
         business_profile: Dict[str, Any],
+        classifier_output: Dict[str, Any] = None,
     ):
 
         api_key = os.getenv("OPENAI_API_KEY")
@@ -74,6 +75,7 @@ Rules:
                             "content": json.dumps({
                                 "opportunity": opportunity,
                                 "business_profile": business_profile,
+                                "classifier_output": classifier_output,
                             }, default=str)
                         }
                     ],

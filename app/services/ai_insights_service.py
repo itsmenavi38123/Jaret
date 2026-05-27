@@ -28,6 +28,7 @@ class AIInsightsService:
         user_id: str,
         financial_data: Dict[str, Any],
         business_profile: Optional[Dict[str, Any]] = None,
+        classifier_output: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         Generate top 3 AI insights: strength, issue, opportunity.
@@ -177,7 +178,14 @@ JSON only (no Markdown, no prose outside fields).
             model="gpt-4o",
             messages=[
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": "Generate dashboard insights based on the financial data provided."}
+                {
+                    "role": "user",
+                    "content": json.dumps({
+                        "financial_data": financial_data,
+                        "business_profile": business_profile,
+                        "classifier_output": classifier_output,
+                    }, default=str)
+                }            
             ],
             response_format={"type": "json_object"}
         )
