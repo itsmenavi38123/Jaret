@@ -1,6 +1,6 @@
 import os
-from typing import List
-from fastapi import APIRouter, Depends, HTTPException, status
+from typing import List, Any
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from openai import AsyncOpenAI
@@ -9,22 +9,10 @@ from app.services.quickbooks_financial_service import quickbooks_financial_servi
 from app.services.feature_usage_service import feature_usage_service
 from app.services.orchestrator_service import OrchestratorService
 from datetime import datetime
+from app.services.business_health_engine_service import business_health_engine_service
 
 router = APIRouter(tags=["ai-health"])
 orchestrator_service = OrchestratorService()
-
-def get_health_label(score: int) -> str:
-    """
-    Universal Business Health label mapping.
-    """
-    if score >= 85:
-        return "Strong"
-    elif score >= 75:
-        return "Good"
-    elif score >= 60:
-        return "Stable"
-    else:
-        return "At Risk"
 
 async def generate_watch_area_explanation(watch_areas: List[str]) -> str:
     """Generate soft-English explanation for priority watch areas (fallback to local text)."""
@@ -80,7 +68,7 @@ async def generate_watch_area_explanation(watch_areas: List[str]) -> str:
 
     return local_explanation
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+
 
 @router.get("/full")
 async def get_business_health_full(
@@ -134,195 +122,80 @@ async def get_business_health_full(
         cash = calc_values.get("cash", 0.0)
         
         # 2. Calculate Category Scores based on REAL data
-        
-        # A. Financial Health (Margins + Liquidity)
-        fin_score_components = []
-        
-        # Margin Score (0-100) - based on net margin
-        if margin_pct is not None:
-            # Target: >15% = excellent, 10-15% = good, 5-10% = fair, <5% = poor
-            if margin_pct >= 0.15:
-                margin_score = 100
-            elif margin_pct >= 0.10:
-                margin_score = 70 + ((margin_pct - 0.10) / 0.05) * 30
-            elif margin_pct >= 0.05:
-                margin_score = 40 + ((margin_pct - 0.05) / 0.05) * 30
-            else:
-                margin_score = max(0, (margin_pct / 0.05) * 40)
-            fin_score_components.append(margin_score)
-        
-        # Liquidity Score (0-100) - based on runway
-        if runway_months is not None and runway_months > 0:
-            # Target: >12 mo = excellent, 6-12 = good, 3-6 = fair, <3 = poor
-            if runway_months >= 12:
-                liquidity_score = 100
-            elif runway_months >= 6:
-                liquidity_score = 70 + ((runway_months - 6) / 6) * 30
-            elif runway_months >= 3:
-                liquidity_score = 40 + ((runway_months - 3) / 3) * 30
-            else:
-                liquidity_score = max(0, (runway_months / 3) * 40)
-            fin_score_components.append(liquidity_score)
-        
-        # Calculate final financial health score
-        if fin_score_components:
-            fin_health_score = int(sum(fin_score_components) / len(fin_score_components))
-        else:
-            fin_health_score = None
-            
-        if fin_health_score is not None:
-            fin_label = get_health_label(fin_health_score)
-            margin_display = f"{margin_pct*100:.1f}%" if margin_pct is not None else "N/A"
-            runway_display = f"{runway_months:.1f} mo" if runway_months is not None else "N/A"
-            if margin_pct is not None and runway_months is not None:
-                fin_summary = f"Net margin {margin_display}; Runway {runway_display}"
-            elif margin_pct is not None:
-                fin_summary = f"Net margin {margin_display}"
-            elif runway_months is not None:
-                fin_summary = f"Runway {runway_display}"
-            else:
-                fin_summary = "Financial metrics available"
-        else:
-            fin_health_score = None
-            fin_label = None
-            fin_summary = "Insufficient financial data"
+        engine_result = await business_health_engine_service.generate_business_health(
+            user_id=user_id,
+            financial_overview={
+                "Real Data Metrics": {
+                    "net_margin_pct": margin_pct,
+                    "runway_months": runway_months,
+                    "quick_ratio": quick_ratio,
+                    "inventory_turns": inventory_turns,
+                    "ccc_days": ccc_days,
+                    "trend_3mo": net_trend_3mo,
+                }
+            }
+        )
 
-        # B. Operational Health - based on efficiency metrics
-        ops_score_components = []
-        
-        # Inventory efficiency
-        if inventory_turns is not None and inventory_turns > 0:
-            # Target: >8 = excellent, 4-8 = good, 2-4 = fair, <2 = poor
-            if inventory_turns >= 8:
-                inv_score = 100
-            elif inventory_turns >= 4:
-                inv_score = 70 + ((inventory_turns - 4) / 4) * 30
-            elif inventory_turns >= 2:
-                inv_score = 40 + ((inventory_turns - 2) / 2) * 30
-            else:
-                inv_score = max(0, (inventory_turns / 2) * 40)
-            ops_score_components.append(inv_score)
-        
-        # Cash conversion cycle
-        if ccc_days is not None:
-            # Target: <30 = excellent, 30-60 = good, 60-90 = fair, >90 = poor
-            if ccc_days <= 30:
-                ccc_score = 100
-            elif ccc_days <= 60:
-                ccc_score = 70 + ((60 - ccc_days) / 30) * 30
-            elif ccc_days <= 90:
-                ccc_score = 40 + ((90 - ccc_days) / 30) * 30
-            else:
-                ccc_score = max(0, 40 - ((ccc_days - 90) / 30) * 10)
-            ops_score_components.append(ccc_score)
-        
-        if ops_score_components:
-            ops_score = int(sum(ops_score_components) / len(ops_score_components))
-            ops_label = get_health_label(ops_score)
-            if ccc_days is not None:
-                ops_summary = f"Cash conversion cycle at {ccc_days:.0f} days"
-            elif inventory_turns is not None:
-                ops_summary = f"Inventory turnover at {inventory_turns:.1f}x"
-            else:
-                ops_summary = "Operational metrics available"
-        else:
-            ops_score = None
-            ops_label = None
-            ops_summary = "Insufficient operational data"
+        overall_data = engine_result.get("overall", {})
+        financial_health = engine_result.get("financial_health", {})
+        operational_health = engine_result.get("operational_health", {})
+        risk_health = engine_result.get("risk_health", {})
+        growth_health = engine_result.get("growth_health", {})
 
-        # C. Risk Exposure (Runway + Liquidity Ratios)
-        risk_score_components = []
-        
-        # Runway component
-        if runway_months is not None and runway_months > 0:
-            runway_risk_score = min(100, runway_months * 8)
-            risk_score_components.append(runway_risk_score)
-        
-        # Quick ratio component (liquidity risk)
-        if quick_ratio is not None:
-            # Target: >1.5 = low risk, 1.0-1.5 = moderate, <1.0 = high risk
-            if quick_ratio >= 1.5:
-                quick_risk_score = 100
-            elif quick_ratio >= 1.0:
-                quick_risk_score = 70 + ((quick_ratio - 1.0) / 0.5) * 30
-            else:
-                quick_risk_score = max(0, quick_ratio * 70)
-            risk_score_components.append(quick_risk_score)
-        
-        if risk_score_components:
-            risk_score = int(sum(risk_score_components) / len(risk_score_components))
-            risk_label = get_health_label(risk_score)
-            runway_display = f"{runway_months:.1f} months" if runway_months is not None else "N/A"
+        overall_score = overall_data.get("score")
+        overall_label = overall_data.get("label")
 
+        fin_health_score = financial_health.get("score")
+        fin_label = financial_health.get("label")
+
+        ops_score = operational_health.get("score")
+        ops_label = operational_health.get("label")
+
+        risk_score = risk_health.get("score")
+        risk_label = risk_health.get("label")
+
+        growth_score = growth_health.get("score")
+        growth_label = growth_health.get("label")
+
+        margin_display = f"{margin_pct*100:.1f}%" if margin_pct is not None else "N/A"
+        runway_display = f"{runway_months:.1f} mo" if runway_months is not None else "N/A"
+
+        fin_summary = f"Net margin {margin_display}; Runway {runway_display}" if fin_health_score is not None else "Insufficient financial data"
+
+        ops_summary = (
+            f"Cash conversion cycle at {ccc_days:.0f} days"
+            if ccc_days is not None
+            else (
+                f"Inventory turnover at {inventory_turns:.1f}x"
+                if inventory_turns is not None
+                else "Insufficient operational data"
+            )
+        )
+
+        if risk_score is not None:
             if runway_months is not None:
                 risk_summary = f"Cash runway at {runway_months:.1f} months"
                 risk_missing_notice = None
-
             elif quick_ratio is not None:
                 risk_summary = f"Quick ratio at {quick_ratio:.2f}"
                 risk_missing_notice = "Cash runway data is unavailable."
-
             else:
                 risk_summary = "Risk metrics available"
                 risk_missing_notice = "Additional financial data is required to fully assess risk exposure."
-
         else:
-            risk_score = None
-            risk_label = None
             risk_summary = "Insufficient risk data"
             risk_missing_notice = "Connect financial data sources to calculate risk exposure."
 
-        # D. Growth Momentum - based on revenue trend
-        if net_trend_3mo:
-            if net_trend_3mo == "positive":
-                growth_score = 85
-                growth_summary = "Steady upward trend"
-            elif net_trend_3mo == "negative":
-                growth_score = 45
-                growth_summary = "Declining trend"
-            else:
-                growth_score = 65
-                growth_summary = "Flat growth"
-
-            growth_label = get_health_label(growth_score)
-
+        if net_trend_3mo == "positive":
+            growth_summary = "Steady upward trend"
+        elif net_trend_3mo == "negative":
+            growth_summary = "Declining trend"
         else:
-            growth_score = None
-            growth_label = None
             growth_summary = "Insufficient growth data"
 
-        # E. Customer Health - We don't have this data, so skip it
         cust_score = None
         cust_label = None
         cust_summary = "Insufficient customer data"
-
-        # 3. Overall Business Health (only from available metrics)
-        available_scores = []
-        weights_map = []
-        
-        if fin_health_score is not None:
-            available_scores.append(fin_health_score)
-            weights_map.append(0.4)  # Financial is most important
-        if ops_score is not None:
-            available_scores.append(ops_score)
-            weights_map.append(0.25)
-        if risk_score is not None:
-            available_scores.append(risk_score)
-            weights_map.append(0.25)
-        if growth_score is not None:
-            available_scores.append(growth_score)
-            weights_map.append(0.1)
-        
-        if available_scores:
-            weighted_score = sum(score * weight for score, weight in zip(available_scores, weights_map))
-
-            total_available_weight = sum(weights_map)
-            overall_score = int(weighted_score / total_available_weight)
-
-            overall_label = get_health_label(overall_score)
-        else:
-            overall_score = None
-            overall_label = "insufficient-data"
 
         # 4. Calculate Drivers and Drags from REAL data
         positive_drivers = []

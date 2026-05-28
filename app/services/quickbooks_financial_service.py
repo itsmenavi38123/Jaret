@@ -1074,6 +1074,513 @@ class QuickBooksFinancialService:
             print(f"Error fetching product-level sales: {e}")
             return []
     
+    async def get_revenue_by_customer(
+        self,
+        user_id: str,
+        start_date: date,
+        end_date: date,
+    ) -> List[Dict[str, Any]]:
+
+        realm_id = await self.get_realm_id_by_user(user_id)
+
+        token = await quickbooks_token_service.get_token_by_user_and_realm(user_id, realm_id)
+
+        if not token:
+            return []
+
+        token = await self._ensure_valid_token(token)
+
+        query = f"""
+            SELECT CustomerRef, TotalAmt, TxnDate
+            FROM Invoice
+            WHERE TxnDate >= '{start_date.isoformat()}'
+            AND TxnDate <= '{end_date.isoformat()}'
+            MAXRESULTS 1000
+        """
+
+        try:
+
+            response = await quickbooks_service.query(
+                access_token=token.access_token,
+                realm_id=realm_id,
+                query=query,
+            )
+
+            invoices = response.get("QueryResponse", {}).get("Invoice", [])
+
+            customer_totals: Dict[str, float] = {}
+
+            total_revenue = 0.0
+
+            for invoice in invoices:
+
+                customer_ref = invoice.get("CustomerRef", {})
+
+                customer_name = customer_ref.get("name") or "Unknown"
+
+                amount = float(invoice.get("TotalAmt", 0) or 0)
+
+                customer_totals[customer_name] = customer_totals.get(customer_name, 0) + amount
+
+                total_revenue += amount
+
+            results = []
+
+            for customer_name, amount in sorted(
+                customer_totals.items(),
+                key=lambda x: x[1],
+                reverse=True,
+            ):
+
+                pct_of_total = (amount / total_revenue * 100) if total_revenue else 0
+
+                results.append({
+                    "name": customer_name,
+                    "amount": round(amount, 2),
+                    "pct_of_total": round(pct_of_total, 2),
+                    "prior_amount": None,
+                    "prior_pct": None,
+                    "trend_direction": None,
+                })
+
+            return results
+
+        except Exception as e:
+
+            print(f"Error fetching revenue by customer: {e}")
+
+            return []
+
+    async def get_overdue_invoices(
+        self,
+        user_id: str,
+    ) -> List[Dict[str, Any]]:
+
+        realm_id = await self.get_realm_id_by_user(user_id)
+
+        token = await quickbooks_token_service.get_token_by_user_and_realm(
+            user_id,
+            realm_id,
+        )
+
+        if not token:
+            return []
+
+        token = await self._ensure_valid_token(token)
+
+        today = datetime.now(timezone.utc).date().isoformat()
+
+        query = f"""
+            SELECT Id, DocNumber, CustomerRef, Balance, DueDate, TxnDate
+            FROM Invoice
+            WHERE Balance > '0'
+            AND DueDate < '{today}'
+            MAXRESULTS 1000
+        """
+
+        try:
+
+            response = await quickbooks_service.query(
+                access_token=token.access_token,
+                realm_id=realm_id,
+                query=query,
+            )
+
+            invoices = response.get("QueryResponse", {}).get("Invoice", [])
+
+            results = []
+
+            for invoice in invoices:
+
+                customer_ref = invoice.get("CustomerRef", {})
+
+                customer_name = customer_ref.get("name") or "Unknown"
+
+                balance = float(invoice.get("Balance", 0) or 0)
+
+                due_date_raw = invoice.get("DueDate")
+
+                txn_date_raw = invoice.get("TxnDate")
+
+                days_overdue = None
+
+                if due_date_raw:
+                    try:
+
+                        due_date = datetime.strptime(
+                            due_date_raw,
+                            "%Y-%m-%d",
+                        ).date()
+
+                        days_overdue = (
+                            datetime.now(timezone.utc).date() - due_date
+                        ).days
+
+                    except Exception:
+                        pass
+
+                results.append({
+                    "invoice_id": invoice.get("Id"),
+                    "invoice_number": invoice.get("DocNumber"),
+                    "customer_name": customer_name,
+                    "balance": round(balance, 2),
+                    "txn_date": txn_date_raw,
+                    "due_date": due_date_raw,
+                    "days_overdue": days_overdue,
+                })
+
+            results.sort(
+                key=lambda x: x.get("days_overdue") or 0,
+                reverse=True,
+            )
+
+            return results
+
+        except Exception as e:
+
+            print(f"Error fetching overdue invoices: {e}")
+
+            return []
+        
+    async def get_expense_by_vendor(
+        self,
+        user_id: str,
+        start_date: date,
+        end_date: date,
+    ) -> List[Dict[str, Any]]:
+
+        realm_id = await self.get_realm_id_by_user(user_id)
+
+        token = await quickbooks_token_service.get_token_by_user_and_realm(
+            user_id,
+            realm_id,
+        )
+
+        if not token:
+            return []
+
+        token = await self._ensure_valid_token(token)
+
+        query = f"""
+            SELECT VendorRef, TotalAmt, TxnDate
+            FROM Purchase
+            WHERE TxnDate >= '{start_date.isoformat()}'
+            AND TxnDate <= '{end_date.isoformat()}'
+            MAXRESULTS 1000
+        """
+
+        try:
+
+            response = await quickbooks_service.query(
+                access_token=token.access_token,
+                realm_id=realm_id,
+                query=query,
+            )
+
+            purchases = response.get("QueryResponse", {}).get("Purchase", [])
+
+            vendor_totals: Dict[str, float] = {}
+
+            total_expense = 0.0
+
+            for purchase in purchases:
+
+                vendor_ref = purchase.get("VendorRef", {})
+
+                vendor_name = vendor_ref.get("name") or "Unknown"
+
+                amount = float(purchase.get("TotalAmt", 0) or 0)
+
+                vendor_totals[vendor_name] = (
+                    vendor_totals.get(vendor_name, 0) + amount
+                )
+
+                total_expense += amount
+
+            results = []
+
+            for vendor_name, amount in sorted(
+                vendor_totals.items(),
+                key=lambda x: x[1],
+                reverse=True,
+            ):
+
+                pct_of_total = (
+                    (amount / total_expense * 100)
+                    if total_expense
+                    else 0
+                )
+
+                results.append({
+                    "vendor_name": vendor_name,
+                    "amount": round(amount, 2),
+                    "pct_of_total": round(pct_of_total, 2),
+                })
+
+            return results
+
+        except Exception as e:
+
+            print(f"Error fetching expense by vendor: {e}")
+
+            return []
+
+    async def get_inventory_breakdown(
+        self,
+        user_id: str,
+    ) -> List[Dict[str, Any]]:
+
+        realm_id = await self.get_realm_id_by_user(user_id)
+
+        token = await quickbooks_token_service.get_token_by_user_and_realm(
+            user_id,
+            realm_id,
+        )
+
+        if not token:
+            return []
+
+        token = await self._ensure_valid_token(token)
+
+        query = """
+            SELECT Id, Name, QtyOnHand, IncomeAccountRef, ExpenseAccountRef, AssetAccountRef
+            FROM Item
+            MAXRESULTS 1000
+        """
+
+        try:
+
+            response = await quickbooks_service.query(
+                access_token=token.access_token,
+                realm_id=realm_id,
+                query=query,
+            )
+
+            items = response.get("QueryResponse", {}).get("Item", [])
+
+            results = []
+
+            for item in items:
+
+                qty_on_hand = item.get("QtyOnHand")
+
+                try:
+                    qty_on_hand = float(qty_on_hand or 0)
+
+                except Exception:
+                    qty_on_hand = 0
+
+                results.append({
+                    "item_id": item.get("Id"),
+                    "item_name": item.get("Name"),
+                    "qty_on_hand": qty_on_hand,
+                    "income_account": (
+                        item.get("IncomeAccountRef", {}) or {}
+                    ).get("name"),
+                    "expense_account": (
+                        item.get("ExpenseAccountRef", {}) or {}
+                    ).get("name"),
+                    "asset_account": (
+                        item.get("AssetAccountRef", {}) or {}
+                    ).get("name"),
+                })
+
+            results.sort(
+                key=lambda x: x.get("qty_on_hand") or 0,
+                reverse=True,
+            )
+
+            return results
+
+        except Exception as e:
+
+            print(f"Error fetching inventory breakdown: {e}")
+
+            return []  
+
+    async def get_revenue_by_location(
+        self,
+        user_id: str,
+        start_date: date,
+        end_date: date,
+    ) -> List[Dict[str, Any]]:
+
+        realm_id = await self.get_realm_id_by_user(user_id)
+
+        token = await quickbooks_token_service.get_token_by_user_and_realm(
+            user_id,
+            realm_id,
+        )
+
+        if not token:
+            return []
+
+        token = await self._ensure_valid_token(token)
+
+        query = f"""
+            SELECT DepartmentRef, TotalAmt, TxnDate
+            FROM Invoice
+            WHERE TxnDate >= '{start_date.isoformat()}'
+            AND TxnDate <= '{end_date.isoformat()}'
+            MAXRESULTS 1000
+        """
+
+        try:
+
+            response = await quickbooks_service.query(
+                access_token=token.access_token,
+                realm_id=realm_id,
+                query=query,
+            )
+
+            invoices = response.get("QueryResponse", {}).get("Invoice", [])
+
+            location_totals: Dict[str, float] = {}
+
+            total_revenue = 0.0
+
+            for invoice in invoices:
+
+                department_ref = invoice.get("DepartmentRef", {})
+
+                location_name = (
+                    department_ref.get("name")
+                    or "Unassigned"
+                )
+
+                amount = float(invoice.get("TotalAmt", 0) or 0)
+
+                location_totals[location_name] = (
+                    location_totals.get(location_name, 0) + amount
+                )
+
+                total_revenue += amount
+
+            results = []
+
+            for location_name, amount in sorted(
+                location_totals.items(),
+                key=lambda x: x[1],
+                reverse=True,
+            ):
+
+                pct_of_total = (
+                    (amount / total_revenue * 100)
+                    if total_revenue
+                    else 0
+                )
+
+                results.append({
+                    "location_name": location_name,
+                    "amount": round(amount, 2),
+                    "pct_of_total": round(pct_of_total, 2),
+                })
+
+            return results
+
+        except Exception as e:
+
+            print(f"Error fetching revenue by location: {e}")
+
+            return []
+    
+    async def get_revenue_by_stream(
+        self,
+        user_id: str,
+        start_date: date,
+        end_date: date,
+    ) -> List[Dict[str, Any]]:
+
+        realm_id = await self.get_realm_id_by_user(user_id)
+
+        token = await quickbooks_token_service.get_token_by_user_and_realm(
+            user_id,
+            realm_id,
+        )
+
+        if not token:
+            return []
+
+        token = await self._ensure_valid_token(token)
+
+        query = f"""
+            SELECT Line, TotalAmt, TxnDate
+            FROM Invoice
+            WHERE TxnDate >= '{start_date.isoformat()}'
+            AND TxnDate <= '{end_date.isoformat()}'
+            MAXRESULTS 1000
+        """
+
+        try:
+
+            response = await quickbooks_service.query(
+                access_token=token.access_token,
+                realm_id=realm_id,
+                query=query,
+            )
+
+            invoices = response.get("QueryResponse", {}).get("Invoice", [])
+
+            stream_totals: Dict[str, float] = {}
+
+            total_revenue = 0.0
+
+            for invoice in invoices:
+
+                lines = invoice.get("Line", []) or []
+
+                for line in lines:
+
+                    sales_item = (
+                        (
+                            line.get("SalesItemLineDetail", {})
+                            or {}
+                        ).get("ItemRef", {})
+                        or {}
+                    )
+
+                    stream_name = (
+                        sales_item.get("name")
+                        or "General Revenue"
+                    )
+
+                    amount = float(line.get("Amount", 0) or 0)
+
+                    stream_totals[stream_name] = (
+                        stream_totals.get(stream_name, 0) + amount
+                    )
+
+                    total_revenue += amount
+
+            results = []
+
+            for stream_name, amount in sorted(
+                stream_totals.items(),
+                key=lambda x: x[1],
+                reverse=True,
+            ):
+
+                pct_of_total = (
+                    (amount / total_revenue * 100)
+                    if total_revenue
+                    else 0
+                )
+
+                results.append({
+                    "stream_name": stream_name,
+                    "amount": round(amount, 2),
+                    "pct_of_total": round(pct_of_total, 2),
+                })
+
+            return results
+
+        except Exception as e:
+
+            print(f"Error fetching revenue by stream: {e}")
+
+            return []
+
+
     def _parse_product_sales(self, report: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Parse product/service-level sales from report"""
         product_sales: List[Dict[str, Any]] = []

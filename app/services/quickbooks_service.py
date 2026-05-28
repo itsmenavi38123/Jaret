@@ -52,9 +52,6 @@ def get_api_base_url() -> str:
 
 
 def get_authorization_url(state: Optional[str] = None, redirect_uri: Optional[str] = None, scope: Optional[str] = None) -> str:
-    """
-    Build the authorization URL used to start the OAuth2 flow.
-    """
     client_id = _required_env("QUICKBOOKS_CLIENT_ID")
     chosen_scope = scope or DEFAULT_QBO_SCOPE
     callback_uri = redirect_uri or HARD_CODED_REDIRECT_URI
@@ -70,19 +67,20 @@ def get_authorization_url(state: Optional[str] = None, redirect_uri: Optional[st
         f"&scope={encoded_scope}"
         f"&state={encoded_state}"
     )
+
     logger.info("Generated QuickBooks auth URL with redirect %s", callback_uri)
+
     return url
 
 
 async def exchange_code_for_tokens(code: str, redirect_uri: Optional[str] = None) -> Dict[str, Any]:
-    """
-    Exchange an authorization code for access/refresh tokens.
-    """
+
     headers = {
         "Authorization": f"Basic {_basic_auth_header()}",
         "Accept": "application/json",
         "Content-Type": "application/x-www-form-urlencoded",
     }
+
     data = {
         "grant_type": "authorization_code",
         "code": code,
@@ -92,28 +90,41 @@ async def exchange_code_for_tokens(code: str, redirect_uri: Optional[str] = None
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(TOKEN_URL, data=data, headers=headers)
-    except Exception as exc:  # network or transport errors
+
+    except Exception as exc:
         logger.exception("QuickBooks token exchange failed to reach Intuit")
-        raise HTTPException(status_code=502, detail="Failed to reach QuickBooks token endpoint") from exc
+
+        raise HTTPException(
+            status_code=502,
+            detail="Failed to reach QuickBooks token endpoint",
+        ) from exc
 
     if response.status_code != httpx.codes.OK:
         logger.error("QuickBooks token exchange error: %s", response.text)
-        raise HTTPException(status_code=response.status_code, detail=response.text)
+
+        raise HTTPException(
+            status_code=response.status_code,
+            detail=response.text,
+        )
 
     payload = response.json()
-    logger.info("QuickBooks token exchange succeeded; expires_in=%s", payload.get("expires_in"))
+
+    logger.info(
+        "QuickBooks token exchange succeeded; expires_in=%s",
+        payload.get("expires_in"),
+    )
+
     return payload
 
 
 async def refresh_access_token(refresh_token: str) -> Dict[str, Any]:
-    """
-    Refresh the QuickBooks access token using a refresh token.
-    """
+
     headers = {
         "Authorization": f"Basic {_basic_auth_header()}",
         "Accept": "application/json",
         "Content-Type": "application/x-www-form-urlencoded",
     }
+
     data = {
         "grant_type": "refresh_token",
         "refresh_token": refresh_token,
@@ -122,109 +133,175 @@ async def refresh_access_token(refresh_token: str) -> Dict[str, Any]:
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(TOKEN_URL, data=data, headers=headers)
+
     except Exception as exc:
         logger.exception("QuickBooks refresh failed to reach Intuit")
-        raise HTTPException(status_code=502, detail="Failed to reach QuickBooks token endpoint") from exc
+
+        raise HTTPException(
+            status_code=502,
+            detail="Failed to reach QuickBooks token endpoint",
+        ) from exc
 
     if response.status_code != httpx.codes.OK:
         logger.error("QuickBooks refresh error: %s", response.text)
-        raise HTTPException(status_code=response.status_code, detail=response.text)
+
+        raise HTTPException(
+            status_code=response.status_code,
+            detail=response.text,
+        )
 
     payload = response.json()
+
     logger.info(
         "QuickBooks token refreshed; expires_in=%s x_refresh_token_expires_in=%s",
         payload.get("expires_in"),
         payload.get("x_refresh_token_expires_in"),
     )
+
     return payload
 
 
 def token_has_expired(created_at: datetime, expires_in_seconds: int, safety_buffer: int = 120) -> bool:
-    """
-    Determine whether a token has expired.
-    """
+
     if created_at.tzinfo is None:
         created_at = created_at.replace(tzinfo=timezone.utc)
+
     buffer_seconds = max(safety_buffer, 0)
+
     expiry = created_at + timedelta(seconds=expires_in_seconds - buffer_seconds)
+
     return datetime.now(timezone.utc) >= expiry
 
 
 async def _perform_qbo_request(method: str, url: str, access_token: str, **kwargs) -> httpx.Response:
+
     headers = {
         "Authorization": f"Bearer {access_token}",
         "Accept": "application/json",
     }
-    
-    # Merge headers if provided
+
     if "headers" in kwargs:
         headers.update(kwargs.pop("headers"))
 
     async with httpx.AsyncClient() as client:
-        # Retry loop for 429 ThrottleExceeded
+
         max_retries = 3
         base_delay = 2.0
-        
+
         for attempt in range(max_retries + 1):
-            response = await client.request(method, url, headers=headers, **kwargs)
-            
+
+            response = await client.request(
+                method,
+                url,
+                headers=headers,
+                **kwargs,
+            )
+
             if response.status_code == 429:
-                # 429 Throttle Exceeded
+
                 if attempt < max_retries:
-                    sleep_time = base_delay * (2 ** attempt)  # 2s, 4s, 8s
+
+                    sleep_time = base_delay * (2 ** attempt)
+
                     print(f"⚠️ QuickBooks 429 Throttle. Retrying in {sleep_time}s...")
+
                     await asyncio.sleep(sleep_time)
+
                     continue
+
                 else:
-                    # Retries exhausted
+
                     print(f"❌ QuickBooks 429 Throttle Exhausted after {max_retries} retries.")
+
                     raise HTTPException(
                         status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                         detail="QuickBooks API rate limit exceeded. Please try again later.",
                     )
-            
-            # Check for other errors
+
             if response.status_code == 401:
                 raise QuickBooksUnauthorizedError("Access token expired or invalid")
-                
+
             if response.status_code != 200:
+
                 print(f"❌ QBO Request Failed: {response.status_code} - {response.text}")
-                # Try to parse Intuit error
+
                 try:
                     error_json = response.json()
                     fault = error_json.get("Fault", {}).get("Error", [{}])[0]
                     msg = fault.get("Message") or fault.get("Detail") or response.text
-                except:
+
+                except Exception:
                     msg = response.text
-                    
+
                 raise HTTPException(
                     status_code=response.status_code,
                     detail=msg,
                 )
-                
+
             return response
 
 
-async def fetch_report(access_token: str, realm_id: str, report: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    """
-    Fetch a QuickBooks report (e.g., ProfitAndLoss, BalanceSheet).
-    """
+async def fetch_report(
+    access_token: str,
+    realm_id: str,
+    report: str,
+    params: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+
     base = get_api_base_url()
+
     url = f"{base}/v3/company/{realm_id}/reports/{report}"
+
     merged_params = {"minorversion": "73"}
+
     if params:
         merged_params.update(params)
 
-    response = await _perform_qbo_request("GET", url, access_token, params=merged_params)
-    # print(response.json())
+    response = await _perform_qbo_request(
+        "GET",
+        url,
+        access_token,
+        params=merged_params,
+    )
+
+    return response.json()
+
+
+async def query(
+    access_token: str,
+    realm_id: str,
+    query: str,
+) -> Dict[str, Any]:
+
+    base = get_api_base_url()
+
+    encoded_query = urllib.parse.quote(query)
+
+    url = f"{base}/v3/company/{realm_id}/query?query={encoded_query}&minorversion=73"
+
+    response = await _perform_qbo_request(
+        "GET",
+        url,
+        access_token,
+        headers={
+            "Content-Type": "application/text",
+        },
+    )
+
     return response.json()
 
 
 async def get_company_info(access_token: str, realm_id: str) -> Dict[str, Any]:
-    """
-    Fetch the QuickBooks company info resource.
-    """
+
     base = get_api_base_url()
+
     url = f"{base}/v3/company/{realm_id}/companyinfo/{realm_id}"
-    response = await _perform_qbo_request("GET", url, access_token, params={"minorversion": "73"})
+
+    response = await _perform_qbo_request(
+        "GET",
+        url,
+        access_token,
+        params={"minorversion": "73"},
+    )
+
     return response.json()

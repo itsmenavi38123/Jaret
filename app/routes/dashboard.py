@@ -302,23 +302,13 @@ async def explain_kpi_drawer(
 
             if business_type and annual_revenue:
                 try:
-                    revenue_band = benchmark_service._calculate_revenue_band(annual_revenue)
-
-                    cache_key = benchmark_service._build_cache_key(
+                    benchmarks = await benchmark_service.get_or_fetch_benchmarks(
                         business_type=business_type,
                         country=country,
-                        revenue_band=revenue_band,
+                        annual_revenue_dollars=annual_revenue,
                     )
 
-                    print(" KPI CACHE KEY:", cache_key)
-
-                    cached = await redis_client.get(cache_key)
-
-                    if cached:
-                        print("🔥 KPI CACHE HIT")
-
-                        benchmarks = json.loads(cached)
-
+                    if benchmarks:
                         kpi_to_metric = {
                             "current_ratio": "current_ratio",
                             "quick_ratio": "quick_ratio",
@@ -349,7 +339,7 @@ async def explain_kpi_drawer(
                                 }
 
                 except Exception as exc:
-                    logger.warning(f"Benchmark cache read failed: {exc}")
+                    logger.warning(f"Benchmark lookup failed: {exc}")
 
         payload = body.model_dump()
         payload["optional_context"] = enriched_context

@@ -112,6 +112,11 @@ async def create_indexes() -> None:
     await scenario_chats.create_index("created_at")
     await scenario_chats.create_index([("user_id", 1), ("updated_at", -1)])
 
+    benchmarks = get_collection("benchmarks")
+    await benchmarks.create_index([("metric_key", 1), ("classifier.industry", 1), ("classifier.country", 1), ("classifier.revenue_band", 1)])
+    await benchmarks.create_index([("metric_key", 1), ("source", 1)])
+    await benchmarks.create_index([("classifier.industry", 1), ("classifier.country", 1), ("classifier.revenue_band", 1)])
+
     user_pos_access = get_collection("user_pos_access")
     await user_pos_access.create_index([("user_id", 1), ("provider", 1)], unique=True)
 

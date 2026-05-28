@@ -158,6 +158,82 @@ class TaggingService:
             "apparel_production": ["boutique_clothing", "arts_crafts"],
         }
 
+        self.service_model_mapping = {
+            "fine_dining": "fine_dining",
+            "restaurant": "service_in_person",
+            "fast_casual": "fast_casual",
+            "food_truck": "takeout",
+            "coffee_shop": "takeout",
+            "bakery": "retail_brick",
+            "catering": "service_in_person",
+            "brewery": "retail_brick",
+            "winery": "retail_brick",
+            "boutique_clothing": "retail_brick",
+            "gift_shop": "retail_brick",
+            "jewelry": "retail_brick",
+            "sporting_goods": "retail_brick",
+            "home_goods": "retail_brick",
+            "marketing_agency": "service_remote",
+            "accounting": "service_remote",
+            "legal": "service_in_person",
+            "IT_services": "service_remote",
+            "consulting": "service_remote",
+            "staffing": "service_in_person",
+            "graphic_design": "service_remote",
+            "photography": "service_in_person",
+            "videography": "service_in_person",
+            "event_planning": "service_in_person",
+            "personal_trainer": "service_in_person",
+            "yoga_studio": "service_in_person",
+            "salon": "service_in_person",
+            "spa": "service_in_person",
+            "massage_therapy": "service_in_person",
+            "woodworking": "manufacturing",
+            "custom_fabrication": "manufacturing",
+            "apparel_production": "manufacturing",
+            "food_manufacturing": "manufacturing",
+        }
+
+        self.price_tier_mapping = {
+            "fine_dining": "luxury",
+            "restaurant": "mid",
+            "fast_casual": "mid",
+            "food_truck": "budget",
+            "coffee_shop": "budget",
+            "bakery": "mid",
+            "catering": "premium",
+            "brewery": "premium",
+            "winery": "premium",
+            "boutique_clothing": "premium",
+            "gift_shop": "mid",
+            "jewelry": "luxury",
+            "marketing_agency": "premium",
+            "consulting": "premium",
+            "legal": "premium",
+            "accounting": "mid",
+            "IT_services": "premium",
+            "spa": "premium",
+            "salon": "mid",
+        }
+
+        self.customer_context_mapping = {
+            "marketing_agency": "B2B",
+            "consulting": "B2B",
+            "legal": "B2B",
+            "accounting": "B2B",
+            "IT_services": "B2B",
+            "staffing": "B2B",
+            "food_truck": "B2C",
+            "restaurant": "B2C",
+            "coffee_shop": "B2C",
+            "bakery": "B2C",
+            "boutique_clothing": "B2C",
+            "jewelry": "B2C",
+            "catering": "hybrid",
+            "event_planning": "hybrid",
+            "photography": "hybrid",
+            "videography": "hybrid",
+        }
 
     def _normalize_text(self, text: str) -> str:
 
@@ -165,7 +241,6 @@ class TaggingService:
             return ""
         return text.lower().strip()
     
-
     def extract_opportunity_tags(
         self,
         title: str = "",
@@ -193,9 +268,19 @@ class TaggingService:
             elif opp_type == "accelerator":
                 matched_tags.add("professional_services")
 
-        return list(matched_tags)
-    
+        final_tags = list(matched_tags)
 
+        service_metadata = self.extract_service_model_tags(
+            final_tags
+        )
+
+        return {
+            "tags": final_tags,
+            "service_models": service_metadata["service_models"],
+            "price_tiers": service_metadata["price_tiers"],
+            "customer_contexts": service_metadata["customer_contexts"],
+        }
+    
     def extract_business_tags(self, onboarding: Dict[str, Any]) -> List[str]:
 
         matched_tags = set()
@@ -449,7 +534,6 @@ class TaggingService:
 
         return "unknown"
     
-
     def extract_event_audience(self, text: str) -> str:
         normalized = self._normalize_text(text)
         b2b_keywords = ["b2b", "trade show", "trade expo", "industry conference", "supplier", "wholesale buyer", "procurement", "corporate buyer", "industry professionals only"]
@@ -471,7 +555,6 @@ class TaggingService:
 
         return "unknown"
     
-
     def extract_event_service_fit(self, text: str) -> List[str]:
 
         normalized = self._normalize_text(text)
@@ -592,8 +675,39 @@ class TaggingService:
                 derived.add(parent)
 
         return list(derived)
-    
-        
+
+    def extract_service_model_tags(
+        self,
+        business_tags: List[str],
+    ) -> Dict[str, Any]:
+
+        service_models = set()
+        price_tiers = set()
+        customer_contexts = set()
+
+        for tag in business_tags:
+
+            service_model = self.service_model_mapping.get(tag)
+
+            if service_model:
+                service_models.add(service_model)
+
+            price_tier = self.price_tier_mapping.get(tag)
+
+            if price_tier:
+                price_tiers.add(price_tier)
+
+            customer_context = self.customer_context_mapping.get(tag)
+
+            if customer_context:
+                customer_contexts.add(customer_context)
+
+        return {
+            "service_models": sorted(list(service_models)),
+            "price_tiers": sorted(list(price_tiers)),
+            "customer_contexts": sorted(list(customer_contexts)),
+        }
+
     def extract_full_opportunity_metadata(
         self,
         title: str = "",
