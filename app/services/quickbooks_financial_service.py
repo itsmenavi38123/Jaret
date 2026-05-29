@@ -55,15 +55,10 @@ def _parse_money(value: Optional[str]) -> float:
         return 0.0
 
 
-def _iter_rows(rows: Optional[Any]) -> Iterable[Dict[str, Any]]:
+def _iter_rows(rows: Optional[Dict[str, Any]]) -> Iterable[Dict[str, Any]]:
     if not rows:
         return []
-    if isinstance(rows, dict):
-        row_items = rows.get("Row", [])
-    elif isinstance(rows, list):
-        row_items = rows
-    else:
-        return []
+    row_items = rows.get("Row") if isinstance(rows, dict) else rows
     if not row_items:
         return []
     return row_items
@@ -294,7 +289,9 @@ class QuickBooksFinancialService:
             balance_sheet_report=balance_sheet_report,
             cashflow_reports=cashflow_reports,
         )
+        print("profit_snapshots", profit_snapshots)
 
+        print("overview", overview)
         return overview
 
     async def get_realm_id_by_user(self, user_id: str) -> str:
@@ -331,7 +328,6 @@ class QuickBooksFinancialService:
         )
         print(mtd_report,"=======")
         mtd_snapshot = _profit_and_loss_from_report(mtd_report)
-        print(mtd_snapshot)
 
         balance_sheet_report, token = await self._fetch_balance_sheet(token, realm_id)
 
@@ -481,11 +477,11 @@ class QuickBooksFinancialService:
         params: Optional[Dict[str, str]] = None,
     ) -> Tuple[Dict[str, Any], QuickBooksToken]:
         try:
-            report = await quickbooks_service.fetch_report(token.access_token, realm_id, report_name, params) or {}
+            report = await quickbooks_service.fetch_report(token.access_token, realm_id, report_name, params)
             return report, token
         except QuickBooksUnauthorizedError:
             refreshed_token = await self._refresh_and_update_token(token)
-            report = await quickbooks_service.fetch_report(refreshed_token.access_token, realm_id, report_name, params) or {}
+            report = await quickbooks_service.fetch_report(refreshed_token.access_token, realm_id, report_name, params)
             return report, refreshed_token
 
     def _build_period_params(
@@ -604,7 +600,9 @@ class QuickBooksFinancialService:
         quick_ratio = _safe_divide(quick_assets, current_liabilities)
         current_ratio = _safe_divide(current_assets, current_liabilities)
         debt_to_equity = _safe_divide(balance_sheet_report.total_liabilities, balance_sheet_report.total_equity)
-
+        cash_ratio = _safe_divide(cash, current_liabilities)
+        working_capital = current_assets - current_liabilities
+       
         operating_income = mtd.gross_profit - mtd.operating_expenses
         interest_cover = _safe_divide(operating_income, max(mtd.interest_expense, 0.0001))
 
@@ -706,6 +704,8 @@ class QuickBooksFinancialService:
             "liquidity": {
                 "current_ratio": round(current_ratio, 2) if current_ratio is not None else None,
                 "quick_ratio": round(quick_ratio, 2) if quick_ratio is not None else None,
+                "cash_ratio": round(cash_ratio, 2) if cash_ratio is not None else None,
+                "working_capital": round(working_capital, 2),
                 "dte": round(debt_to_equity, 2) if debt_to_equity is not None else None,
                 "interest_cover": round(interest_cover, 2) if interest_cover is not None else None,
             },

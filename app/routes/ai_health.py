@@ -423,14 +423,8 @@ async def get_business_health_full(
                 "recommended_action": "Review recurring expenses and improve near-term cash inflows immediately."
             })
 
-        if not active_alerts:
-            active_alerts.append({
-                "alert_id": "healthy_business",
-                "type": "success",
-                "description": "Current financial signals do not indicate any immediate business health concerns.",
-                "urgency_context": "No major threshold breaches are currently detected.",
-                "recommended_action": "Continue monitoring performance trends and maintain current controls."
-            })
+        if active_alerts is None:
+            active_alerts = []
                 
         # 7. Calculate AI Confidence based on data availability
         available_metrics = [
