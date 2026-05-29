@@ -1,8 +1,7 @@
 from typing import Dict, Any, List, Optional
 
-from app.models.business_health_snapshot import (
-    BusinessHealthSnapshot,
-)
+from app.db import get_collection
+from app.models.business_health_snapshot import BusinessHealthSnapshot
 
 
 class BusinessHealthSnapshotService:
@@ -15,10 +14,8 @@ class BusinessHealthSnapshotService:
         ai_summary: Optional[str] = None,
     ) -> BusinessHealthSnapshot:
 
-        overall = business_health_payload.get(
-            "overall",
-            {},
-        )
+        business_health_payload = business_health_payload or {}
+        overall = business_health_payload.get("overall") or {}
 
         snapshot = BusinessHealthSnapshot(
             user_id=user_id,
@@ -29,7 +26,8 @@ class BusinessHealthSnapshotService:
             ai_summary=ai_summary,
         )
 
-        await snapshot.insert()
+        collection = get_collection("business_health_snapshots")
+        await collection.insert_one(snapshot.model_dump())
 
         return snapshot
 
@@ -39,14 +37,11 @@ class BusinessHealthSnapshotService:
         limit: int = 50,
     ) -> List[BusinessHealthSnapshot]:
 
-        return await (
-            BusinessHealthSnapshot.find(
-                BusinessHealthSnapshot.user_id == user_id,
-            )
-            .sort(-BusinessHealthSnapshot.created_at)
-            .limit(limit)
-            .to_list()
-        )
+        collection = get_collection("business_health_snapshots")
+
+        docs = await collection.find({"user_id": user_id}).sort("created_at", -1).limit(limit).to_list(length=limit)
+
+        return [BusinessHealthSnapshot(**doc) for doc in docs]
 
     async def compare_snapshots(
         self,
@@ -54,60 +49,35 @@ class BusinessHealthSnapshotService:
         previous_snapshot_id: str,
     ) -> Dict[str, Any]:
 
-        current = await BusinessHealthSnapshot.get(
-            current_snapshot_id,
-        )
+        collection = get_collection("business_health_snapshots")
 
-        previous = await BusinessHealthSnapshot.get(
-            previous_snapshot_id,
-        )
+        current = await collection.find_one({"_id": current_snapshot_id})
+        previous = await collection.find_one({"_id": previous_snapshot_id})
 
         if not current or not previous:
+            return {"comparison": None}
 
-            return {
-                "comparison": None,
-            }
+        current = BusinessHealthSnapshot(**current)
+        previous = BusinessHealthSnapshot(**previous)
 
         current_score = current.overall_score or 0
         previous_score = previous.overall_score or 0
 
         score_delta = current_score - previous_score
 
-        current_alerts = (
-            current.snapshot_payload.get(
-                "active_health_alerts",
-                [],
-            )
-        )
+        current_alerts = current.snapshot_payload.get("active_health_alerts", [])
+        previous_alerts = previous.snapshot_payload.get("active_health_alerts", [])
 
-        previous_alerts = (
-            previous.snapshot_payload.get(
-                "active_health_alerts",
-                [],
-            )
-        )
-
-        current_signal_ids = {
-            item.get("signal_id")
-            for item in current_alerts
-        }
-
-        previous_signal_ids = {
-            item.get("signal_id")
-            for item in previous_alerts
-        }
+        current_signal_ids = {item.get("signal_id") for item in current_alerts if isinstance(item, dict)}
+        previous_signal_ids = {item.get("signal_id") for item in previous_alerts if isinstance(item, dict)}
 
         return {
             "score_delta": score_delta,
-            "new_alerts": list(
-                current_signal_ids - previous_signal_ids
-            ),
-            "resolved_alerts": list(
-                previous_signal_ids - current_signal_ids
-            ),
+            "new_alerts": list(current_signal_ids - previous_signal_ids),
+            "resolved_alerts": list(previous_signal_ids - current_signal_ids),
             "current_snapshot_created_at": current.created_at,
             "previous_snapshot_created_at": previous.created_at,
         }
 
 
-business_health_snapshot_service = (BusinessHealthSnapshotService())
+business_health_snapshot_service = BusinessHealthSnapshotService()

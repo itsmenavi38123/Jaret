@@ -55,10 +55,15 @@ def _parse_money(value: Optional[str]) -> float:
         return 0.0
 
 
-def _iter_rows(rows: Optional[Dict[str, Any]]) -> Iterable[Dict[str, Any]]:
+def _iter_rows(rows: Optional[Any]) -> Iterable[Dict[str, Any]]:
     if not rows:
         return []
-    row_items = rows.get("Row") if isinstance(rows, dict) else rows
+    if isinstance(rows, dict):
+        row_items = rows.get("Row", [])
+    elif isinstance(rows, list):
+        row_items = rows
+    else:
+        return []
     if not row_items:
         return []
     return row_items
@@ -476,11 +481,11 @@ class QuickBooksFinancialService:
         params: Optional[Dict[str, str]] = None,
     ) -> Tuple[Dict[str, Any], QuickBooksToken]:
         try:
-            report = await quickbooks_service.fetch_report(token.access_token, realm_id, report_name, params)
+            report = await quickbooks_service.fetch_report(token.access_token, realm_id, report_name, params) or {}
             return report, token
         except QuickBooksUnauthorizedError:
             refreshed_token = await self._refresh_and_update_token(token)
-            report = await quickbooks_service.fetch_report(refreshed_token.access_token, realm_id, report_name, params)
+            report = await quickbooks_service.fetch_report(refreshed_token.access_token, realm_id, report_name, params) or {}
             return report, refreshed_token
 
     def _build_period_params(
@@ -1262,7 +1267,7 @@ class QuickBooksFinancialService:
         token = await self._ensure_valid_token(token)
 
         query = f"""
-            SELECT VendorRef, TotalAmt, TxnDate
+            SELECT *
             FROM Purchase
             WHERE TxnDate >= '{start_date.isoformat()}'
             AND TxnDate <= '{end_date.isoformat()}'
@@ -1343,7 +1348,7 @@ class QuickBooksFinancialService:
         token = await self._ensure_valid_token(token)
 
         query = """
-            SELECT Id, Name, QtyOnHand, IncomeAccountRef, ExpenseAccountRef, AssetAccountRef
+            SELECT *
             FROM Item
             MAXRESULTS 1000
         """

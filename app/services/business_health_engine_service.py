@@ -102,6 +102,7 @@ class BusinessHealthEngineService:
         except Exception:
             revenue_by_customer = []
 
+        revenue_by_customer = revenue_by_customer or []
         total_customers = len(revenue_by_customer)
 
         repeat_customers = 0
@@ -110,8 +111,9 @@ class BusinessHealthEngineService:
 
         total_revenue = 0.0
 
-        for customer in revenue_by_customer:
+        for customer in revenue_by_customer or []:
 
+            customer = customer or {}
             amount = float(customer.get("amount", 0) or 0)
 
             total_revenue += amount
@@ -307,6 +309,8 @@ class BusinessHealthEngineService:
         classifier_output: Dict[str, Any] | None = None,
     ) -> Dict[str, Any]:
 
+        financial_overview = financial_overview or {}
+        classifier_output = classifier_output or {}
         metrics = financial_overview.get("Real Data Metrics", {})
         customer_health_metrics = await self._build_customer_health_metrics(
             user_id=user_id,

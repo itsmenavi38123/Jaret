@@ -38,11 +38,11 @@ class LeverEngineService:
 
         updated_surfaces = {}
 
-        for surface_name, signals in signal_surfaces.items():
+        for surface_name, signals in (signal_surfaces or {}).items():
 
             updated_signals = []
 
-            for signal in signals:
+            for signal in signals or []:
 
                 signal_id = signal.get(
                     "signal_id",

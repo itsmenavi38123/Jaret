@@ -1,6 +1,7 @@
 from datetime import datetime
 from typing import Optional, Dict, Any, List
 
+from app.db import get_collection
 from app.models.decision_log import DecisionLog
 
 
@@ -37,7 +38,11 @@ class DecisionLogService:
             updated_at=datetime.utcnow(),
         )
 
-        await log.insert()
+        collection = get_collection("decision_logs")
+
+        await collection.insert_one(
+            log.model_dump()
+        )
 
         return log
 
@@ -47,14 +52,23 @@ class DecisionLogService:
         limit: int = 50,
     ) -> List[DecisionLog]:
 
-        return await (
-            DecisionLog.find(
-                DecisionLog.user_id == user_id,
-            )
-            .sort(-DecisionLog.created_at)
-            .limit(limit)
-            .to_list()
+        collection = get_collection("decision_logs")
+
+        docs = await collection.find(
+            {"user_id": user_id}
+        ).sort(
+            "created_at",
+            -1,
+        ).limit(
+            limit,
+        ).to_list(
+            length=limit,
         )
+
+        return [
+            DecisionLog(**doc)
+            for doc in docs
+        ]
 
     async def attach_outcome(
         self,
@@ -63,20 +77,31 @@ class DecisionLogService:
         outcome_metrics: Optional[Dict[str, Any]] = None,
     ) -> Optional[DecisionLog]:
 
-        decision = await DecisionLog.get(
-            decision_id,
+        collection = get_collection("decision_logs")
+
+        existing = await collection.find_one(
+            {"_id": decision_id}
         )
 
-        if not decision:
+        if not existing:
             return None
 
-        decision.outcome_summary = outcome_summary
-        decision.outcome_metrics = outcome_metrics or {}
-        decision.updated_at = datetime.utcnow()
+        await collection.update_one(
+            {"_id": decision_id},
+            {
+                "$set": {
+                    "outcome_summary": outcome_summary,
+                    "outcome_metrics": outcome_metrics or {},
+                    "updated_at": datetime.utcnow(),
+                }
+            },
+        )
 
-        await decision.save()
+        updated = await collection.find_one(
+            {"_id": decision_id}
+        )
 
-        return decision
+        return DecisionLog(**updated) if updated else None
 
 
 decision_log_service = DecisionLogService()

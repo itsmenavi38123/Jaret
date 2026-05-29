@@ -10,7 +10,7 @@ from app.services.feature_usage_service import feature_usage_service
 from app.services.orchestrator_service import OrchestratorService
 from datetime import datetime
 from app.services.business_health_engine_service import business_health_engine_service
-
+import traceback
 router = APIRouter(tags=["ai-health"])
 orchestrator_service = OrchestratorService()
 
@@ -90,7 +90,11 @@ async def get_business_health_full(
         qs = quickbooks_financial_service
         
         # Get comprehensive financial overview
-        financial_overview = await qs.get_financial_overview(user_id)
+        financial_overview = {}
+        try:
+            financial_overview = await qs.get_financial_overview(user_id) or {}
+        except Exception:
+            financial_overview = {}
         kpis = financial_overview.get("kpis", {})
         
         # Extract Real Metrics
@@ -136,11 +140,27 @@ async def get_business_health_full(
             }
         )
 
-        overall_data = engine_result.get("overall", {})
-        financial_health = engine_result.get("financial_health", {})
-        operational_health = engine_result.get("operational_health", {})
-        risk_health = engine_result.get("risk_health", {})
-        growth_health = engine_result.get("growth_health", {})
+        engine_result = engine_result or {}
+        overall_data = engine_result.get("overall") or {}
+        financial_health = engine_result.get("financial_health") or {}
+        operational_health = engine_result.get("operational_health") or {}
+        risk_health = engine_result.get("risk_health") or {}
+        growth_health = engine_result.get("growth_health") or {}
+
+        if not isinstance(overall_data, dict):
+            overall_data = {}
+
+        if not isinstance(financial_health, dict):
+            financial_health = {}
+
+        if not isinstance(operational_health, dict):
+            operational_health = {}
+
+        if not isinstance(risk_health, dict):
+            risk_health = {}
+
+        if not isinstance(growth_health, dict):
+            growth_health = {}
 
         overall_score = overall_data.get("score")
         overall_label = overall_data.get("label")
@@ -818,10 +838,12 @@ async def get_business_health_full(
         )
 
     except Exception as exc:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to generate health report: {str(exc)}",
-        )
+        # raise HTTPException(
+        #     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        #     detail=f"Failed to generate health report: {str(exc)}",
+        # )
+        traceback.print_exc()
+        raise
 
 @router.post("/refresh")
 async def refresh_business_health(
