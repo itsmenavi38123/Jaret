@@ -69,7 +69,6 @@ def build_provider_config(provider: str, shop: str | None):
             "extra_params": {
                 "scope": settings.shopify_scopes,
                 "grant_options[]": "per-user",
-                "host": f"{shop}.myshopify.com",
             },
         }
     if provider == "clover":
@@ -205,6 +204,7 @@ async def oauth_callback(
 
         validate_shopify_callback(dict(request.query_params))
         tokens = await shopify_service.exchange_code_for_token(code, normalized_shop)
+        print("SHOPIFY TOKENS", tokens)
 
         def create_shopify_webhook(shop, access_token):
             url = f"https://{shop}/admin/api/2023-10/webhooks.json"
