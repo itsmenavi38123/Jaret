@@ -194,6 +194,8 @@ async def oauth_callback(
         tokens = await square_service.exchange_code_for_token(code)
 
     elif provider == "shopify":
+        print("SHOPIFY CALLBACK HIT")
+        print(dict(request.query_params))
         if not shop or not saved_shop:
             raise HTTPException(status_code=400, detail="Missing Shopify shop domain")
 
