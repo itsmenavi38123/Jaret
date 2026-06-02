@@ -278,7 +278,7 @@ async def oauth_callback(
     await states_col.delete_one({"state": state})
 
     return RedirectResponse(
-        url="https://lightsignal.app",
+        url="https://lightsignal.app/dashboard",
         status_code=302
     )
 
