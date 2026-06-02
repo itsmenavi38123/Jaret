@@ -278,7 +278,7 @@ async def oauth_callback(
     await states_col.delete_one({"state": state})
 
     return RedirectResponse(
-        url=f"https://{normalized_shop}.myshopify.com/admin/apps/lightsignal",
+        url="https://lightsignal.app",
         status_code=302
     )
 
