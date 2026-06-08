@@ -117,23 +117,29 @@ async def on_startup():
 
             await asyncio.sleep(20)
 
-        scheduler_task = asyncio.create_task(
-            scheduler_loop()
-        )
+    print("Scheduler started")
+
+    scheduler_task = asyncio.create_task(
+        scheduler_loop()
+    )
+
 
 @app.on_event("shutdown")
 async def on_shutdown():
 
     global scheduler_task
+
     if scheduler_task:
         scheduler_task.cancel()
+
         with suppress(asyncio.CancelledError):
             await scheduler_task
+
     close_client()
+
 
 @app.get("/")
 async def root():
-    """Root endpoint"""
     return {
         "message": "Welcome to FastAPI Backend",
         "status": "running",

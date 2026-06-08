@@ -4,6 +4,7 @@ from app.services.memory_consolidation_service import MemoryConsolidationService
 from app.services.memory_learning_service import MemoryLearningService
 from app.services.behavioral_pattern_recognition_service import BehavioralPatternRecognitionService
 from app.services.dreaming_service import DreamingService
+from app.services.org_playbook_generation_service import OrgPlaybookGenerationService
 
 
 class DreamingSchedulerService:
@@ -15,6 +16,7 @@ class DreamingSchedulerService:
         self.learning_service = MemoryLearningService()
         self.behavior_service = BehavioralPatternRecognitionService()
         self.dreaming_service = DreamingService()
+        self.org_playbook_service = OrgPlaybookGenerationService()
 
     async def run_daily_dreaming_pass(self):
 
@@ -43,3 +45,5 @@ class DreamingSchedulerService:
             await self.dreaming_service.run_customer_dreaming(
                 user_id=user_id
             )
+
+        await self.org_playbook_service.generate_playbook_entries()
