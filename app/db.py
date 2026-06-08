@@ -122,3 +122,17 @@ async def create_indexes() -> None:
 
     oauth_states = get_collection("oauth_states")
     await oauth_states.create_index("state", unique=True)
+
+    customer_memory = get_collection("customer_memory")
+    await customer_memory.create_index("user_id")
+    await customer_memory.create_index("path")
+    await customer_memory.create_index("observation_type")
+    await customer_memory.create_index("created_at")
+    await customer_memory.create_index([("user_id", 1), ("created_at", -1)])
+    await customer_memory.create_index([("user_id", 1), ("outdated", 1)])
+
+    org_playbook = get_collection("org_playbook")
+    await org_playbook.create_index("path")
+    await org_playbook.create_index("source_type")
+    await org_playbook.create_index("observation_type")
+    await org_playbook.create_index("created_at")

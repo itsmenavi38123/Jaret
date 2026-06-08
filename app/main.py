@@ -10,7 +10,7 @@ from datetime import datetime
 load_dotenv()
 
 from app.services.scout_scheduler_service import ScoutSchedulerService
-
+from app.services.dreaming_scheduler_service import DreamingSchedulerService
 
 # load .env (install python-dotenv if you don't have it: pip install python-dotenv)
 
@@ -36,6 +36,7 @@ from app.routes.admin import router as admin_router
 from app.routes.integrations import router as integrations_router
 
 scout_scheduler = ScoutSchedulerService()
+dreaming_scheduler = DreamingSchedulerService()
 scheduler_task = None
 
 app = FastAPI(
@@ -106,11 +107,19 @@ async def on_startup():
 
                 await asyncio.sleep(60)
 
+            if now.hour == 4 and now.minute == 0:
+                try:
+                    await dreaming_scheduler.run_daily_dreaming_pass()
+                except Exception as e:
+                    print(f"Dreaming scheduler error: {e}")
+
+                await asyncio.sleep(60)
+
             await asyncio.sleep(20)
 
-    scheduler_task = asyncio.create_task(
-        scheduler_loop()
-    )
+        scheduler_task = asyncio.create_task(
+            scheduler_loop()
+        )
 
 @app.on_event("shutdown")
 async def on_shutdown():

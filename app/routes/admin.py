@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from fastapi.responses import JSONResponse
+from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel
 from typing import Optional
 from app.db import get_collection
@@ -14,6 +15,21 @@ from app.routes.auth.auth import get_current_user
 from app.services.admin_logs_service import admin_logs_service, AdminLogCreate
 from app.models.beta_profile import BetaProfile, BetaCohort, BetaStatus
 from app.services.feature_usage_service import feature_usage_service
+from app.services.memory_search_service import MemorySearchService
+from app.services.customer_memory_service import CustomerMemoryService
+from app.services.memory_failure_service import MemoryFailureService
+from app.services.admin_memory_service import AdminMemoryService
+from app.services.admin_search_service import AdminSearchService
+from app.services.memory_export_service import MemoryExportService
+from app.services.memory_review_service import MemoryReviewService
+
+memory_export_service = MemoryExportService()
+memory_search_service = MemorySearchService()
+customer_memory_service = CustomerMemoryService()
+memory_failure_service = MemoryFailureService()
+admin_memory_service = AdminMemoryService()
+admin_search_service = AdminSearchService()
+memory_review_service = MemoryReviewService()
 
 async def require_admin_role(current_user: dict = Depends(get_current_user)):
     """Dependency to ensure user has Admin or Owner role"""
@@ -1119,4 +1135,319 @@ async def get_system_health(current_user: dict = Depends(require_admin_role), ho
         return JSONResponse(
             status_code=500,
             content={"success": False, "error": str(e)}
+        )
+
+
+@router.get("/memories/search")
+async def search_memories(
+    query: str,
+    user_id: str | None = None,
+    observation_type: str | None = None,
+    current_user: dict = Depends(require_admin_role)
+):
+    try:
+
+        memories = await admin_search_service.search_memories(
+            query=query,
+            user_id=user_id,
+            observation_type=observation_type
+        )
+
+        return JSONResponse(
+            status_code=200,
+            content=jsonable_encoder(
+                {
+                    "success": True,
+                    "data": memories
+                }
+            )
+        )
+
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={
+                "success": False,
+                "error": str(e)
+            }
+        )
+
+
+@router.get("/memories/review")
+async def review_queue(
+    current_user: dict = Depends(require_admin_role)
+):
+    try:
+
+        memories = await memory_review_service.get_review_queue()
+
+        return JSONResponse(
+            status_code=200,
+            content=jsonable_encoder(
+                {
+                    "success": True,
+                    "data": memories
+                }
+            )
+        )
+
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={
+                "success": False,
+                "error": str(e)
+            }
+        )
+
+
+@router.get("/memories/export/{user_id}")
+async def export_memories(
+    user_id: str,
+    current_user: dict = Depends(require_admin_role)
+):
+    try:
+
+        memories = await memory_export_service.export_customer_memories(
+            user_id=user_id
+        )
+
+        return JSONResponse(
+            status_code=200,
+            content=jsonable_encoder(
+                {
+                    "success": True,
+                    "data": memories
+                }
+            )
+        )
+
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={
+                "success": False,
+                "error": str(e)
+            }
+        )
+
+
+@router.get("/memories/{user_id}")
+async def get_customer_memories(
+    user_id: str,
+    page: int = 1,
+    page_size: int = 20,
+    current_user: dict = Depends(require_admin_role)
+):
+    try:
+
+        result = await admin_memory_service.get_customer_memories(
+            user_id=user_id,
+            include_outdated=True,
+            page=page,
+            page_size=page_size
+        )
+
+        return JSONResponse(
+            status_code=200,
+            content=jsonable_encoder(
+                {
+                    "success": True,
+                    "data": result["memories"],
+                    "pagination": result["pagination"]
+                }
+            )
+        )
+
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={
+                "success": False,
+                "error": str(e)
+            }
+        )
+
+
+@router.post("/memories/{memory_id}/approve")
+async def approve_memory(
+    memory_id: str,
+    current_user: dict = Depends(require_admin_role)
+):
+    try:
+
+        await memory_review_service.approve_memory(
+            memory_id=memory_id
+        )
+
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": True,
+                "message": "Memory approved"
+            }
+        )
+
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={
+                "success": False,
+                "error": str(e)
+            }
+        )
+
+
+@router.post("/memories/{memory_id}/reject")
+async def reject_memory(
+    memory_id: str,
+    current_user: dict = Depends(require_admin_role)
+):
+    try:
+
+        await memory_review_service.reject_memory(
+            memory_id=memory_id
+        )
+
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": True,
+                "message": "Memory rejected"
+            }
+        )
+
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={
+                "success": False,
+                "error": str(e)
+            }
+        )
+
+
+@router.post("/memories/{memory_id}/pin")
+async def pin_memory(
+    memory_id: str,
+    current_user: dict = Depends(require_admin_role)
+):
+    try:
+
+        await customer_memory_service.pin_memory(
+            memory_id=memory_id
+        )
+
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": True,
+                "message": "Memory pinned"
+            }
+        )
+
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={
+                "success": False,
+                "error": str(e)
+            }
+        )
+
+
+@router.post("/memories/{memory_id}/unpin")
+async def unpin_memory(
+    memory_id: str,
+    current_user: dict = Depends(require_admin_role)
+):
+    try:
+
+        await customer_memory_service.unpin_memory(
+            memory_id=memory_id
+        )
+
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": True,
+                "message": "Memory unpinned"
+            }
+        )
+
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={
+                "success": False,
+                "error": str(e)
+            }
+        )
+
+
+@router.delete("/memories/{memory_id}")
+async def delete_memory(
+    memory_id: str,
+    current_user: dict = Depends(require_admin_role)
+):
+    try:
+
+        await admin_memory_service.soft_delete_memory(
+            memory_id=memory_id
+        )
+
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": True,
+                "message": "Memory deleted"
+            }
+        )
+
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={
+                "success": False,
+                "error": str(e)
+            }
+        )
+
+@router.get("/memory-failures")
+async def get_memory_failures(
+    current_user: dict = Depends(require_admin_role)
+):
+    try:
+
+        cursor = (
+            memory_failure_service.failures
+            .find({})
+            .sort(
+                "timestamp",
+                -1
+            )
+            .limit(100)
+        )
+
+        failures = [
+            failure async for failure in cursor
+        ]
+
+        return JSONResponse(
+            status_code=200,
+            content=jsonable_encoder(
+                {
+                    "success": True,
+                    "data": failures
+                }
+            )
+        )
+
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={
+                "success": False,
+                "error": str(e)
+            }
         )
