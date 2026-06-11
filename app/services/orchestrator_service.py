@@ -5,8 +5,7 @@ Coordinates the multi-agent workflow for scenario planning
 """
 from typing import Any, Dict, List, Optional
 import json
-import os
-from openai import AsyncOpenAI
+from app.services.claude_service import claude_service
 
 from app.services.research_scout_service import ResearchScoutService
 from app.services.finance_analyst_service import FinanceAnalystService
@@ -32,11 +31,6 @@ class OrchestratorService:
         Returns:
             Scenario type: CapEx|Hiring|Pricing|Expansion|Other
         """
-        api_key = os.getenv("OPENAI_API_KEY")
-        if not api_key:
-            raise ValueError("OPENAI_API_KEY not found")
-        
-        client = AsyncOpenAI(api_key=api_key)
         
         system_prompt = """You are a scenario classification expert.
 
@@ -50,17 +44,15 @@ class OrchestratorService:
             Return ONLY the scenario type as a single word: CapEx, Hiring, Pricing, Expansion, or Other.
         """
 
-        response = await client.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": query}
-            ]
+        scenario_type = await claude_service.text_completion(
+            system_prompt=system_prompt,
+            user_content=query,
+            temperature=0.0,
+            max_tokens=50,
         )
-        
-        scenario_type = response.choices[0].message.content.strip()
-        return scenario_type
-    
+
+        return scenario_type.strip()
+            
     async def orchestrate_scenario_planning(
         self,
         query: str,
@@ -102,6 +94,7 @@ class OrchestratorService:
         
         # Step 3: Calculate KPIs with Finance Analyst
         financial_result = await self.finance_analyst.calculate_scenario_kpis(
+            user_id=user_id,
             scenario_type=scenario_type,
             query=query,
             assumptions=assumptions_dict,
@@ -128,13 +121,6 @@ class OrchestratorService:
         return response
 
     async def render_business_health(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-
-        api_key = os.getenv("OPENAI_API_KEY")
-
-        if not api_key:
-            raise ValueError("OPENAI_API_KEY not found")
-
-        client = AsyncOpenAI(api_key=api_key)
 
         system_prompt = """
         You are LightSignal Orchestrator in Business Health mode.
@@ -306,28 +292,17 @@ class OrchestratorService:
             "data_coverage": payload.get("data_coverage", {}),
         }
 
-        response = await client.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {
-                    "role": "system",
-                    "content": system_prompt,
-                },
-                {
-                    "role": "user",
-                    "content": json.dumps({
-                        **normalized_payload,
-                        "watch_area_investigations": watch_area_investigations
-                    }, default=str),
-                },
-            ],
-            response_format={"type": "json_object"}
+        parsed = await claude_service.json_completion(
+            system_prompt=system_prompt,
+            user_content={
+                **normalized_payload,
+                "watch_area_investigations": watch_area_investigations,
+            },
+            temperature=0.2,
+            max_tokens=4000,
         )
 
-        content = response.choices[0].message.content
-
         try:
-            parsed = json.loads(content)
 
             parsed.setdefault("intent", "render_business_health")
             parsed.setdefault("as_of", payload.get("today_date"))

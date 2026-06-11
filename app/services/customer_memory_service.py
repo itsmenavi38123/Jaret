@@ -71,7 +71,8 @@ class CustomerMemoryService:
                 {
                     "path": {
                         "$regex": f"^{path_prefix}"
-                    }
+                    },
+                    "outdated": False        
                 }
             )
             .sort(
@@ -200,6 +201,8 @@ class CustomerMemoryService:
 
         return await self.collection.find_one(
             {
-                "path": path
+                "path": path,
+                "outdated": False
+
             }
         )

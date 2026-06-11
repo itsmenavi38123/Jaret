@@ -1,6 +1,5 @@
 from typing import Dict, Any
-from openai import AsyncOpenAI
-import os
+from app.services.claude_service import claude_service
 import json
 
 
@@ -15,14 +14,6 @@ class PrepAgentService:
         business_profile: Dict[str, Any],
         classifier_output: Dict[str, Any] = None,
     ):
-
-        api_key = os.getenv("OPENAI_API_KEY")
-
-        if not api_key:
-            raise ValueError("OPENAI_API_KEY not found")
-
-        client = AsyncOpenAI(api_key=api_key)
-
         system_prompt = """
 You are LightSignal Prep Agent.
 
@@ -63,28 +54,16 @@ Rules:
 
             try:
 
-                response = await client.chat.completions.create(
-                    model="gpt-4o-mini",
-                    messages=[
-                        {
-                            "role": "system",
-                            "content": system_prompt,
-                        },
-                        {
-                            "role": "user",
-                            "content": json.dumps({
-                                "opportunity": opportunity,
-                                "business_profile": business_profile,
-                                "classifier_output": classifier_output,
-                            }, default=str)
-                        }
-                    ],
-                    response_format={"type": "json_object"}
+                parsed = await claude_service.json_completion(
+                    system_prompt=system_prompt,
+                    user_content={
+                        "opportunity": opportunity,
+                        "business_profile": business_profile,
+                        "classifier_output": classifier_output,
+                    },
+                    temperature=0.2,
+                    max_tokens=4000,
                 )
-
-                content = response.choices[0].message.content
-
-                parsed = json.loads(content)
 
                 validated = self.validate_prep_output(parsed)
 

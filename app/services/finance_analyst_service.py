@@ -1,18 +1,18 @@
 # backend/app/services/finance_analyst_service.py
 """
 Finance Analyst Service
-Calculates financial KPIs for scenario planning using OpenAI
+Calculates financial KPIs for scenario planning using Claude.
 """
 from typing import Any, Dict, Optional
 import json
-import os
-from openai import AsyncOpenAI
 import re
+from app.services.claude_service import claude_service
+from app.services.lightsignal_memory_tool import LightSignalMemoryTool
 
 class FinanceAnalystService:
     """
     Finance Analyst agent that calculates scenario KPIs.
-    Uses OpenAI to compute ROI, IRR, Payback, DSCR, ICR, Runway.
+    Uses Claude to compute ROI, IRR, Payback, DSCR, ICR, Runway.
     """
     
     def __init__(self):
@@ -22,6 +22,7 @@ class FinanceAnalystService:
         self,
         context: Dict[str, Any],
         classifier_output: Optional[Dict[str, Any]] = None,
+        user_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Generate dashboard insights and alerts from KPI data.
@@ -32,12 +33,6 @@ class FinanceAnalystService:
         Returns:
             Dict with summary, alerts, insight_pairs, opportunities, what_changed
         """
-        api_key = os.getenv("OPENAI_API_KEY")
-        if not api_key:
-            raise ValueError("OPENAI_API_KEY not found")
-        
-        client = AsyncOpenAI(api_key=api_key)
-        
         # Build system prompt for dashboard analysis
         system_prompt = """You are LightSignal Finance Analyst, an expert at analyzing business financials.
 
@@ -106,34 +101,20 @@ KEY RULES:
 JSON only (no Markdown, no prose outside fields).
 """
         
-        # Call OpenAI
-        response = await client.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {
-                    "role": "user",
-                    "content": json.dumps({
-                        "context": context,
-                        "classifier_output": classifier_output,
-                    }, default=str),
-                }
-            ],
-            response_format={"type": "json_object"}
+        return await claude_service.json_completion(
+            system_prompt=system_prompt,
+            user_content={
+                "context": context,
+                "classifier_output": classifier_output,
+            },
+            temperature=0.2,
+            max_tokens=4000,
         )
-        
-        content = response.choices[0].message.content
-        
-        # Parse JSON
-        try:
-            result = json.loads(content)
-            return result
-        except json.JSONDecodeError:
-            raise ValueError("Invalid JSON response from Finance Analyst")
     
     async def calculate_scenario_kpis(
         self,
         scenario_type: str,
+        user_id: str,
         query: str,
         assumptions: Dict[str, Any],
         baseline_financials: Dict[str, Any],
@@ -153,12 +134,8 @@ JSON only (no Markdown, no prose outside fields).
         Returns:
             Dict with baseline, projected, kpis, advisor, visuals, explain_math, why_it_matters
         """
-        api_key = os.getenv("OPENAI_API_KEY")
-        if not api_key:
-            raise ValueError("OPENAI_API_KEY not found")
-        
-        client = AsyncOpenAI(api_key=api_key)
-        
+        memory_tool = LightSignalMemoryTool(user_id=user_id)
+
         # Build system prompt for Finance Analyst
         system_prompt = f"""You are LightSignal Finance Analyst, an expert financial modeling agent.
 
@@ -271,46 +248,25 @@ Return one object shaped as:
 JSON only (no Markdown, no prose outside fields).
 """
 
-        # Call OpenAI
-        response = await client.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {
-                    "role": "user",
-                    "content": json.dumps({
-                        "query": query,
-                        "scenario_type": scenario_type,
-                        "assumptions": assumptions,
-                        "baseline_financials": baseline_financials,
-                        "business_profile": business_profile,
-                        "classifier_output": classifier_output,
-                    }, default=str)
-                }            
-            ],
-            response_format={"type": "json_object"}
+        return await claude_service.json_completion(
+            system_prompt=system_prompt,
+            user_content={
+                "query": query,
+                "scenario_type": scenario_type,
+                "assumptions": assumptions,
+                "baseline_financials": baseline_financials,
+                "business_profile": business_profile,
+                "classifier_output": classifier_output,
+            },
+            temperature=0.2,
+            max_tokens=4000,
         )
-        
-        content = response.choices[0].message.content
-        
-        # Parse JSON
-        try:
-            result = json.loads(content)
-            return result
-        except json.JSONDecodeError:
-            raise ValueError("Invalid JSON response from Finance Analyst")
-
+    
     async def generate_opportunity_why_suggested(
         self,
         why_reason_codes,
     ):
 
-        api_key = os.getenv("OPENAI_API_KEY")
-
-        if not api_key:
-            raise ValueError("OPENAI_API_KEY not found")
-
-        client = AsyncOpenAI(api_key=api_key)
 
         system_prompt = """
           You are LightSignal Financial Analyst.
@@ -329,24 +285,15 @@ JSON only (no Markdown, no prose outside fields).
           - Output plain text bullets only.
           """
 
-        response = await client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {
-                    "role": "system",
-                    "content": system_prompt,
-                },
-                {
-                    "role": "user",
-                    "content": json.dumps({
-                        "mode": "opportunity_why_suggested",
-                        "why_reason_codes": why_reason_codes,
-                    }, default=str)
-                }
-            ]
+        output = await claude_service.text_completion(
+            system_prompt=system_prompt,
+            user_content={
+                "mode": "opportunity_why_suggested",
+                "why_reason_codes": why_reason_codes,
+            },
+            temperature=0.2,
+            max_tokens=2000,
         )
-
-        output = response.choices[0].message.content
 
         validated = self.validate_why_suggested_output(
             output,

@@ -1,10 +1,9 @@
-import os
 from typing import List, Any
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
-from openai import AsyncOpenAI
 from app.routes.auth.auth import get_current_user
+from app.services.claude_service import claude_service
 from app.services.quickbooks_financial_service import quickbooks_financial_service
 from app.services.feature_usage_service import feature_usage_service
 from app.services.orchestrator_service import OrchestratorService
@@ -26,12 +25,7 @@ async def generate_watch_area_explanation(watch_areas: List[str]) -> str:
             f"Top watch areas are: {watch_list}. We recommend fixing the highest-impact issue first and monitoring weekly."
         )
 
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        return local_explanation
-
     try:
-        client = AsyncOpenAI(api_key=api_key)
         prompt = (
             "You are a concise business advisor. "
             
@@ -41,17 +35,14 @@ async def generate_watch_area_explanation(watch_areas: List[str]) -> str:
             + "\n".join(f"- {area}" for area in watch_areas)
             + "\nOutput only plain text, with bullets in this format: '- ...'."
         )
-        completion = await client.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {"role": "system", "content": "You are a friendly business advisor."},
-                {"role": "user", "content": prompt},
-            ],
-            max_tokens=220,
+        text = await claude_service.text_completion(
+            system_prompt="You are a friendly business advisor.",
+            user_content=prompt,
             temperature=0.2,
+            max_tokens=220,
         )
-        message_obj = completion.choices[0].message
-        text = message_obj.content.strip() if getattr(message_obj, "content", None) else ""
+
+        text = text.strip()
         # Ensure short bullet format. If model output is too long, fallback to local bullet text.
         if text:
             lines = [line.strip() for line in text.splitlines() if line.strip()]

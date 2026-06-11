@@ -6,8 +6,8 @@ Main service for generating demand forecasts using OpenAI agent
 from typing import Any, Dict, List, Optional
 from datetime import datetime, timedelta, date
 import json
-import os
-from openai import AsyncOpenAI
+from app.services.claude_service import claude_service
+
 import holidays
 
 from app.services.weather_service import WeatherService
@@ -60,11 +60,6 @@ class DemandForecastService:
         Returns:
             Complete forecast response with KPIs and drivers
         """
-        api_key = os.getenv("OPENAI_API_KEY")
-        if not api_key:
-            raise ValueError("OPENAI_API_KEY not found")
-        
-        client = AsyncOpenAI(api_key=api_key)
         
         # Extract business context
         industry = "Unknown"
@@ -227,21 +222,18 @@ JSON only (no Markdown, no prose outside fields).
 """
         
         # Call OpenAI
-        response = await client.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"Generate demand forecast for {request.date_range.start} to {request.date_range.end}"}
-            ],
-            response_format={"type": "json_object"}
-        )
-        
-        content = response.choices[0].message.content
-        
-        # Parse JSON
         try:
-            result = json.loads(content)
-            
+            result = await claude_service.json_completion(
+                system_prompt=system_prompt,
+                user_content={
+                    "date_range": {
+                        "start": str(request.date_range.start),
+                        "end": str(request.date_range.end),
+                    }
+                },
+                temperature=0.2,
+                max_tokens=4000,
+            )
             # Convert to ForecastResponse model
             forecast_response = ForecastResponse(
                 forecast=[
@@ -271,7 +263,7 @@ JSON only (no Markdown, no prose outside fields).
             
             return forecast_response
         
-        except (json.JSONDecodeError, KeyError, ValueError) as e:
+        except Exception as e:
             raise ValueError(f"Invalid JSON response from Demand Forecast Analyst: {e}")
     
     async def _get_event_impacts(

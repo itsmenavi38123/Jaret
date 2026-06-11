@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from app.services.system_health_service import system_health_service
 import secrets
 from uuid import uuid4
+from fastapi import Response
 import hashlib
 from app.services.email_service import send_email
 from app.config import _now_utc
@@ -1201,7 +1202,7 @@ async def review_queue(
         )
 
 
-@router.get("/memories/export/{user_id}")
+@router.get("/memories/export/{user_id}/json")
 async def export_memories(
     user_id: str,
     current_user: dict = Depends(require_admin_role)
@@ -1232,18 +1233,48 @@ async def export_memories(
         )
 
 
+@router.get("/memories/export/{user_id}/csv")
+async def export_memories_csv(
+    user_id: str,
+    current_user: dict = Depends(require_admin_role)
+):
+    try:
+
+        csv_data = await memory_export_service.export_customer_memories_csv(
+            user_id=user_id
+        )
+
+        return Response(
+            content=csv_data,
+            media_type="text/csv",
+            headers={
+                "Content-Disposition":
+                f"attachment; filename=customer_{user_id}_memories.csv"
+            }
+        )
+
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={
+                "success": False,
+                "error": str(e)
+            }
+        )
+
 @router.get("/memories/{user_id}")
 async def get_customer_memories(
     user_id: str,
     page: int = 1,
     page_size: int = 20,
+    include_outdated: bool = False,
     current_user: dict = Depends(require_admin_role)
 ):
     try:
 
         result = await admin_memory_service.get_customer_memories(
             user_id=user_id,
-            include_outdated=True,
+            include_outdated=include_outdated   ,
             page=page,
             page_size=page_size
         )

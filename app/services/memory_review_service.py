@@ -65,6 +65,11 @@ class MemoryReviewService:
             memory_id=memory_id
         )
 
+        await self.memory_service.set_under_review(
+            memory_id=memory_id,
+            under_review=False
+        )
+
     async def update_authority(
         self,
         memory_id: str,

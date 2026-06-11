@@ -42,18 +42,18 @@ class MemorySummaryService:
                 pattern_count += 1
 
         summary = f"""
-# Customer Memory Summary
+            # Customer Memory Summary
 
-Total Memories: {len(memories)}
+            Total Memories: {len(memories)}
 
-Onboarding Memories: {onboarding_count}
+            Onboarding Memories: {onboarding_count}
 
-Decision Memories: {decision_count}
+            Decision Memories: {decision_count}
 
-Outcome Memories: {outcome_count}
+            Outcome Memories: {outcome_count}
 
-Pattern Memories: {pattern_count}
-""".strip()
+            Pattern Memories: {pattern_count}
+            """.strip()
 
         return summary
 

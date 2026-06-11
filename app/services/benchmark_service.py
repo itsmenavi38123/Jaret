@@ -9,7 +9,7 @@ import logging
 import re
 from datetime import datetime
 from typing import Any, Dict, Optional
-from openai import AsyncOpenAI
+from app.services.claude_service import claude_service
 
 from app.db import get_collection
 from app.services.redis_client import get_redis_client
@@ -63,8 +63,6 @@ KPI_TO_BENCHMARK_METRIC = {
 }
 
 DEFAULT_CLASSIFIER_FIELDS = ["industry", "country", "revenue_band"]
-
-openai_client = AsyncOpenAI()
 
 
 class BenchmarkService:
@@ -424,24 +422,12 @@ RESPONSE FORMAT (ONLY JSON, no other text):
 """
 
         try:
-            response = await openai_client.chat.completions.create(
-                model="gpt-4o",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are a financial benchmark expert. Return ONLY valid JSON.",
-                    },
-                    {
-                        "role": "user",
-                        "content": prompt,
-                    }
-                ],
+            benchmarks = await claude_service.json_completion(
+                system_prompt="You are a financial benchmark expert. Return ONLY valid JSON.",
+                user_content=prompt,
                 temperature=0.2,
-                response_format={"type": "json_object"}
+                max_tokens=4000,
             )
-
-            content = response.choices[0].message.content
-            benchmarks = self._safe_parse_json(content)
 
             # Normalize expected metrics
             for metric in BENCHMARK_METRICS:

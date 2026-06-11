@@ -50,6 +50,7 @@ class AdminMemoryService:
             .find(query)
             .sort([
                 ("pinned", -1),
+                ("outdated", 1),
                 ("created_at", -1)
             ])
             .skip(skip)

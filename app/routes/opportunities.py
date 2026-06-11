@@ -5,6 +5,7 @@ Returns KPIs, recommended opportunities, search results, and tracked opportuniti
 """
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timedelta
+from urllib import response
 from fastapi import APIRouter, Depends, HTTPException, Query, status,FastAPI
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
@@ -23,7 +24,7 @@ from app.services.scenario_planning_service import ScenarioPlanningService
 from app.services.mapbox_service import MapboxService
 from app.services.portfolio_recalculation_service import portfolio_recalculation_service
 from app.services.prep_agent_service import prep_agent_service
-
+from app.services.lightsignal_memory_tool import LightSignalMemoryTool
 import os
 from pydantic import BaseModel
 from dotenv import load_dotenv
@@ -1227,6 +1228,7 @@ Do not say anything before or after the JSON. Your entire response is the JSON o
 async def ask_question(payload: QuestionRequest, current_user: dict = Depends(get_current_user)):
     try:
         user_id = current_user["id"]
+        memory_tool = LightSignalMemoryTool(user_id=user_id)
 
         await feature_usage_service.log_usage(user_id, "scenario_planning")
 
@@ -1290,21 +1292,34 @@ question:
         # was cutting off mid-JSON, causing json.loads() to fail, which
         # triggered the clarification fallback on every single request.
         # =========================
-        response = client.messages.create(
-            model="claude-sonnet-4-6",
+        runner = client.beta.messages.tool_runner(
+            model="claude-sonnet-4-20250514",
             max_tokens=8000,
             temperature=0.2,
             system=SYSTEM_PROMPT,
             messages=messages,
-            tools=[{
-                "type": "web_search_20250305",
-                "name": "web_search"
-            }]
+            tools=[
+                memory_tool,
+                {
+                    "type": "web_search_20250305",
+                    "name": "web_search"
+                }
+            ]
         )
 
-        final_content = "".join(
-            block.text for block in response.content if block.type == "text"
-        ).strip()
+        response = runner.until_done()
+        print(type(response))
+        print(response) 
+        print("STOP REASON:", response.stop_reason)
+
+        for block in response.content:
+            print(block)
+
+        final_content = ""
+
+        for block in response.content:
+            if block.type == "text":
+                final_content += block.text
 
         # FIX #3: Log the raw response so you can debug future issues.
         # Remove or gate behind an env flag in production.

@@ -1,46 +1,29 @@
-import os
 import json
 import re
 from typing import Dict, Any
-from openai import AsyncOpenAI
 
-
-client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+from app.services.claude_service import claude_service
 
 
 class OpenAIService:
 
     async def explain_kpi_drawer(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Calls OpenAI using client agent prompt (DRAWER MODE)
-        and returns structured KPI explanation JSON.
+        Returns structured KPI explanation JSON using Claude.
         """
 
         prompt = self._build_prompt(payload)
 
         try:
-            response = await client.chat.completions.create(
-                model="gpt-4o",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are the LightSignal Financial Analyst. Follow instructions strictly."
-                    },
-                    {
-                        "role": "user",
-                        "content": prompt
-                    }
-                ],
+            return await claude_service.json_completion(
+                system_prompt="You are the LightSignal Financial Analyst. Follow instructions strictly.",
+                user_content=prompt,
                 temperature=0.2,
-                response_format={"type": "json_object"}
+                max_tokens=4000,
             )
 
-            content = response.choices[0].message.content
-
-            return self._safe_parse_json(content)
-
         except Exception as exc:
-            raise Exception(f"OpenAI KPI explanation failed: {exc}")
+            raise Exception(f"Claude KPI explanation failed: {exc}")
 
     def _build_prompt(self, payload: Dict[str, Any]) -> str:
         return f"""
@@ -155,13 +138,8 @@ OUTPUT FORMAT:
   }}
 }}
 """
+
     def _safe_parse_json(self, content: str) -> Dict[str, Any]:
-        """
-        Ensures OpenAI response is valid JSON.
-        Handles cases like:
-        - json\n{...}
-        - ```json {...} ```
-        """
 
         try:
             return json.loads(content)
@@ -177,34 +155,10 @@ OUTPUT FORMAT:
                 return json.loads(content)
 
             except Exception:
-                raise ValueError(f"Invalid JSON from OpenAI: {content}")
-            
-
-
+                raise ValueError(f"Invalid JSON from Claude: {content}")
 
     async def ask_kpi_ai(self, payload: Dict[str, Any]) -> Dict[str, Any]:
 
-
-        messages = self._build_chat_messages(payload)
-
-        try:
-            response = await client.chat.completions.create(
-                model="gpt-4o",
-                messages=messages,
-                temperature=0.4,
-            )
-
-            content = response.choices[0].message.content.strip()
-
-            return {
-                "answer": content
-            }
-
-        except Exception as exc:
-            raise Exception(f"KPI chat failed: {exc}")
-
-
-    def _build_chat_messages(self, payload: Dict[str, Any]):
         system_prompt = """
 You are the LightSignal Financial Analyst.
 
@@ -213,12 +167,20 @@ Do not use bullet points or numbering.
 Be conversational and natural.
 """
 
-        messages = [
-            {"role": "system", "content": system_prompt}
-        ]
+        messages = []
 
         history = payload.get("chat_history", [])[-5:]
-        messages.extend(history)
+
+        for item in history:
+            role = item.get("role")
+
+            if role in ["user", "assistant"]:
+                messages.append(
+                    {
+                        "role": role,
+                        "content": item.get("content", ""),
+                    }
+                )
 
         user_prompt = f"""
 User is viewing KPI: {payload.get("kpi_name")}
@@ -234,9 +196,24 @@ User Question:
 {payload.get("question")}
 """
 
-        messages.append({
-            "role": "user",
-            "content": user_prompt
-        })
+        messages.append(
+            {
+                "role": "user",
+                "content": user_prompt,
+            }
+        )
 
-        return messages
+        try:
+            answer = await claude_service.chat_completion(
+                system_prompt=system_prompt,
+                messages=messages,
+                temperature=0.4,
+                max_tokens=4000,
+            )
+
+            return {
+                "answer": answer
+            }
+
+        except Exception as exc:
+            raise Exception(f"KPI chat failed: {exc}")

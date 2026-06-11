@@ -1,3 +1,6 @@
+from io import StringIO
+import csv
+
 from app.services.customer_memory_service import CustomerMemoryService
 from app.services.customer_summary_service import CustomerSummaryService
 
@@ -39,6 +42,65 @@ class MemoryExportService:
             self._serialize_memory(memory)
             for memory in memories
         ]
+
+    async def export_customer_memories_csv(
+        self,
+        user_id: str
+    ):
+
+        memories = await self.memory_service.get_memory_by_user(
+            user_id=user_id,
+            limit=10000
+        )
+
+        output = StringIO()
+
+        writer = csv.DictWriter(
+            output,
+            fieldnames=[
+                "memory_id",
+                "user_id",
+                "path",
+                "observation_type",
+                "content",
+                "agent_name",
+                "session_id",
+                "confidence",
+                "pinned",
+                "outdated",
+                "authority",
+                "seed",
+                "backfilled",
+                "under_review",
+                "created_at",
+                "updated_at"
+            ]
+        )
+
+        writer.writeheader()
+
+        for memory in memories:
+
+            writer.writerow({
+                "memory_id": str(memory.get("_id")),
+                "user_id": memory.get("user_id"),
+                "path": memory.get("path"),
+                "observation_type": memory.get("observation_type"),
+                "content": memory.get("content"),
+                "agent_name": memory.get("agent_name"),
+                "session_id": memory.get("session_id"),
+                "confidence": memory.get("confidence"),
+                "pinned": memory.get("pinned"),
+                "outdated": memory.get("outdated"),
+                "authority": memory.get("authority"),
+                "seed": memory.get("seed"),
+                "backfilled": memory.get("backfilled"),
+                "under_review": memory.get("under_review"),
+                "created_at": memory.get("created_at"),
+                "updated_at": memory.get("updated_at")
+            })
+
+        return output.getvalue()
 
     async def export_patterns(
         self,

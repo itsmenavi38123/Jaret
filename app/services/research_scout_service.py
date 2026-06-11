@@ -6,9 +6,14 @@ Delivers decision-grade, structured JSON for opportunities and market intelligen
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 import json
-from openai import AsyncOpenAI
 import os
 from app.services.tagging_service import tagging_service
+from app.services.claude_service import claude_service
+from app.services.research_scout_tools import (
+    firecrawl_search_tool,
+    firecrawl_scrape_tool,
+)
+from app.services.lightsignal_memory_tool import LightSignalMemoryTool
 
 class ResearchScoutService:
     """
@@ -47,7 +52,7 @@ class ResearchScoutService:
         scope["user_query"] = query
         
         try:
-            return await self._generate_live_response(query, scope, business_profile, opportunities_profile)
+            return await self._generate_live_response(query, user_id, scope, business_profile, opportunities_profile)
         except Exception as e:
             print(f"Live mode failed: {e}")
             # In a real production system, you might want a fallback here, 
@@ -261,90 +266,19 @@ class ResearchScoutService:
     async def _generate_live_response(
         self,
         query: str,
+        user_id: str,
         scope: Dict[str, Any],
         business_profile: Optional[Dict[str, Any]],
         opportunities_profile: Optional[Dict[str, Any]],
     ) -> Dict[str, Any]:
         """Generate response using OpenAI with web search tools"""
-        api_key = os.getenv("OPENAI_API_KEY")
-        if not api_key:
-            raise ValueError("OPENAI_API_KEY not found")
-
-        client = AsyncOpenAI(api_key=api_key)
-        
+                
         # Define tools
+        memory_tool = LightSignalMemoryTool(user_id=user_id)
         tools = [
-            {
-                "type": "function",
-                "function": {
-                    "name": "firecrawl_search",
-                    "description": "Search the web for real-time information about opportunities, events, market data, and benchmarks using Firecrawl.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "query": {
-                                "type": "string",
-                                "description": "The search query to find relevant information."
-                            },
-                            "recency_days": {
-                                "type": "integer",
-                                "description": "Number of days to look back for recent information (default 30)."
-                            },
-                            "max_results": {
-                                "type": "integer",
-                                "description": "Max number of results to return (default 10)."
-                            }
-                        },
-                        "required": ["query"]
-                    }
-                }
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "firecrawl_scrape",
-                    "description": "Scrape a URL to obtain parsed page content for deeper opportunity or benchmark verification.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "url": {
-                                "type": "string",
-                                "description": "The URL to scrape for page content."
-                            }
-                        },
-                        "required": ["url"]
-                    }
-                }
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "getWeather",
-                    "description": "Get weather forecast for a specific location and date to determine event viability.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "lat": {
-                                "type": "number",
-                                "description": "Latitude of the location."
-                            },
-                            "lng": {
-                                "type": "number",
-                                "description": "Longitude of the location."
-                            },
-                            "start_date": {
-                                "type": "string",
-                                "description": "Event start date in YYYY-MM-DD format."
-                            },
-                            "end_date": {
-                                "type": "string",
-                                "description": "Event end date in YYYY-MM-DD format."
-                            }
-                        },
-                        "required": ["lat", "lng", "start_date", "end_date"]
-                    }
-                }
-            }
+            memory_tool,
+            firecrawl_search_tool,
+            firecrawl_scrape_tool,
         ]
 
         # Build system prompt using the user-provided template
@@ -605,97 +539,24 @@ NEVER estimate event revenue without stating conversion_rate and attendance expl
         messages = [{"role": "system", "content": system_prompt}]
         
         # Initial call
-        response = await client.chat.completions.create(
-            model="gpt-4o",
-            messages=messages,
+        response = await claude_service.tool_runner(
+            system_prompt=system_prompt,
+            messages=[
+                {
+                    "role": "user",
+                    "content": query,
+                }
+            ],
             tools=tools,
-            tool_choice="required",
-            # response_format={"type": "json_object"}
+            temperature=0.2,
+            max_tokens=8000,
         )
-        
-        response_message = response.choices[0].message
-        tool_calls = response_message.tool_calls
-        
-        # Handle tool calls loop
-        if tool_calls:
-            messages.append(response_message)
-            
-            # Import Firecrawl helpers here to avoid circular import
-            from app.routes.ai_opportunities import firecrawl_search, firecrawl_scrape
-            
-            for tool_call in tool_calls:
-                function_name = tool_call.function.name
-                function_args = json.loads(tool_call.function.arguments)
-                            
-                if function_name == "firecrawl_search":
-                    search_term = function_args.get("query")
-                    recency = function_args.get("recency_days", 30)
-                    max_results = function_args.get("max_results", 10)
-                    
-                    # Execute search
-                    search_results = await firecrawl_search(search_term, recency, max_results)
-                    
-                    trimmed_results = []
 
-                    for item in (search_results or [])[:5]:
+        final_content = ""
 
-                        trimmed_results.append({
-                            "title": item.get("title"),
-                            "url": item.get("url"),
-                            "snippet": (
-                                (item.get("markdown") or "")[:1200]
-                                or (item.get("content") or "")[:1200]
-                            )
-                        })
-
-
-                    messages.append({
-                        "tool_call_id": tool_call.id,
-                        "role": "tool",
-                        "name": function_name,
-                        "content": json.dumps(trimmed_results, default=str)
-                    })
-
-                elif function_name == "firecrawl_scrape":
-                    url = function_args.get("url")
-                    
-                    scrape_result = await firecrawl_scrape(url)
-                    
-                    messages.append({
-                        "tool_call_id": tool_call.id,
-                        "role": "tool",
-                        "name": function_name,
-                        "content": json.dumps({
-                            "url": scrape_result.get("url"),
-                            "title": scrape_result.get("metadata", {}).get("title"),
-                            "content": (scrape_result.get("markdown") or "")[:2000]
-                        }, default=str)
-                    })
-                
-                elif function_name == "getWeather":
-                    lat = function_args.get("lat")
-                    lng = function_args.get("lng")
-                    date = function_args.get("date")
-                    
-                    # Execute weather check
-                    weather_data = await self._get_weather_badge({"lat": lat, "lng": lng}, date)
-                    
-                    messages.append({
-                        "tool_call_id": tool_call.id,
-                        "role": "tool",
-                        "name": function_name,
-                        "content": json.dumps(weather_data or {})
-                    })
-            
-            # Get final response
-            second_response = await client.chat.completions.create(
-                model="gpt-4o",
-                messages=messages,
-                response_format={"type": "json_object"}
-            )
-            final_content = second_response.choices[0].message.content
-        else:
-            final_content = response_message.content
+        for block in response.content:
+            if getattr(block, "type", None) == "text":
+                final_content += block.text
             
         # Parse JSON
         try:
@@ -904,11 +765,6 @@ NEVER estimate event revenue without stating conversion_rate and attendance expl
         Returns:
             Dict with assumptions[] and sources[]
         """
-        api_key = os.getenv("OPENAI_API_KEY")
-        if not api_key:
-            raise ValueError("OPENAI_API_KEY not found")
-        
-        client = AsyncOpenAI(api_key=api_key)
         
         # Extract industry from business profile
         industry = "Unknown"
@@ -987,114 +843,37 @@ NEVER estimate event revenue without stating conversion_rate and attendance expl
 
         # Define tools
         tools = [
-            {
-                "type": "function",
-                "function": {
-                    "name": "firecrawl_search",
-                    "description": "Search the web for real-time information about prices, rates, and market data using Firecrawl.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "query": {
-                                "type": "string",
-                                "description": "The search query to find relevant information."
-                            },
-                            "recency_days": {
-                                "type": "integer",
-                                "description": "Number of days to look back for recent information (default 30)."
-                            },
-                            "max_results": {
-                                "type": "integer",
-                                "description": "Max number of results to return (default 10)."
-                            }
-                        },
-                        "required": ["query"]
-                    }
-                }
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "firecrawl_scrape",
-                    "description": "Scrape a URL to obtain parsed page content for deeper verification of prices or market sources.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "url": {
-                                "type": "string",
-                                "description": "The URL to scrape for page content."
-                            }
-                        },
-                        "required": ["url"]
-                    }
-                }
-            }
+            firecrawl_search_tool,
+            firecrawl_scrape_tool,
         ]
         
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": json.dumps({ "query": query, "classifier_output": classifier_output}, default=str)}
-        ]
-        
-        # Initial call
-        response = await client.chat.completions.create(
-            model="gpt-4o",
-            messages=messages,
-            tools=tools,
-            tool_choice="auto",
-            response_format={"type": "json_object"}
-        )
-        
-        response_message = response.choices[0].message
-        tool_calls = response_message.tool_calls
-        
-        # Handle tool calls loop
-        if tool_calls:
-            messages.append(response_message)
-            
-            # Import Firecrawl helpers here to avoid circular import
-            from app.routes.ai_opportunities import firecrawl_search, firecrawl_scrape
-            
-            for tool_call in tool_calls:
-                function_name = tool_call.function.name
-                function_args = json.loads(tool_call.function.arguments)
-                
-                if function_name == "firecrawl_search":
-                    search_term = function_args.get("query")
-                    recency = function_args.get("recency_days", 30)
-                    max_results = function_args.get("max_results", 10)
-                    
-                    # Execute search
-                    search_results = await firecrawl_search(search_term, recency, max_results)
-                    
-                    messages.append({
-                        "tool_call_id": tool_call.id,
-                        "role": "tool",
-                        "name": function_name,
-                        "content": json.dumps(search_results)
-                    })
 
-                elif function_name == "firecrawl_scrape":
-                    url = function_args.get("url")
-                    
-                    scrape_result = await firecrawl_scrape(url)
-                    
-                    messages.append({
-                        "tool_call_id": tool_call.id,
-                        "role": "tool",
-                        "name": function_name,
-                        "content": json.dumps(scrape_result)
-                    })
-            
-            # Get final response
-            second_response = await client.chat.completions.create(
-                model="gpt-4o",
-                messages=messages,
-                response_format={"type": "json_object"}
-            )
-            final_content = second_response.choices[0].message.content
-        else:
-            final_content = response_message.content
+        # Initial call
+
+        response = await claude_service.tool_runner(
+            system_prompt=system_prompt,
+            messages=[
+                {
+                    "role": "user",
+                    "content": json.dumps(
+                        {
+                            "query": query,
+                            "classifier_output": classifier_output,
+                        },
+                        default=str,
+                    ),
+                }
+            ],
+            tools=tools,
+            temperature=0.2,
+            max_tokens=4000,
+        )
+
+        final_content = ""
+
+        for block in response.content:
+            if getattr(block, "type", None) == "text":
+                final_content += block.text
         
         # Parse JSON
         try:
@@ -1107,13 +886,6 @@ NEVER estimate event revenue without stating conversion_rate and attendance expl
         pattern: Dict[str, Any],
         business_context: Dict[str, Any],
     ) -> Dict[str, Any]:
-
-        api_key = os.getenv("OPENAI_API_KEY")
-
-        if not api_key:
-            raise ValueError("OPENAI_API_KEY not found")
-
-        client = AsyncOpenAI(api_key=api_key)
 
         system_prompt = """
         You are Research Scout in WATCH_AREA_INVESTIGATION mode.
@@ -1150,27 +922,15 @@ NEVER estimate event revenue without stating conversion_rate and attendance expl
             "business_context": business_context,
         }
 
-        response = await client.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {
-                    "role": "system",
-                    "content": system_prompt,
-                },
-                {
-                    "role": "user",
-                    "content": json.dumps(payload, default=str),
-                }
-            ],
-            response_format={"type": "json_object"}
-        )
-
-        content = response.choices[0].message.content
-
         try:
-            return json.loads(content)
+            return await claude_service.json_completion(
+                system_prompt=system_prompt,
+                user_content=payload,
+                temperature=0.2,
+                max_tokens=2000,
+            )
 
-        except json.JSONDecodeError:
+        except Exception:
             raise ValueError("Invalid JSON response from watch area investigation")
 
     async def get_peer_seasonal_trends(
@@ -1188,11 +948,6 @@ NEVER estimate event revenue without stating conversion_rate and attendance expl
         Returns:
             List of peer trend objects
         """
-        api_key = os.getenv("OPENAI_API_KEY")
-        if not api_key:
-            return []
-        
-        client = AsyncOpenAI(api_key=api_key)
         
         system_prompt = f"""You are LightSignal Research Scout.
 Find seasonal trends for {industry} in {region}.
@@ -1212,21 +967,19 @@ Return JSON with trends array:
 """
         
         try:
-            response = await client.chat.completions.create(
-                model="gpt-4o",
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": f"Find seasonal trends for {industry} in {region}"}
-                ],
-                response_format={"type": "json_object"}
+            result = await claude_service.json_completion(
+                system_prompt=system_prompt,
+                user_content=f"Find seasonal trends for {industry} in {region}",
+                temperature=0.2,
+                max_tokens=2000,
             )
-            content = response.choices[0].message.content
-            result = json.loads(content)
+
             return result.get("trends", [])
+
         except Exception as e:
             print(f"Error getting peer trends: {e}")
             return []
-
+        
     async def get_event_impact_stats(
         self,
         event_type: str,

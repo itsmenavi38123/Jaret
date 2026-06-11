@@ -13,16 +13,14 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import jwt, JWTError
 import os
 import json
-from openai import OpenAI
 from app.db import get_collection
-
+from app.services.claude_service import claude_service
 from app.config import JWT_SECRET, JWT_ALGORITHM
 from app.services.quickbooks_token_service import quickbooks_token_service
 from app.services.quickbooks_financial_service import quickbooks_financial_service
 
 
 router = APIRouter()
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 security = HTTPBearer()
 
@@ -595,18 +593,12 @@ def _calculate_forecast_metrics(historical_revenue: List[float]) -> Dict[str, An
 
 async def _call_ai_agent(payload: Dict[str, Any]) -> Dict[str, Any]:
 
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[
-            {"role": "system", "content": FULL_SYSTEM_PROMPT},
-            {"role": "user", "content": json.dumps(payload)},
-        ],
+    parsed = await claude_service.json_completion(
+        system_prompt=FULL_SYSTEM_PROMPT,
+        user_content=payload,
         temperature=0.2,
-        response_format={"type": "json_object"},
+        max_tokens=4000,
     )
-
-    content = response.choices[0].message.content
-    parsed = json.loads(content)
 
     required_keys = [
         "demand_outlook",

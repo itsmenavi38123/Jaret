@@ -6,8 +6,7 @@ Generates top 3 insights using Orchestrator, Finance Analyst, and Research Scout
 from typing import Any, Dict, List, Optional
 from datetime import datetime, timezone
 import json
-import os
-from openai import AsyncOpenAI
+from app.services.claude_service import claude_service
 
 from app.services.finance_analyst_service import FinanceAnalystService
 from app.services.research_scout_service import ResearchScoutService
@@ -41,12 +40,7 @@ class AIInsightsService:
         Returns:
             Dict with insights array and metadata
         """
-        api_key = os.getenv("OPENAI_API_KEY")
-        if not api_key:
-            raise ValueError("OPENAI_API_KEY not found")
-        
-        client = AsyncOpenAI(api_key=api_key)
-        
+    
         # Extract industry and location from business profile
         industry = "Unknown"
         location = {"city": "", "state": ""}
@@ -173,28 +167,17 @@ Return one object shaped as:
 JSON only (no Markdown, no prose outside fields).
 """
         
-        # Call OpenAI Orchestrator
-        response = await client.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {
-                    "role": "user",
-                    "content": json.dumps({
-                        "financial_data": financial_data,
-                        "business_profile": business_profile,
-                        "classifier_output": classifier_output,
-                    }, default=str)
-                }            
-            ],
-            response_format={"type": "json_object"}
-        )
-        
-        content = response.choices[0].message.content
-        
-        # Parse JSON
         try:
-            result = json.loads(content)
+            result = await claude_service.json_completion(
+                system_prompt=system_prompt,
+                user_content={
+                    "financial_data": financial_data,
+                    "business_profile": business_profile,
+                    "classifier_output": classifier_output,
+                },
+                temperature=0.2,
+                max_tokens=4000,
+            )
             insights = result.get("insights", [])
             
             # Validate we have exactly 3 insights
@@ -211,7 +194,7 @@ JSON only (no Markdown, no prose outside fields).
                 "insights": insights,
                 "generated_at": datetime.now(timezone.utc).isoformat()
             }
-        except (json.JSONDecodeError, ValueError) as e:
+        except Exception as e:
             # Fallback to basic insights if AI fails
             print(f"AI insights generation failed: {e}")
             return self._generate_fallback_insights(financial_data)
