@@ -1,7 +1,6 @@
-from collections import Counter
-
 from app.services.customer_memory_service import CustomerMemoryService
 from app.services.customer_summary_service import CustomerSummaryService
+from app.services.claude_service import claude_service
 
 
 class DreamingService:
@@ -10,143 +9,171 @@ class DreamingService:
         self.memory_service = CustomerMemoryService()
         self.summary_service = CustomerSummaryService()
 
-    async def run_customer_dreaming(self, user_id: str):
+    async def run_customer_dreaming(
+        self,
+        user_id: str
+    ):
 
-        memories = await self.memory_service.get_memory_by_user(user_id=user_id, limit=500)
+        print(
+            f"[Dreaming] Summary Generation Started | User={user_id}"
+        )
 
-        observation_counter = Counter()
+        memories = await self.memory_service.get_memory_by_user(
+            user_id=user_id,
+            limit=500
+        )
 
-        business_name = None
-        industry = None
-        city = None
-        state = None
+        if not memories:
+            print(
+                f"[Dreaming] No memories found for user {user_id}"
+            )
+            return ""
 
-        goals = []
-        priorities = []
-
-        opportunity_names = []
-        patterns = []
-        learnings = []
-        decisions = []
-        behavior_patterns = []
+        memory_payload = []
 
         for memory in memories:
 
-            observation_type = memory.get("observation_type")
+            memory_payload.append(
+                {
+                    "observation_type": memory.get(
+                        "observation_type"
+                    ),
+                    "content": memory.get(
+                        "content"
+                    ),
+                    "confidence": memory.get(
+                        "confidence"
+                    ),
+                    "tags": memory.get(
+                        "tags",
+                        []
+                    ),
+                    "supporting_data": memory.get(
+                        "supporting_data",
+                        {}
+                    ),
+                }
+            )
 
-            if observation_type:
-                observation_counter[observation_type] += 1
+        print(
+            f"[Dreaming] Sending {len(memory_payload)} memories to Claude"
+        )
 
-            supporting_data = memory.get("supporting_data", {})
+        system_prompt = """
+You are the LightSignal Dreaming Engine.
 
-            if observation_type == "onboarding":
+Your task is to generate a long-term customer memory summary.
 
-                business_name = supporting_data.get("business_name")
-                industry = supporting_data.get("industry_description")
-                city = supporting_data.get("city")
-                state = supporting_data.get("state")
+The summary should help future AI agents quickly understand:
 
-                priorities = supporting_data.get("priorities", [])
+- Business profile
+- Business goals
+- Strategic priorities
+- Major decisions
+- Opportunity history
+- Important patterns
+- Key learnings
+- Behavioral tendencies
+- Risks
+- Growth interests
 
-                goals_12_months = supporting_data.get("goals_12_months")
-                goals_3_years = supporting_data.get("goals_3_years")
+Generate a concise but information-dense markdown summary.
 
-                if goals_12_months:
-                    goals.append(goals_12_months)
+Requirements:
 
-                if goals_3_years:
-                    goals.append(goals_3_years)
+- Use markdown.
+- Start with "# Customer Memory Summary".
+- Keep under 1500 words.
+- Only use information supported by memories.
+- Do not invent facts.
+- Organize information into logical sections.
+- Focus on future agent usefulness.
 
-            elif observation_type == "outcome":
+Return STRICT JSON ONLY.
 
-                opportunity_name = supporting_data.get("opportunity_name")
+{
+    "summary": "markdown summary"
+}
+"""
 
-                if opportunity_name:
-                    opportunity_names.append(opportunity_name)
+        try:
 
-            elif observation_type == "pattern":
+            result = await claude_service.json_completion(
+                system_prompt=system_prompt,
+                user_content={
+                    "memories": memory_payload
+                },
+                temperature=0.2,
+                max_tokens=4000,
+            )
 
-                content = memory.get("content")
+            print(
+                "[Dreaming] Summary Generation Result:"
+            )
+            print(result)
 
-                if content:
-                    patterns.append(content)
+        except Exception as e:
 
-            elif observation_type == "learning":
+            print(
+                f"[Dreaming] Summary generation failed: {e}"
+            )
 
-                content = memory.get("content")
+            return ""
 
-                if content:
-                    learnings.append(content)
+        summary = result.get(
+            "summary",
+            ""
+        )
 
-            elif observation_type == "decision":
+        if not isinstance(
+            summary,
+            str
+        ):
+            print(
+                "[Dreaming] Invalid summary response"
+            )
+            return ""
 
-                content = memory.get("content")
+        summary = summary.strip()
 
-                if content:
-                    decisions.append(content)
+        if not summary:
+            print(
+                "[Dreaming] Empty summary returned"
+            )
+            return ""
 
-            elif observation_type == "behavior_pattern":
+        print(
+            f"[Dreaming] Summary Length: {len(summary)} characters"
+        )
 
-                content = memory.get("content")
-
-                if content:
-                    behavior_patterns.append(content)
-
-        summary_lines = ["# Customer Memory Summary", ""]
-
-        if business_name:
-            summary_lines.append(f"Business: {business_name}")
-
-        if industry:
-            summary_lines.append(f"Industry: {industry}")
-
-        if city and state:
-            summary_lines.append(f"Location: {city}, {state}")
-
-        summary_lines.extend(["", "Key Priorities:"])
-
-        for priority in priorities:
-            summary_lines.append(f"- {priority}")
-
-        summary_lines.extend(["", "Business Goals:"])
-
-        for goal in goals:
-            summary_lines.append(f"- {goal}")
-
-        summary_lines.extend([
-            "",
-            "Historical Activity:",
-            f"- {observation_counter.get('outcome', 0)} opportunities tracked",
-            f"- {observation_counter.get('decision', 0)} scenario planning conversations"
-        ])
-
-        if opportunity_names:
-            summary_lines.extend(["", "Recent Opportunities:"])
-            summary_lines.extend([f"- {name}" for name in opportunity_names[:5]])
-
-        if decisions:
-            summary_lines.extend(["", "Major Decisions:"])
-            summary_lines.extend([f"- {decision}" for decision in decisions[:5]])
-
-        if patterns:
-            summary_lines.extend(["", "Observed Patterns:"])
-            summary_lines.extend([f"- {pattern}" for pattern in patterns[:10]])
-
-        if learnings:
-            summary_lines.extend(["", "Owner Tendencies:"])
-            summary_lines.extend([f"- {learning}" for learning in learnings[:10]])
-
-        if behavior_patterns:
-            summary_lines.extend(["", "Behavior Patterns:"])
-            summary_lines.extend([f"- {pattern}" for pattern in behavior_patterns[:10]])
-
-        summary = "\n".join(summary_lines)
-
-        existing = await self.summary_service.get_summary(user_id)
+        existing = await self.summary_service.get_summary(
+            user_id
+        )
 
         if existing:
-            await self.summary_service.update_summary(user_id=user_id, content=summary)
+
+            await self.summary_service.update_summary(
+                user_id=user_id,
+                content=summary
+            )
+
+            print(
+                "[Dreaming] Existing summary updated"
+            )
+
         else:
-            await self.summary_service.create_summary(user_id=user_id, content=summary)
+
+            await self.summary_service.create_summary(
+                user_id=user_id,
+                content=summary
+            )
+
+            print(
+                "[Dreaming] New summary created"
+            )
+
+        print(
+            "[Dreaming] Summary Updated Successfully"
+        )
 
         return summary
