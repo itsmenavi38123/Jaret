@@ -15,25 +15,15 @@ class PatternExtractionService:
         user_id: str
     ):
 
-        print(
-            f"[Dreaming] Pattern Extraction Started | User={user_id}"
-        )
-
         memories = await self.memory_service.get_memory_by_user(
             user_id=user_id,
             limit=500
         )
 
         if not memories:
-            print(
-                f"[Dreaming] No memories found for user {user_id}"
-            )
             return 0
 
         if len(memories) < 5:
-            print(
-                f"[Dreaming] Insufficient memories for pattern extraction | User={user_id} | Memories={len(memories)}"
-            )
             return 0
 
         memory_payload = []
@@ -57,10 +47,6 @@ class PatternExtractionService:
                     ),
                 }
             )
-
-        print(
-            f"[Dreaming] Sending {len(memory_payload)} memories to Claude"
-        )
 
         system_prompt = """
 You are LightSignal Dreaming Engine.
@@ -114,16 +100,7 @@ Rules:
                 max_tokens=3000,
             )
 
-            print(
-                "[Dreaming] Pattern Extraction Result:"
-            )
-            print(result)
-
         except Exception as e:
-
-            print(
-                f"[Dreaming] Pattern extraction failed: {e}"
-            )
 
             return 0
 
@@ -136,14 +113,7 @@ Rules:
             patterns,
             list
         ):
-            print(
-                "[Dreaming] Invalid patterns response"
-            )
             return 0
-
-        print(
-            f"[Dreaming] Claude returned {len(patterns)} patterns"
-        )
 
         created_patterns = 0
 
@@ -169,9 +139,6 @@ Rules:
                 content.lower()
                 in existing_pattern_contents
             ):
-                print(
-                    f"[Dreaming] Skipping existing pattern: {content}"
-                )
                 continue
 
             memory = MemoryFactory.create_memory(
@@ -198,13 +165,5 @@ Rules:
             )
 
             created_patterns += 1
-
-            print(
-                f"[Dreaming] Created pattern: {content}"
-            )
-
-        print(
-            f"[Dreaming] Patterns Created: {created_patterns}"
-        )
 
         return created_patterns

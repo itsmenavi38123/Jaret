@@ -19,10 +19,6 @@ class OrgPlaybookGenerationService:
         self
     ):
 
-        print(
-            "[Dreaming] Org Playbook Generation Started"
-        )
-
         memories = await self.customer_memory.find(
             {
                 "observation_type": {
@@ -39,9 +35,6 @@ class OrgPlaybookGenerationService:
         )
 
         if not memories:
-            print(
-                "[Dreaming] No memories available for playbook generation"
-            )
             return 0
 
         memory_payload = []
@@ -65,10 +58,6 @@ class OrgPlaybookGenerationService:
                     )
                 }
             )
-
-        print(
-            f"[Dreaming] Sending {len(memory_payload)} memories to Claude"
-        )
 
         system_prompt = """
 You are the LightSignal Dreaming Engine.
@@ -122,16 +111,7 @@ Rules:
                 max_tokens=4000,
             )
 
-            print(
-                "[Dreaming] Org Playbook Result:"
-            )
-            print(result)
-
         except Exception as e:
-
-            print(
-                f"[Dreaming] Org playbook generation failed: {e}"
-            )
 
             return 0
 
@@ -144,14 +124,7 @@ Rules:
             entries,
             list
         ):
-            print(
-                "[Dreaming] Invalid playbook response"
-            )
             return 0
-
-        print(
-            f"[Dreaming] Claude returned {len(entries)} playbook entries"
-        )
 
         created = 0
 
@@ -174,9 +147,6 @@ Rules:
             )
 
             if existing:
-                print(
-                    f"[Dreaming] Playbook already exists: {path}"
-                )
                 continue
 
             entry = OrgPlaybook(
@@ -203,13 +173,5 @@ Rules:
             )
 
             created += 1
-
-            print(
-                f"[Dreaming] Created playbook entry: {content}"
-            )
-
-        print(
-            f"[Dreaming] Playbook Entries Created: {created}"
-        )
 
         return created

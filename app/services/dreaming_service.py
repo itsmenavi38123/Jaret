@@ -14,19 +14,12 @@ class DreamingService:
         user_id: str
     ):
 
-        print(
-            f"[Dreaming] Summary Generation Started | User={user_id}"
-        )
-
         memories = await self.memory_service.get_memory_by_user(
             user_id=user_id,
             limit=500
         )
 
         if not memories:
-            print(
-                f"[Dreaming] No memories found for user {user_id}"
-            )
             return ""
 
         memory_payload = []
@@ -54,10 +47,6 @@ class DreamingService:
                     ),
                 }
             )
-
-        print(
-            f"[Dreaming] Sending {len(memory_payload)} memories to Claude"
-        )
 
         system_prompt = """
 You are the LightSignal Dreaming Engine.
@@ -107,16 +96,7 @@ Return STRICT JSON ONLY.
                 max_tokens=4000,
             )
 
-            print(
-                "[Dreaming] Summary Generation Result:"
-            )
-            print(result)
-
         except Exception as e:
-
-            print(
-                f"[Dreaming] Summary generation failed: {e}"
-            )
 
             return ""
 
@@ -129,22 +109,12 @@ Return STRICT JSON ONLY.
             summary,
             str
         ):
-            print(
-                "[Dreaming] Invalid summary response"
-            )
             return ""
 
         summary = summary.strip()
 
         if not summary:
-            print(
-                "[Dreaming] Empty summary returned"
-            )
             return ""
-
-        print(
-            f"[Dreaming] Summary Length: {len(summary)} characters"
-        )
 
         existing = await self.summary_service.get_summary(
             user_id
@@ -157,23 +127,11 @@ Return STRICT JSON ONLY.
                 content=summary
             )
 
-            print(
-                "[Dreaming] Existing summary updated"
-            )
-
         else:
 
             await self.summary_service.create_summary(
                 user_id=user_id,
                 content=summary
             )
-
-            print(
-                "[Dreaming] New summary created"
-            )
-
-        print(
-            "[Dreaming] Summary Updated Successfully"
-        )
 
         return summary

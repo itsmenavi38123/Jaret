@@ -13,10 +13,6 @@ class MemoryLearningService:
         user_id: str
     ):
 
-        print(
-            f"[Dreaming] Learning Extraction Started | User={user_id}"
-        )
-
         memories = await self.memory_service.get_memory_by_user(
             user_id=user_id,
             limit=500
@@ -29,9 +25,6 @@ class MemoryLearningService:
         ]
 
         if not patterns:
-            print(
-                f"[Dreaming] No patterns found for user {user_id}"
-            )
             return 0
 
         pattern_payload = []
@@ -52,10 +45,6 @@ class MemoryLearningService:
                     )
                 }
             )
-
-        print(
-            f"[Dreaming] Sending {len(pattern_payload)} patterns to Claude"
-        )
 
         system_prompt = """
 You are LightSignal Dreaming Engine.
@@ -106,16 +95,7 @@ Rules:
                 max_tokens=3000,
             )
 
-            print(
-                "[Dreaming] Learning Extraction Result:"
-            )
-            print(result)
-
         except Exception as e:
-
-            print(
-                f"[Dreaming] Learning extraction failed: {e}"
-            )
 
             return 0
 
@@ -128,14 +108,7 @@ Rules:
             learnings,
             list
         ):
-            print(
-                "[Dreaming] Invalid learnings response"
-            )
             return 0
-
-        print(
-            f"[Dreaming] Claude returned {len(learnings)} learnings"
-        )
 
         created = 0
 
@@ -161,9 +134,6 @@ Rules:
                 content.lower()
                 in existing_learning_contents
             ):
-                print(
-                    f"[Dreaming] Skipping existing learning: {content}"
-                )
                 continue
 
             path = (
@@ -176,9 +146,6 @@ Rules:
             )
 
             if existing:
-                print(
-                    f"[Dreaming] Learning path already exists: {path}"
-                )
                 continue
 
             memory = MemoryFactory.create_memory(
@@ -202,14 +169,6 @@ Rules:
             )
 
             created += 1
-
-            print(
-                f"[Dreaming] Created learning: {content}"
-            )
-
-        print(
-            f"[Dreaming] Learnings Created: {created}"
-        )
 
         return created
 
