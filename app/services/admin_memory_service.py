@@ -29,7 +29,12 @@ class AdminMemoryService:
         user_id: str,
         include_outdated: bool = False,
         page: int = 1,
-        page_size: int = 10
+        page_size: int = 10,
+        observation_type: str | None = None,
+        agent_name: str | None = None,
+        tags: list[str] | None = None,
+        start_date: datetime | None = None,
+        end_date: datetime | None = None
     ):
 
         query = {
@@ -38,6 +43,27 @@ class AdminMemoryService:
 
         if not include_outdated:
             query["outdated"] = False
+
+        if observation_type:
+            query["observation_type"] = observation_type
+
+        if agent_name:
+            query["agent_name"] = agent_name
+
+        if tags:
+            query["tags"] = {
+                "$in": tags
+            }
+
+        if start_date or end_date:
+
+            query["created_at"] = {}
+
+            if start_date:
+                query["created_at"]["$gte"] = start_date
+
+            if end_date:
+                query["created_at"]["$lte"] = end_date
 
         skip = (page - 1) * page_size
 

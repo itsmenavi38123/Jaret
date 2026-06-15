@@ -23,6 +23,7 @@ from app.services.admin_memory_service import AdminMemoryService
 from app.services.admin_search_service import AdminSearchService
 from app.services.memory_export_service import MemoryExportService
 from app.services.memory_review_service import MemoryReviewService
+from typing import List
 
 memory_export_service = MemoryExportService()
 memory_search_service = MemorySearchService()
@@ -1144,6 +1145,10 @@ async def search_memories(
     query: str,
     user_id: str | None = None,
     observation_type: str | None = None,
+    agent_name: str | None = None,
+    tag: str | None = None,
+    start_date: datetime | None = None,
+    end_date: datetime | None = None,
     current_user: dict = Depends(require_admin_role)
 ):
     try:
@@ -1151,7 +1156,11 @@ async def search_memories(
         memories = await admin_search_service.search_memories(
             query=query,
             user_id=user_id,
-            observation_type=observation_type
+            observation_type=observation_type,
+            agent_name=agent_name,
+            tag=tag,
+            start_date=start_date,
+            end_date=end_date
         )
 
         return JSONResponse(
@@ -1268,15 +1277,25 @@ async def get_customer_memories(
     page: int = 1,
     page_size: int = 20,
     include_outdated: bool = False,
+    observation_type: str | None = None,
+    agent_name: str | None = None,
+    tags: List[str] | None = Query(None),
+    start_date: datetime | None = None,
+    end_date: datetime | None = None,
     current_user: dict = Depends(require_admin_role)
 ):
     try:
 
         result = await admin_memory_service.get_customer_memories(
             user_id=user_id,
-            include_outdated=include_outdated   ,
+            include_outdated=include_outdated,
             page=page,
-            page_size=page_size
+            page_size=page_size,
+            observation_type=observation_type,
+            agent_name=agent_name,
+            tags=tags,
+            start_date=start_date,
+            end_date=end_date
         )
 
         return JSONResponse(
