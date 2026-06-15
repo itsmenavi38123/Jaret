@@ -206,3 +206,26 @@ class CustomerMemoryService:
 
             }
         )
+    
+    async def get_memories_under_review(
+        self,
+        limit: int = 100
+    ) -> List[dict]:
+
+        cursor = (
+            self.collection
+            .find(
+                {
+                    "under_review": True
+                }
+            )
+            .sort(
+                "created_at",
+                -1
+            )
+            .limit(limit)
+        )
+
+        return [
+            doc async for doc in cursor
+        ]
