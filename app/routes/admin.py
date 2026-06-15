@@ -1274,6 +1274,7 @@ async def export_memories_csv(
 @router.get("/memories/{user_id}")
 async def get_customer_memories(
     user_id: str,
+    query: str | None = None,
     page: int = 1,
     page_size: int = 20,
     include_outdated: bool = False,
@@ -1288,6 +1289,7 @@ async def get_customer_memories(
 
         result = await admin_memory_service.get_customer_memories(
             user_id=user_id,
+            query=query,
             include_outdated=include_outdated,
             page=page,
             page_size=page_size,
