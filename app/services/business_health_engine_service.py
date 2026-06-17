@@ -9,6 +9,8 @@ from app.services.lever_engine_service import lever_engine_service
 from app.services.behavioral_pattern_service import behavioral_pattern_service
 from app.services.cross_business_pattern_service import cross_business_pattern_service
 from app.services.business_health_snapshot_service import business_health_snapshot_service
+from app.services.financial_signal_service import financial_signal_service
+
 
 class BusinessHealthEngineService:
 
@@ -317,6 +319,25 @@ class BusinessHealthEngineService:
         )
 
         metrics.update(customer_health_metrics)
+        signal_metrics = {
+            "runway_months": financial_overview.get(
+                "cashflow",
+                {},
+            ).get(
+                "runway_months",
+            ),
+            "gross_margin_pct": financial_overview.get(
+                "kpis",
+                {},
+            ).get(
+                "gross_margin_pct",
+            ),
+        }
+        financial_signals = await financial_signal_service.build_financial_signals(
+            user_id=user_id,
+            metrics=signal_metrics,
+            classifier_output=classifier_output or {},
+        )
         signal_surfaces = signal_engine_service.evaluate_signals(
             metrics=metrics,
             classifier_output=classifier_output or {},
@@ -395,6 +416,7 @@ class BusinessHealthEngineService:
 
         final_payload = {
             "overall": overall,
+            "financial_signals": financial_signals,
             "similar_business_patterns": cross_business_patterns.get("similar_business_patterns", []),
             "behavioral_patterns": behavioral_patterns,
             "active_health_alerts": signal_surfaces.get("active_health_alerts", []),

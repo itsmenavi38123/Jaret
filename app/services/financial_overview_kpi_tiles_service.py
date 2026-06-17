@@ -1,0 +1,166 @@
+from app.models.financial_overview_kpi_tiles import (
+    FinancialOverviewKPITiles,
+    FinancialOverviewKPITile,
+)
+
+
+class FinancialOverviewKPITilesService:
+
+    async def generate_kpi_tiles(
+        self,
+        financial_overview: dict,
+        classifier_output: dict | None = None,
+    ) -> FinancialOverviewKPITiles:
+
+        items = []
+
+        kpis = financial_overview.get(
+            "kpis",
+            {},
+        )
+
+        liquidity = financial_overview.get(
+            "liquidity",
+            {},
+        )
+
+        efficiency = financial_overview.get(
+            "efficiency",
+            {},
+        )
+
+        cashflow = financial_overview.get(
+            "cashflow",
+            {},
+        )
+
+        metric_configs = [
+            (
+                "revenue_mtd",
+                "Revenue MTD",
+                kpis.get("revenue_mtd"),
+            ),
+            (
+                "gross_margin_pct",
+                "Gross Margin",
+                kpis.get("gross_margin_pct"),
+            ),
+            (
+                "net_margin_pct",
+                "Net Margin",
+                kpis.get("net_margin_pct"),
+            ),
+            (
+                "cash_flow_mtd",
+                "Cash Flow MTD",
+                kpis.get("cash_flow_mtd"),
+            ),
+            (
+                "runway_months",
+                "Runway",
+                kpis.get("runway_months"),
+            ),
+            (
+                "current_ratio",
+                "Current Ratio",
+                liquidity.get("current_ratio"),
+            ),
+            (
+                "quick_ratio",
+                "Quick Ratio",
+                liquidity.get("quick_ratio"),
+            ),
+            (
+                "ccc_days",
+                "Cash Conversion Cycle",
+                efficiency.get("ccc_days"),
+            ),
+        ]
+
+        for metric_id, label, value in metric_configs:
+
+            if value is None:
+                continue
+
+            items.append(
+                FinancialOverviewKPITile(
+                    metric_id=metric_id,
+                    label=label,
+                    value=str(value),
+                    status=self._get_status(
+                        metric_id=metric_id,
+                        value=value,
+                    ),
+                )
+            )
+
+        return FinancialOverviewKPITiles(
+            items=items[:8],
+        )
+
+    def _get_status(
+        self,
+        metric_id: str,
+        value,
+    ) -> str:
+
+        if value is None:
+            return "below_average"
+
+        if metric_id in [
+            "current_ratio",
+            "quick_ratio",
+        ]:
+
+            if value < 1:
+                return "critical"
+
+            if value < 1.5:
+                return "below_average"
+
+            if value < 2:
+                return "at_average"
+
+            if value < 3:
+                return "above_average"
+
+            return "top_tier"
+
+        if metric_id == "runway_months":
+
+            if value < 3:
+                return "critical"
+
+            if value < 6:
+                return "below_average"
+
+            if value < 12:
+                return "at_average"
+
+            if value < 18:
+                return "above_average"
+
+            return "top_tier"
+
+        if metric_id == "net_margin_pct":
+
+            if value < 0:
+                return "critical"
+
+            if value < 5:
+                return "below_average"
+
+            if value < 15:
+                return "at_average"
+
+            if value < 25:
+                return "above_average"
+
+            return "top_tier"
+
+        return "at_average"
+
+
+financial_overview_kpi_tiles_service = (
+    FinancialOverviewKPITilesService()
+)

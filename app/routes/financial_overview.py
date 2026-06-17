@@ -6,9 +6,11 @@ from fastapi.responses import JSONResponse
 from app.routes.auth.auth import get_current_user
 from app.services.dashboard_service import dashboard_service
 from app.services.quickbooks_financial_service import quickbooks_financial_service
+from app.services.financial_overview_service import financial_overview_service
 
 router = APIRouter(tags=["financial-overview"])
 from app.services.benchmark_service import benchmark_service
+
 from app.db import get_collection
 import re
 
@@ -176,5 +178,24 @@ async def get_dashboard_alerts(
     return JSONResponse(
         status_code=status.HTTP_200_OK,
         content=jsonable_encoder({"success": True, "data": alerts_data}),
+    )
+
+
+@router.get("/financial-overview/v2")
+async def get_financial_overview_v2(
+    current_user: dict = Depends(get_current_user),
+):
+    data = await financial_overview_service.get_financial_overview_v2(
+        user_id=current_user["id"],
+    )
+
+    return JSONResponse(
+        status_code=status.HTTP_200_OK,
+        content=jsonable_encoder(
+            {
+                "success": True,
+                "data": data,
+            }
+        ),
     )
 

@@ -341,5 +341,76 @@ JSON only (no Markdown, no prose outside fields).
 
         return "\n".join(bullets)
 
+
+    async def generate_financial_overview_insights(
+        self,
+        financial_overview: Dict[str, Any],
+        business_health: Dict[str, Any],
+        classifier_output: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+
+        system_prompt = """
+        You are LightSignal Financial Analyst.
+
+        MODE: financial_overview_insights
+
+        Output ONLY valid JSON.
+
+        Return EXACTLY this schema:
+
+        {
+          "profitability_banner": {
+            "status": "top_tier | above_average | at_average | below_average | critical | null",
+            "headline": "",
+            "supporting_text": "",
+            "missing_data_notice": null
+          },
+          "items": [
+            {
+              "signal_id": "",
+              "pressing_score": 0,
+              "tier": "tier_1 | tier_2",
+              "headline": "",
+              "whats_going_on": "",
+              "why_it_matters_now": "",
+              "what_to_do": "",
+              "expected_impact": {
+                "value_text": "",
+                "calculation_basis": ""
+              },
+              "effort": "quick_win | moderate | heavy",
+              "confidence": "high | moderate | low",
+              "directive": {}
+            }
+          ],
+          "missing_data_notice": null
+        }
+
+        Rules:
+        - Follow Financial Analyst Prompt V6 INSIGHTS MODE.
+        - Return only JSON.
+        - No markdown.
+        - No explanations outside JSON.
+        - Rank items by pressing_score descending.
+        - Set tier_1 when pressing_score >= 30.
+        - Set tier_2 when pressing_score < 30.
+        - Use business_health financial signals when available.
+        - Use classifier_output when available.
+        - Do not invent metrics not present in the payload.
+        - Return between 3 and 12 insight items when sufficient data exists.
+        """
+
+        return await claude_service.json_completion(
+            system_prompt=system_prompt,
+            user_content={
+                "financial_overview": financial_overview,
+                "business_health": business_health,
+                "classifier_output": classifier_output,
+            },
+            temperature=0.2,
+            max_tokens=4000,
+        )
+
+    
 # Global singleton instance
 finance_analyst_service = FinanceAnalystService()
