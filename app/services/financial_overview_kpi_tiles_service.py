@@ -24,6 +24,10 @@ class FinancialOverviewKPITilesService:
             )
         )
 
+        pinned_metric_ids = set(
+            preferences.pinned_metric_ids
+        )
+
         kpis = financial_overview.get(
             "kpis",
             {},
@@ -101,6 +105,9 @@ class FinancialOverviewKPITilesService:
                         if value is not None
                         else "insufficient_data"
                     ),
+                    is_pinned=(
+                        metric_id in pinned_metric_ids
+                    ),
                 )
             )
 
@@ -127,10 +134,6 @@ class FinancialOverviewKPITilesService:
                 or item.forced_by_ai
             )
         ]
-
-        pinned_metric_ids = set(
-            preferences.pinned_metric_ids
-        )
 
         pinned_items = [
             item

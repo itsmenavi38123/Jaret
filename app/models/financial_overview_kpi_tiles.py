@@ -10,6 +10,7 @@ class FinancialOverviewKPITile(BaseModel):
     value: str
     status: str
     forced_by_ai: bool = False
+    is_pinned: bool = False
 
 
 class FinancialOverviewKPITiles(BaseModel):
