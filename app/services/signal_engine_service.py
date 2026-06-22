@@ -76,10 +76,26 @@ class SignalEngineService:
         soft_signals = []
         stable_signals = []
 
-        combined_library = (
-            TIER_A_SIGNAL_LIBRARY
-            + TIER_B_SIGNAL_LIBRARY
+        tier_b_signals_active = set(
+            classifier_output.get(
+                "tier_b_signals_active",
+                [],
+            )
         )
+
+        combined_library = list(
+            TIER_A_SIGNAL_LIBRARY
+        )
+
+        for signal in TIER_B_SIGNAL_LIBRARY:
+
+            if signal.get(
+                "signal_id",
+            ) in tier_b_signals_active:
+
+                combined_library.append(
+                    signal,
+                )
 
         for signal in combined_library:
 

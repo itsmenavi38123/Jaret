@@ -13,6 +13,12 @@ SIGNAL_TO_SHAPE = {
     "cart_abandonment_risk": "cart_abandonment",
     "utilization_decline": "utilization_decline",
     "project_margin_variance": "project_margin_pressure",
+    "working_capital_decline": "working_capital",
+    "ar_collection_deterioration": "collections_lagging",
+    "cost_spike_on_key_inputs": "cost_pressure",
+    "operational_disruption": "operational_disruption",
+    "goal_deviation": "goal_deviation",
+    "owner_engagement_decline": "owner_engagement",
 }
 
 

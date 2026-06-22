@@ -136,3 +136,7 @@ async def create_indexes() -> None:
     await org_playbook.create_index("source_type")
     await org_playbook.create_index("observation_type")
     await org_playbook.create_index("created_at")
+
+    kpi_preferences = get_collection("financial_overview_kpi_preferences")
+    await kpi_preferences.create_index("user_id",unique=True)
+    await kpi_preferences.create_index("updated_at")

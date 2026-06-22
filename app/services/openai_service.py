@@ -192,6 +192,9 @@ Context:
 Additional Context:
 {json.dumps(payload.get("optional_context", {}), indent=2)}
 
+Already Displayed Insights:
+{json.dumps(payload.get("already_displayed_insights", []), indent=2)}
+
 User Question:
 {payload.get("question")}
 """

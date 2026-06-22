@@ -9,6 +9,7 @@ class FinancialOverviewKPITile(BaseModel):
     label: str
     value: str
     status: str
+    forced_by_ai: bool = False
 
 
 class FinancialOverviewKPITiles(BaseModel):

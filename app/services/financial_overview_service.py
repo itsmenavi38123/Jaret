@@ -55,6 +55,7 @@ class FinancialOverviewService:
 
         kpi_tiles = (
             await financial_overview_kpi_tiles_service.generate_kpi_tiles(
+                user_id=user_id,
                 financial_overview=financial_overview,
                 classifier_output=classifier_output or {},
             )
@@ -62,6 +63,7 @@ class FinancialOverviewService:
 
         expense_breakdown = (
             await financial_overview_expense_breakdown_service.generate_expense_breakdown(
+                user_id=user_id,
                 financial_overview=financial_overview,
                 classifier_output=classifier_output or {},
             )

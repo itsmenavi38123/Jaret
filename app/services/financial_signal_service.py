@@ -2,7 +2,7 @@ from typing import Dict, Any, List
 
 from app.services.signal_engine_service import signal_engine_service
 from app.services.signal_shape_mapper import (
-    signal_shape_mapper,
+signal_shape_mapper,
 )
 from app.models.financial_signal import FinancialSignal
 from app.services.signal_state_service import signal_state_service
@@ -20,17 +20,22 @@ class FinancialSignalService:
 
         threshold = signal.get("threshold")
 
+        if (
+            metric_value is not None
+            and threshold is not None
+            and isinstance(metric_value, (int, float))
+            and isinstance(threshold, (int, float))
+        ):
+            delta = abs(metric_value - threshold)
+
+            if severity == "hard":
+                return min(90 + int(delta * 10), 100)
+
+            if severity == "soft":
+                return min(60 + int(delta * 10), 89)
+
         if severity == "hard":
-
-            score = 90
-
-            if (
-                metric_value is not None
-                and threshold is not None
-            ):
-                score += 5
-
-            return min(score, 100)
+            return 90
 
         if severity == "soft":
             return 60
@@ -98,7 +103,7 @@ class FinancialSignalService:
 
                 signals.append(enriched_signal)
 
-        return signals  
+        return signals
 
     async def build_financial_signals(
         self,
@@ -125,6 +130,7 @@ class FinancialSignalService:
             user_id=user_id,
             current_signal_ids=current_signal_ids,
         )
+
         resolved_signal_cards = []
 
         for signal_id in resolved_signals:
@@ -134,7 +140,7 @@ class FinancialSignalService:
                     signal_id=signal_id,
                     title=signal_id.replace("_", " ").title(),
                     state="resolved",
-                    pressing_score=10,
+                    pressing_score=5,
                     shape_id=signal_shape_mapper.get_shape_id(
                         signal_id,
                     ),
@@ -157,15 +163,25 @@ class FinancialSignalService:
         hero_signal = None
 
         if signals:
+
+            top_signal = signals[0]
+
             hero_signal = {
-                **signals[0],
-                "headline": signals[0]["signal_id"].replace("_", " ").title(),
-                "whats_going_on": signals[0].get(
-                    "recommended_action",
+                **top_signal,
+                "headline": top_signal.get(
+                    "title",
                     "",
                 ),
-                "why_it_matters_now": "",
-                "what_to_do": signals[0].get(
+                "whats_going_on": (
+                    f"{top_signal.get('title', '')} detected."
+                ),
+                "why_it_matters_now": (
+                    f"Current value: {top_signal.get('metric_value')}, "
+                    f"threshold: {top_signal.get('threshold')}"
+                )
+                if top_signal.get("metric_value") is not None
+                else "",
+                "what_to_do": top_signal.get(
                     "recommended_action",
                     "",
                 ),
@@ -180,7 +196,7 @@ class FinancialSignalService:
             "signals": signals,
             "hero_signal": hero_signal,
             "swipe_signals": swipe_signals,
+            "signal_count": len(signals),
         }
-
 
 financial_signal_service = FinancialSignalService()
