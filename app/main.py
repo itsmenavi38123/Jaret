@@ -12,10 +12,7 @@ load_dotenv()
 from app.services.scout_scheduler_service import ScoutSchedulerService
 from app.services.dreaming_scheduler_service import DreamingSchedulerService
 
-# load .env (install python-dotenv if you don't have it: pip install python-dotenv)
-
-
-# import routers (make sure backend/app/routes/auth/auth.py exposes `router`)
+# import routers
 from app.routes.auth.auth import router as auth_router
 from app.routes.quickbooks.auth import router as quickbooks_router
 from app.routes.xero.auth import router as xero_auth_router
@@ -34,6 +31,7 @@ from app.routes.asset_management import router as asset_management_router
 from app.routes.preparation import router as preparation_router
 from app.routes.admin import router as admin_router
 from app.routes.integrations import router as integrations_router
+from app.routes.documents import router as documents_router
 
 scout_scheduler = ScoutSchedulerService()
 dreaming_scheduler = DreamingSchedulerService()
@@ -45,7 +43,7 @@ app = FastAPI(
     version=os.getenv("APP_VERSION", "1.0.0"),
 )
 
-# CORS - tighten in production
+# CORS
 allowed_origins = os.getenv("ALLOWED_ORIGINS", "*")
 if allowed_origins == "*":
     cors_origins = ["*"]
@@ -60,6 +58,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ROUTER REGISTRATIONS
 app.include_router(auth_router, prefix="/auth")
 app.include_router(quickbooks_router, prefix="/quickbooks")
 app.include_router(xero_auth_router, prefix="/xero/auth")
@@ -78,65 +77,45 @@ app.include_router(asset_management_router, prefix="/api")
 app.include_router(preparation_router, prefix="/api")
 app.include_router(integrations_router, prefix="/api")
 app.include_router(admin_router)
-
+app.include_router(documents_router, prefix="/documents")
 
 @app.on_event("startup")
 async def on_startup():
     global scheduler_task
-
     await create_indexes()
-
     async def scheduler_loop():
         while True:
-
             now = datetime.utcnow()
-
             if now.hour == 2 and now.minute == 0:
                 try:
                     await scout_scheduler.run_daily_scout_pipeline()
                 except Exception as e:
                     print(f"Scout scheduler error: {e}")
-
                 await asyncio.sleep(60)
-
             if now.hour == 3 and now.minute == 0:
                 try:
                     await scout_scheduler.run_daily_opportunity_rescore()
                 except Exception as e:
                     print(f"Opportunity rescore error: {e}")
-
                 await asyncio.sleep(60)
-
             if now.hour == 4 and now.minute == 0:
                 try:
                     await dreaming_scheduler.run_daily_dreaming_pass()
                 except Exception as e:
                     print(f"Dreaming scheduler error: {e}")
-
                 await asyncio.sleep(60)
-
             await asyncio.sleep(20)
-
     print("Scheduler started")
-
-    scheduler_task = asyncio.create_task(
-        scheduler_loop()
-    )
-
+    scheduler_task = asyncio.create_task(scheduler_loop())
 
 @app.on_event("shutdown")
 async def on_shutdown():
-
     global scheduler_task
-
     if scheduler_task:
         scheduler_task.cancel()
-
         with suppress(asyncio.CancelledError):
             await scheduler_task
-
     close_client()
-
 
 @app.get("/")
 async def root():
