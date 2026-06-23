@@ -1,63 +1,65 @@
-import os
-from typing import Tuple, Optional, Dict, Any
+from typing import Optional, Dict, Any
 from datetime import datetime
-from pathlib import Path
 from docx import Document as DocxDocument
 from app.db import get_collection
-
-# Windows-native path to ensure reportlab and os.open can write to disk correctly
-UPLOAD_ROOT = Path(r"C:\Users\Admin\OneDrive\Desktop\jret\Jaret\Jaret\storage\documents")
+from app.db import get_gridfs_bucket
 
 class DocumentStoreService:
     def __init__(self):
-        self.base_storage_path = UPLOAD_ROOT
         self.collection_name = "documents_metadata"
-        try:
-            self.base_storage_path.mkdir(parents=True, exist_ok=True)
-        except Exception as e:
-            print(f"Storage directory creation warning: {e}")
 
     async def get_metadata(self, doc_id: str) -> Optional[Dict[str, Any]]:
         """Retrieves metadata for a specific document."""
         docs_coll = get_collection(self.collection_name)
         return await docs_coll.find_one({"document_id": doc_id})
 
-    async def save_uploaded_file(self, customer_id: str, file_content: bytes, filename: str, uploaded_by: str, location_id: Optional[str] = None) -> Tuple[str, str]:
-        """Saves the original uploaded file to the store."""
+    async def save_uploaded_file(self, customer_id: str, file_content: bytes, filename: str, uploaded_by: str, location_id: Optional[str] = None) -> str:
+        """Saves the original uploaded file to MongoDB GridFS."""
         import uuid
         doc_id = f"doc_{uuid.uuid4().hex}"
-        
-        customer_dir = self.base_storage_path / customer_id
-        customer_dir.mkdir(parents=True, exist_ok=True)
-        
-        file_path = customer_dir / f"{doc_id}_{filename}"
-        
-        with open(file_path, "wb") as f:
-            f.write(file_content)
-            
+        bucket = get_gridfs_bucket()
+
+        doc_format = filename.split('.')[-1].lower() if '.' in filename else 'txt'
+
+        # Save to GridFS with improved metadata for traceability
+        grid_in = bucket.open_upload_stream(
+            filename,
+            metadata={
+                "document_id": doc_id,
+                "customer_id": customer_id,
+                "original_filename": filename,
+                "original_format": doc_format
+            }
+        )
+        await grid_in.write(file_content)
+        await grid_in.close()
+        file_id = grid_in._id
+
         docs_coll = get_collection(self.collection_name)
         await docs_coll.insert_one({
             "document_id": doc_id,
             "customer_id": customer_id,
             "location_id": location_id,
             "original_filename": filename,
-            "original_format": filename.split('.')[-1].lower() if '.' in filename else 'txt',
-            "working_format": filename.split('.')[-1].lower() if '.' in filename else 'txt',
+            "original_format": doc_format,
+            "working_format": doc_format,
             "upload_timestamp": datetime.utcnow(),
             "uploaded_by": uploaded_by,
             "extraction_status": "pending",
             "outdated": False,
-            "file_path": str(file_path)
+            "original_file_id": file_id,
+            "working_file_id": file_id
         })
         
-        return doc_id, str(file_path)
+        return doc_id
 
-    async def convert_to_pdf(self, doc_id: str, original_path: str):
+    async def convert_to_pdf(self, doc_id: str):
         """
         Implementation of Section 6A: Office Document Conversion.
         Converts office docs to PDF for the Vision Agent.
         Text and spreadsheets are NOT converted to ensure they follow the text path.
         """
+        import io
         docs_coll = get_collection(self.collection_name)
         doc_meta = await docs_coll.find_one({"document_id": doc_id})
         if not doc_meta:
@@ -65,36 +67,68 @@ class DocumentStoreService:
 
         ext = doc_meta.get("original_format", "").lower()
         
-        # Only convert visual-heavy formats. Skip text/data formats to preserve Opus routing.
-        if ext in ["pdf", "txt", "md", "csv", "xlsx"]:
+        # Skip formats that don't need PDF conversion:
+        # - text/data formats go to text path directly (including xls)
+        # - PDF and images are natively supported by the vision path
+        if ext in ["pdf", "txt", "md", "csv", "xlsx", "xls", "png", "jpg", "jpeg"]:
             return 
 
-        orig_p = Path(original_path)
-        pdf_path = orig_p.with_suffix('.pdf')
-        
+        original_file_id = doc_meta.get("original_file_id")
+        if not original_file_id:
+            return
+
+        bucket = get_gridfs_bucket()
         try:
+            grid_out = await bucket.open_download_stream(original_file_id)
+            original_bytes = await grid_out.read()
+        except Exception as e:
+            print(f"Error downloading original file from GridFS for {doc_id}: {e}")
+            return
+
+        try:
+            pdf_bytes = None
             if ext == "docx":
-                doc = DocxDocument(str(orig_p))
+                doc = DocxDocument(io.BytesIO(original_bytes))
                 full_text = [para.text for para in doc.paragraphs]
                 text_content = "\n".join(full_text)
-                self._text_to_pdf(text_content, str(pdf_path))
+                pdf_bytes = self._text_to_pdf_bytes(text_content)
             
-            await docs_coll.update_one(
-                {"document_id": doc_id},
-                {"$set": {"working_format": "pdf", "pdf_path": str(pdf_path)}}
-            )
+            if pdf_bytes is not None:
+                orig_filename = doc_meta.get("original_filename", "document")
+                pdf_filename = orig_filename.rsplit('.', 1)[0] + ".pdf" if '.' in orig_filename else orig_filename + ".pdf"
+                
+                # Save converted PDF with trace metadata
+                grid_in = bucket.open_upload_stream(
+                    pdf_filename,
+                    metadata={
+                        "document_id": doc_id,
+                        "customer_id": doc_meta.get("customer_id"),
+                        "original_filename": orig_filename,
+                        "original_format": ext
+                    }
+                )
+                await grid_in.write(pdf_bytes)
+                await grid_in.close()
+                working_file_id = grid_in._id
+                
+                await docs_coll.update_one(
+                    {"document_id": doc_id},
+                    {"$set": {
+                        "working_format": "pdf", 
+                        "working_file_id": working_file_id
+                    }}
+                )
         except Exception as e:
             print(f"Conversion error for {doc_id}: {e}")
 
-    def _text_to_pdf(self, text: str, output_path: str):
-        """Helper to convert raw text into a PDF file using reportlab."""
+    def _text_to_pdf_bytes(self, text: str) -> bytes:
+        """Helper to convert raw text into a PDF file in-memory using reportlab."""
+        import io
         from reportlab.pdfgen import canvas
         from reportlab.lib.pagesizes import letter
         
-        # Ensure the directory exists
-        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-        
-        c = canvas.Canvas(output_path, pagesize=letter)
+        pdf_buffer = io.BytesIO()
+        c = canvas.Canvas(pdf_buffer, pagesize=letter)
         text_object = c.beginText(50, 750)
         text_object.setFont("Helvetica", 10)
         
@@ -104,6 +138,16 @@ class DocumentStoreService:
         
         c.drawText(text_object)
         c.save()
+        return pdf_buffer.getvalue()
+
+    async def get_document_bytes(self, file_id) -> bytes:
+        """Retrieves the file bytes directly from MongoDB GridFS."""
+        from bson.objectid import ObjectId
+        if isinstance(file_id, str):
+            file_id = ObjectId(file_id)
+        bucket = get_gridfs_bucket()
+        grid_out = await bucket.open_download_stream(file_id)
+        return await grid_out.read()
 
     async def update_status(self, doc_id: str, status: str, record_id: Optional[str] = None):
         """Updates the extraction status and optionally links the extraction record."""

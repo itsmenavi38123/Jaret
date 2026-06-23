@@ -83,6 +83,12 @@ app.include_router(documents_router, prefix="/documents")
 async def on_startup():
     global scheduler_task
     await create_indexes()
+    try:
+        from app.services.dia_orchestrator import DIAOrchestrator
+        migrated = await DIAOrchestrator.migrate_profiles()
+        print(f"Startup: Migrated {migrated} business profiles to the new DIA persistence schema.")
+    except Exception as e:
+        print(f"Startup: Error running business profile migration: {e}")
     async def scheduler_loop():
         while True:
             now = datetime.utcnow()

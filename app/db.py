@@ -4,7 +4,10 @@ import certifi
 from typing import Optional
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase, AsyncIOMotorCollection
 
-# from app.routes import opportunities
+from motor.motor_asyncio import AsyncIOMotorGridFSBucket
+
+def get_gridfs_bucket():
+    return AsyncIOMotorGridFSBucket(get_database())
 
 _client: Optional[AsyncIOMotorClient] = None
 _db: Optional[AsyncIOMotorDatabase] = None

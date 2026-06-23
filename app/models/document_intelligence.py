@@ -12,20 +12,27 @@ class DocumentMetadata(BaseModel):
     working_format: str               # The format sent to the AI (e.g., pdf)
     upload_timestamp: datetime = Field(default_factory=datetime.utcnow)
     uploaded_by: str
-    extraction_status: str = "uploading" # uploading -> reading -> done | needs_review | failed
+    extraction_status: str = "pending" # pending -> reading -> done | needs_review | failed
     extraction_record_id: Optional[str] = None
     superseded_by: Optional[str] = None
     supersedes: Optional[str] = None
+    original_file_id: Optional[Any] = None
+    working_file_id: Optional[Any] = None
+    outdated: bool = False
+    owner_corrected: bool = False
+    owner_correction: Optional[Dict[str, Any]] = None
 
 class ExtractionField(BaseModel):
     target: str
-    profile_section: int
     value: Any
     source_ref: str
     snippet: str
     confidence: str # high | medium | low
     needs_review: bool
-    written: bool
+    edited: bool = False
+    edited_value: Optional[Any] = None
+    edited_at: Optional[str] = None
+    edited_by: Optional[str] = None
 
 class LearningEntry(BaseModel):
     content: str
