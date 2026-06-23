@@ -1,8 +1,7 @@
-from collections import Counter
-
 from app.db import get_collection
 from app.models.org_playbook import OrgPlaybook
 from app.services.org_playbook_service import OrgPlaybookService
+from app.services.claude_service import claude_service
 
 
 class OrgPlaybookGenerationService:
@@ -11,6 +10,7 @@ class OrgPlaybookGenerationService:
         self.customer_memory = get_collection(
             "customer_memory"
         )
+
         self.playbook_service = (
             OrgPlaybookService()
         )
@@ -21,30 +21,120 @@ class OrgPlaybookGenerationService:
 
         memories = await self.customer_memory.find(
             {
-                "observation_type": "pattern"
+                "observation_type": {
+                    "$in": [
+                        "pattern",
+                        "learning",
+                        "behavior_pattern"
+                    ]
+                },
+                "outdated": False
             }
         ).to_list(
-            length=None
+            length=1000
         )
 
-        pattern_counter = Counter()
+        if not memories:
+            return 0
+
+        memory_payload = []
 
         for memory in memories:
 
-            content = memory.get(
-                "content"
+            memory_payload.append(
+                {
+                    "observation_type": memory.get(
+                        "observation_type"
+                    ),
+                    "content": memory.get(
+                        "content"
+                    ),
+                    "confidence": memory.get(
+                        "confidence"
+                    ),
+                    "tags": memory.get(
+                        "tags",
+                        []
+                    )
+                }
             )
 
-            if content:
-                pattern_counter[
-                    content
-                ] += 1
+        system_prompt = """
+You are the LightSignal Dreaming Engine.
+
+Your task is to identify cross-customer business learnings.
+
+Analyze all supplied memories and discover patterns that appear across multiple businesses.
+
+Focus on:
+
+- recurring business risks
+- recurring growth opportunities
+- operational best practices
+- strategic behavior patterns
+- customer acquisition trends
+- financial management patterns
+- decision-making tendencies
+
+Return STRICT JSON ONLY.
+
+{
+    "playbook_entries": [
+        {
+            "content": "Cross-customer learning",
+            "confidence": "low|medium|high",
+            "tags": [
+                "playbook",
+                "cross_customer_learning"
+            ]
+        }
+    ]
+}
+
+Rules:
+
+- Maximum 20 entries.
+- Only include insights supported by supplied memories.
+- Do not invent information.
+- Avoid duplicates.
+- Keep entries concise and actionable.
+"""
+
+        try:
+
+            result = await claude_service.json_completion(
+                system_prompt=system_prompt,
+                user_content={
+                    "memories": memory_payload
+                },
+                temperature=0.2,
+                max_tokens=4000,
+            )
+
+        except Exception as e:
+
+            return 0
+
+        entries = result.get(
+            "playbook_entries",
+            []
+        )
+
+        if not isinstance(
+            entries,
+            list
+        ):
+            return 0
 
         created = 0
 
-        for content, count in pattern_counter.items():
+        for item in entries:
 
-            if count < 2:
+            content = (
+                item.get("content") or ""
+            ).strip()
+
+            if not content:
                 continue
 
             path = (
@@ -64,14 +154,18 @@ class OrgPlaybookGenerationService:
                 source_type="cross_customer_pattern",
                 observation_type="pattern",
                 content=content,
-                supporting_data={
-                    "occurrence_count": count
-                },
-                confidence="high",
-                tags=[
-                    "playbook",
-                    "cross_customer_learning"
-                ]
+                supporting_data={},
+                confidence=item.get(
+                    "confidence",
+                    "medium"
+                ),
+                tags=item.get(
+                    "tags",
+                    [
+                        "playbook",
+                        "cross_customer_learning"
+                    ]
+                )
             )
 
             await self.playbook_service.create_entry(

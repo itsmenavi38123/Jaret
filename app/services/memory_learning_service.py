@@ -1,4 +1,5 @@
 from app.services.customer_memory_service import CustomerMemoryService
+from app.services.claude_service import claude_service
 from app.utils.memory_factory import MemoryFactory
 
 
@@ -23,24 +24,121 @@ class MemoryLearningService:
             if memory.get("observation_type") == "pattern"
         ]
 
-        created = 0
+        if not patterns:
+            return 0
+
+        pattern_payload = []
 
         for pattern in patterns:
 
-            content = (
-                pattern.get("content") or ""
-            ).lower()
-
-            learning_text = self._derive_learning(
-                content
+            pattern_payload.append(
+                {
+                    "content": pattern.get(
+                        "content"
+                    ),
+                    "confidence": pattern.get(
+                        "confidence"
+                    ),
+                    "tags": pattern.get(
+                        "tags",
+                        []
+                    )
+                }
             )
 
-            if not learning_text:
+        system_prompt = """
+You are LightSignal Dreaming Engine.
+
+Your task is to analyze business patterns and derive higher-level learnings.
+
+A learning should represent:
+
+- Owner tendencies
+- Business operating habits
+- Strategic preferences
+- Risk sensitivities
+- Growth behavior
+- Opportunity preferences
+- Operational characteristics
+
+Return STRICT JSON ONLY.
+
+{
+    "learnings": [
+        {
+            "content": "Business learning",
+            "confidence": "low|medium|high",
+            "tags": [
+                "learning"
+            ]
+        }
+    ]
+}
+
+Rules:
+
+- Maximum 10 learnings.
+- Only derive learnings supported by the supplied patterns.
+- Do not invent facts.
+- Avoid duplicate learnings.
+- Keep learnings concise and actionable.
+"""
+
+        try:
+
+            result = await claude_service.json_completion(
+                system_prompt=system_prompt,
+                user_content={
+                    "patterns": pattern_payload
+                },
+                temperature=0.2,
+                max_tokens=3000,
+            )
+
+        except Exception as e:
+
+            return 0
+
+        learnings = result.get(
+            "learnings",
+            []
+        )
+
+        if not isinstance(
+            learnings,
+            list
+        ):
+            return 0
+
+        created = 0
+
+        existing_learning_contents = {
+            (
+                memory.get("content") or ""
+            ).strip().lower()
+            for memory in memories
+            if memory.get("observation_type")
+            == "learning"
+        }
+
+        for learning in learnings:
+
+            content = (
+                learning.get("content") or ""
+            ).strip()
+
+            if not content:
+                continue
+
+            if (
+                content.lower()
+                in existing_learning_contents
+            ):
                 continue
 
             path = (
                 f"/memories/customer_{user_id}/learning/"
-                f"{self._slugify(learning_text)}"
+                f"{self._slugify(content)}"
             )
 
             existing = await self.memory_service.get_by_path(
@@ -53,10 +151,16 @@ class MemoryLearningService:
             memory = MemoryFactory.create_memory(
                 user_id=user_id,
                 observation_type="learning",
-                content=learning_text,
+                content=content,
                 authority="dreaming_pass",
-                confidence="medium",
-                tags=["learning"],
+                confidence=learning.get(
+                    "confidence",
+                    "medium"
+                ),
+                tags=learning.get(
+                    "tags",
+                    ["learning"]
+                ),
                 path=path
             )
 
@@ -83,28 +187,6 @@ class MemoryLearningService:
             for memory in memories
             if memory.get("observation_type") == "learning"
         ]
-
-    def _derive_learning(
-        self,
-        pattern_content: str
-    ):
-
-        if "festival" in pattern_content:
-            return (
-                "Business consistently engages with food and beverage industry events."
-            )
-
-        if "marketing" in pattern_content:
-            return (
-                "Owner rarely acts on marketing-related recommendations."
-            )
-
-        if "cash" in pattern_content:
-            return (
-                "Business is highly sensitive to cash-flow related risks."
-            )
-
-        return None
 
     def _slugify(
         self,

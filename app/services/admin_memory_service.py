@@ -27,27 +27,60 @@ class AdminMemoryService:
     async def get_customer_memories(
         self,
         user_id: str,
+        query: str | None = None,
         include_outdated: bool = False,
         page: int = 1,
-        page_size: int = 10
+        page_size: int = 10,
+        observation_type: str | None = None,
+        agent_name: str | None = None,
+        tags: list[str] | None = None,
+        start_date: datetime | None = None,
+        end_date: datetime | None = None
     ):
 
-        query = {
+        filters = {
             "user_id": user_id
         }
 
         if not include_outdated:
-            query["outdated"] = False
+            filters["outdated"] = False
+
+        if query:
+            filters["content"] = {
+                "$regex": query,
+                "$options": "i"
+            }
+
+        if observation_type:
+            filters["observation_type"] = observation_type
+
+        if agent_name:
+            filters["agent_name"] = agent_name
+
+        if tags:
+            filters["tags"] = {
+                "$in": tags
+            }
+
+        if start_date or end_date:
+
+            filters["created_at"] = {}
+
+            if start_date:
+                filters["created_at"]["$gte"] = start_date
+
+            if end_date:
+                filters["created_at"]["$lte"] = end_date
 
         skip = (page - 1) * page_size
 
         total_count = await self.collection.count_documents(
-            query
+            filters
         )
 
         cursor = (
             self.collection
-            .find(query)
+            .find(filters)
             .sort([
                 ("pinned", -1),
                 ("outdated", 1),

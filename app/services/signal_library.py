@@ -54,6 +54,72 @@ TIER_A_SIGNAL_LIBRARY = [
         },
         "recommended_action": "Investigate declining sales momentum.",
     },
+    {
+        "signal_id": "working_capital_decline",
+        "severity_tier": "hard",
+        "applicability_hint": ["all"],
+        "detection_pattern": {
+            "metric": "quick_ratio",
+            "operator": "<",
+            "threshold": 1,
+        },
+        "recommended_action": "Improve liquidity and working capital management.",
+    },
+    {
+        "signal_id": "ar_collection_deterioration",
+        "severity_tier": "soft",
+        "applicability_hint": ["all"],
+        "detection_pattern": {
+            "metric": "ccc_days",
+            "operator": ">",
+            "threshold": 60,
+        },
+        "recommended_action": "Accelerate collections and reduce receivable aging.",
+    },
+    {
+        "signal_id": "cost_spike_on_key_inputs",
+        "severity_tier": "hard",
+        "applicability_hint": ["all"],
+        "detection_pattern": {
+            "metric": "key_input_cost_increase_pct",
+            "operator": ">",
+            "threshold": 20,
+        },
+        "recommended_action": "Review supplier pricing and renegotiate major cost inputs.",
+    },
+    {
+        "signal_id": "operational_disruption",
+        "severity_tier": "soft",
+        "applicability_hint": ["all"],
+        "detection_pattern": {
+            "metric": "operational_disruption_score",
+            "operator": ">",
+            "threshold": 50,
+        },
+        "recommended_action": "Address operational bottlenecks affecting delivery and execution.",
+    },
+    {
+        "signal_id": "goal_deviation",
+        "severity_tier": "soft",
+        "applicability_hint": ["all"],
+        "detection_pattern": {
+            "metric": "goal_completion_pct",
+            "operator": "<",
+            "threshold": 70,
+        },
+        "recommended_action": "Review business goals and create corrective actions for missed targets.",
+    },
+    {
+        "signal_id": "owner_engagement_decline",
+        "severity_tier": "soft",
+        "applicability_hint": ["all"],
+        "detection_pattern": {
+            "metric": "owner_engagement_score",
+            "operator": "<",
+            "threshold": 50,
+        },
+        "recommended_action": "Increase review cadence and engagement with business performance metrics.",
+    },
 ]
 
 TIER_B_SIGNAL_LIBRARY = [

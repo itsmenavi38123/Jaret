@@ -9,6 +9,8 @@ from app.services.lever_engine_service import lever_engine_service
 from app.services.behavioral_pattern_service import behavioral_pattern_service
 from app.services.cross_business_pattern_service import cross_business_pattern_service
 from app.services.business_health_snapshot_service import business_health_snapshot_service
+from app.services.financial_signal_service import financial_signal_service
+
 
 class BusinessHealthEngineService:
 
@@ -317,6 +319,75 @@ class BusinessHealthEngineService:
         )
 
         metrics.update(customer_health_metrics)
+        today = datetime.now(timezone.utc).date()
+        last_90_days = today - timedelta(days=90)
+
+        revenue_by_customer = []
+        expense_by_vendor = []
+
+        try:
+            revenue_by_customer = await quickbooks_financial_service.get_revenue_by_customer(
+                user_id=user_id,
+                start_date=last_90_days,
+                end_date=today,
+            )
+        except Exception:
+            pass
+
+        try:
+            expense_by_vendor = await quickbooks_financial_service.get_expense_by_vendor(
+                user_id=user_id,
+                start_date=last_90_days,
+                end_date=today,
+            )
+        except Exception:
+            pass
+
+        top_customer_revenue_pct = (
+            revenue_by_customer[0]["pct_of_total"]
+            if revenue_by_customer
+            else None
+        )
+
+        top_vendor_expense_pct = (
+            expense_by_vendor[0]["pct_of_total"]
+            if expense_by_vendor
+            else None
+        )
+        
+        owner_engagement_score = 100
+        goal_completion_pct = 100
+        operational_disruption_score = 0
+        key_input_cost_increase_pct = 0
+        signal_metrics = {
+            "runway_months": financial_overview.get(
+                "cashflow",
+                {},
+            ).get(
+                "runway_months",
+            ),
+            "gross_margin_pct": financial_overview.get(
+                "kpis",
+                {},
+            ).get(
+                "gross_margin_pct",
+            ),
+            "top_customer_revenue_pct": top_customer_revenue_pct,
+            "top_vendor_expense_pct": top_vendor_expense_pct,
+            "revenue_growth_pct": metrics.get("revenue_growth_pct"),
+            "quick_ratio": metrics.get("quick_ratio"),
+            "ccc_days": metrics.get("ccc_days"),
+            "owner_engagement_score": metrics.get("owner_engagement_score", owner_engagement_score),
+            "goal_completion_pct": metrics.get("goal_completion_pct", goal_completion_pct),
+            "operational_disruption_score": metrics.get("operational_disruption_score", operational_disruption_score),
+            "key_input_cost_increase_pct": metrics.get("key_input_cost_increase_pct", key_input_cost_increase_pct),
+        }
+
+        financial_signals = await financial_signal_service.build_financial_signals(
+            user_id=user_id,
+            metrics=signal_metrics,
+            classifier_output=classifier_output or {},
+        )
         signal_surfaces = signal_engine_service.evaluate_signals(
             metrics=metrics,
             classifier_output=classifier_output or {},
@@ -395,6 +466,7 @@ class BusinessHealthEngineService:
 
         final_payload = {
             "overall": overall,
+            "financial_signals": financial_signals,
             "similar_business_patterns": cross_business_patterns.get("similar_business_patterns", []),
             "behavioral_patterns": behavioral_patterns,
             "active_health_alerts": signal_surfaces.get("active_health_alerts", []),

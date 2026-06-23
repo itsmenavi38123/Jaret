@@ -289,8 +289,6 @@ class QuickBooksFinancialService:
             balance_sheet_report=balance_sheet_report,
             cashflow_reports=cashflow_reports,
         )
-        print("profit_snapshots", profit_snapshots)
-
         print("overview", overview)
         return overview
 

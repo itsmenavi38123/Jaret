@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import List
 
 from app.db import get_collection
@@ -27,6 +28,10 @@ class AdminSearchService:
         query: str,
         user_id: str | None = None,
         observation_type: str | None = None,
+        agent_name: str | None = None,
+        tag: str | None = None,
+        start_date: datetime | None = None,
+        end_date: datetime | None = None,
         limit: int = 100
     ) -> List[dict]:
 
@@ -37,6 +42,22 @@ class AdminSearchService:
 
         if observation_type:
             filters["observation_type"] = observation_type
+
+        if agent_name:
+            filters["agent_name"] = agent_name
+
+        if tag:
+            filters["tags"] = tag
+
+        if start_date or end_date:
+
+            filters["created_at"] = {}
+
+            if start_date:
+                filters["created_at"]["$gte"] = start_date
+
+            if end_date:
+                filters["created_at"]["$lte"] = end_date
 
         if query:
             filters["content"] = {

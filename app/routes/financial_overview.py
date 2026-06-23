@@ -6,35 +6,47 @@ from fastapi.responses import JSONResponse
 from app.routes.auth.auth import get_current_user
 from app.services.dashboard_service import dashboard_service
 from app.services.quickbooks_financial_service import quickbooks_financial_service
+from app.services.financial_overview_service import financial_overview_service
 
 router = APIRouter(tags=["financial-overview"])
 from app.services.benchmark_service import benchmark_service
+from app.models.financial_overview_drawer import (
+    FinancialOverviewDrawerRequest,
+    FinancialOverviewAskAIRequest,
+)
+
+from app.services.financial_overview_drawer_service import financial_overview_drawer_service
+from app.services.financial_overview_kpi_preferences_service import financial_overview_kpi_preferences_service
+from app.models.financial_overview_kpi_preferences_request import FinancialOverviewKPIPreferencesRequest
+
+from fastapi.encoders import jsonable_encoder
+
 from app.db import get_collection
 import re
 
-@router.get("/financial-overview")
-async def get_financial_overview(
-    current_user: dict = Depends(get_current_user),
-):
-    """
-    Aggregate a financial overview for the authenticated user's connected QuickBooks company.
-    """
-    try:
-        overview = await quickbooks_financial_service.get_financial_overview(
-            user_id=current_user["id"],
-        )
-    except HTTPException as exc:
-        raise exc
-    except Exception as exc:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to build financial overview: {exc}",
-        ) from exc
+# @router.get("/financial-overview")
+# async def get_financial_overview(
+#     current_user: dict = Depends(get_current_user),
+# ):
+#     """
+#     Aggregate a financial overview for the authenticated user's connected QuickBooks company.
+#     """
+#     try:
+#         overview = await quickbooks_financial_service.get_financial_overview(
+#             user_id=current_user["id"],
+#         )
+#     except HTTPException as exc:
+#         raise exc
+#     except Exception as exc:
+#         raise HTTPException(
+#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+#             detail=f"Failed to build financial overview: {exc}",
+#         ) from exc
 
-    return JSONResponse(
-        status_code=status.HTTP_200_OK,
-        content=jsonable_encoder({"success": True, "data": overview}),
-    )
+#     return JSONResponse(
+#         status_code=status.HTTP_200_OK,
+#         content=jsonable_encoder({"success": True, "data": overview}),
+#     )
 
 
 @router.get("/dashboard/kpis")
@@ -178,3 +190,119 @@ async def get_dashboard_alerts(
         content=jsonable_encoder({"success": True, "data": alerts_data}),
     )
 
+
+@router.get("/financial-overview")
+async def get_financial_overview_v2(
+    current_user: dict = Depends(get_current_user),
+):
+    data = await financial_overview_service.get_financial_overview_v2(
+        user_id=current_user["id"],
+    )
+
+    return JSONResponse(
+        status_code=status.HTTP_200_OK,
+        content=jsonable_encoder(
+            {
+                "success": True,
+                "data": data,
+            }
+        ),
+    )
+
+
+@router.post("/financial-overview/drawer")
+async def get_financial_overview_drawer(
+    body: FinancialOverviewDrawerRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    try:
+        result = await financial_overview_drawer_service.explain(
+            payload=body.model_dump(),
+        )
+
+    except HTTPException as exc:
+        raise exc
+
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate drawer data: {exc}",
+        )
+
+    return JSONResponse(
+        status_code=status.HTTP_200_OK,
+        content={
+            "success": True,
+            "data": result,
+        },
+    )
+
+
+@router.post("/financial-overview/ask-ai")
+async def ask_financial_overview_ai(
+    body: FinancialOverviewAskAIRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    try:
+        result = await financial_overview_drawer_service.ask_ai(
+            payload=body.model_dump(),
+        )
+
+    except HTTPException as exc:
+        raise exc
+
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate AI response: {exc}",
+        )
+
+    return JSONResponse(
+        status_code=status.HTTP_200_OK,
+        content=jsonable_encoder(
+            {
+                "success": True,
+                "data": result,
+            }
+        ),
+    )
+
+@router.get("/financial-overview/kpi-preferences")
+async def get_financial_overview_kpi_preferences(
+    current_user: dict = Depends(get_current_user),
+):
+    result = await financial_overview_kpi_preferences_service.get_preferences(
+        user_id=current_user["id"],
+    )
+
+    return JSONResponse(
+        status_code=status.HTTP_200_OK,
+        content=jsonable_encoder(
+            {
+                "success": True,
+                "data": result,
+            }
+        ),
+    )
+
+@router.post("/financial-overview/kpi-preferences")
+async def save_financial_overview_kpi_preferences(
+    body: FinancialOverviewKPIPreferencesRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    result = await financial_overview_kpi_preferences_service.save_preferences(
+        user_id=current_user["id"],
+        hidden_metric_ids=body.hidden_metric_ids,
+        pinned_metric_ids=body.pinned_metric_ids,
+        tile_order=body.tile_order,
+    )
+
+    return JSONResponse(
+        status_code=status.HTTP_200_OK,
+        content=jsonable_encoder(
+            {
+                "success": True,
+                "data": result,
+            }
+        ),
+    )

@@ -17,7 +17,7 @@ class ClaudeService:
         # Text-path / default model (Opus or Sonnet -- whatever is configured).
         self.model = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-6")
 
-        # Vision-path models. FABLE_ENABLED is the single "easy to change" switch:
+# Vision-path models. FABLE_ENABLED is the single "easy to change" switch:
         # flip it to false in .env to force everyone to Opus-vision regardless of
         # whether Fable is actually reachable (e.g. if Fable comes back but you
         # want to stay off it for cost reasons). Leave it true (default) and the

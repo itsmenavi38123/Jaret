@@ -336,7 +336,7 @@ async def customers_data_request(request: Request):
 
     print(f"📦 Body (raw): {body[:200]}")
 
-    verify_shopify_hmac(body, hmac_header)  # ❗ DO NOT wrap in try
+    verify_shopify_hmac(body, hmac_header)
 
     print("✅ customers/data_request processed")
 
