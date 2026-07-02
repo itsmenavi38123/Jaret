@@ -13,7 +13,7 @@ from app.services.research_scout_tools import (
     firecrawl_search_tool,
     firecrawl_scrape_tool,
 )
-from app.services.lightsignal_memory_tool import LightSignalMemoryTool
+from app.services.lightsignal_memory_tool import LightSignalMemoryTool, LightSignalAsyncMemoryTool
 
 class ResearchScoutService:
     """
@@ -131,9 +131,10 @@ class ResearchScoutService:
             "outstanding_ar": opportunities_profile.get("outstanding_ar", []) if opportunities_profile else [],
             "runway_trend": opportunities_profile.get("runway_trend", "stable") if opportunities_profile else "stable",
 
-            "demand_strain_next_30d": opportunities_profile.get("demand_strain_next_30d"),
-            "demand_strain_next_60d": opportunities_profile.get("demand_strain_next_60d"),
-            "demand_strain_next_90d": opportunities_profile.get("demand_strain_next_90d"),
+            "demand_strain_next_30d": opportunities_profile.get("demand_strain_next_30d") if opportunities_profile else None,
+            "demand_strain_next_60d": opportunities_profile.get("demand_strain_next_60d") if opportunities_profile else None,
+            "demand_strain_next_90d": opportunities_profile.get("demand_strain_next_90d") if opportunities_profile else None,
+            "latest_demand_forecast": opportunities_profile.get("latest_demand_forecast") if opportunities_profile else None,
 
             "permits_and_licenses": opportunities_profile.get("permits_and_licenses", []) if opportunities_profile else [],
 
@@ -274,7 +275,7 @@ class ResearchScoutService:
         """Generate response using OpenAI with web search tools"""
                 
         # Define tools
-        memory_tool = LightSignalMemoryTool(user_id=user_id)
+        memory_tool = LightSignalAsyncMemoryTool(user_id=user_id)
         tools = [
             memory_tool,
             firecrawl_search_tool,
@@ -593,6 +594,7 @@ NEVER estimate event revenue without stating conversion_rate and attendance expl
                     card["demand_strain_next_30d"] = scope.get("demand_strain_next_30d")
                     card["demand_strain_next_60d"] = scope.get("demand_strain_next_60d")
                     card["demand_strain_next_90d"] = scope.get("demand_strain_next_90d")
+                    card["latest_demand_forecast"] = scope.get("latest_demand_forecast")
 
                     card["permits_and_licenses"] = scope.get("permits_and_licenses", [])
 
@@ -612,8 +614,8 @@ NEVER estimate event revenue without stating conversion_rate and attendance expl
             return parsed
         
         except json.JSONDecodeError:
-            print("Failed to parse OpenAI JSON response")
-            raise ValueError("Invalid JSON response from OpenAI")
+            print("Failed to parse Claude JSON response")
+            raise ValueError("Invalid JSON response from Claude")
 
     async def _get_weather_badge(
         self,

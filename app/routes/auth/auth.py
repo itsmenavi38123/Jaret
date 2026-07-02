@@ -129,6 +129,7 @@ async def _build_user_payload(user_doc: Dict[str, Any]) -> Dict[str, Any]:
     user_info = {
         "id": user_doc["_id"],
         "email": user_doc["email"],
+        "name": user_doc.get("full_name"),
         "role": user_doc.get("role"),
         "created_at": created_at.isoformat() if created_at else None,
     }

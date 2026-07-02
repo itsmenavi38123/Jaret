@@ -1,3 +1,4 @@
+import json
 from anthropic import beta_async_tool
 
 from app.services.firecrawl_service import firecrawl_service
@@ -15,11 +16,12 @@ async def firecrawl_search_tool(
     industry trends, and business intelligence using Firecrawl.
     """
 
-    return await firecrawl_service.search(
+    res = await firecrawl_service.search(
         query=query,
         recency_days=recency_days,
         max_results=max_results,
     )
+    return json.dumps(res, default=str)
 
 
 @beta_async_tool
@@ -32,6 +34,7 @@ async def firecrawl_scrape_tool(
     pricing research, and source analysis.
     """
 
-    return await firecrawl_service.scrape(
+    res = await firecrawl_service.scrape(
         url=url,
     )
+    return json.dumps(res, default=str)

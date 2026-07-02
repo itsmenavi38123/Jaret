@@ -191,35 +191,77 @@ class ScoringService:
 
         days_until = (start_date - datetime.utcnow()).days
 
-        strain = None
+        # Retrieve the handoff forecast object
+        handoff = business_context.get("latest_demand_forecast")
+        if not handoff or not isinstance(handoff, dict):
+            # Fallback to checking the retired scalars for backward compatibility
+            strain = None
 
-        if days_until <= 30:
-            strain = business_context.get("demand_strain_next_30d")
+            if days_until <= 30:
+                strain = business_context.get("demand_strain_next_30d")
 
-        elif days_until <= 60:
-            strain = business_context.get("demand_strain_next_60d")
+            elif days_until <= 60:
+                strain = business_context.get("demand_strain_next_60d")
 
-        elif days_until <= 90:
-            strain = business_context.get("demand_strain_next_90d")
+            elif days_until <= 90:
+                strain = business_context.get("demand_strain_next_90d")
 
-        if strain is None:
-            return 15
+            if strain is None:
+                return 15
 
-        strain = self._safe_float(strain)
+            strain = self._safe_float(strain)
 
-        if strain < 0.08:
+            if strain < 0.08:
+                return 25
+
+            if strain < 0.15:
+                return 20
+
+            if strain < 0.25:
+                return 12
+
+            if strain < 0.35:
+                return 6
+
+            return 2
+
+        # Extract level from handoff object
+        level = handoff.get("level", "steady")
+
+        # Try to find a more specific window if possible
+        windows = handoff.get("windows", [])
+        matched_window = None
+        for w in windows:
+            w_name = w.get("window", "").lower()
+            if days_until <= 7 and ("weekend" in w_name or "week" in w_name or "current" in w_name or "this" in w_name):
+                matched_window = w
+                break
+            elif days_until <= 30 and ("month" in w_name or "30" in w_name):
+                matched_window = w
+                break
+            elif days_until <= 60 and ("60" in w_name or "2 months" in w_name or "next month" in w_name):
+                matched_window = w
+                break
+            elif days_until <= 90 and ("90" in w_name or "quarter" in w_name or "3 months" in w_name):
+                matched_window = w
+                break
+
+        if matched_window:
+            level = matched_window.get("level", level)
+
+        # Map the text level/severity to score
+        # Elevated/high demand -> high strain -> low favorability (6 or 2)
+        # Steady/neutral/normal demand -> medium strain -> medium favorability (15 or 12)
+        # Soft/low demand -> low strain -> high favorability (20 or 25)
+        level_str = str(level).lower().strip()
+        if any(keyword in level_str for keyword in ["soft", "low", "weak", "green"]):
             return 25
-
-        if strain < 0.15:
-            return 20
-
-        if strain < 0.25:
-            return 12
-
-        if strain < 0.35:
+        elif any(keyword in level_str for keyword in ["elevated", "high", "busy", "pressing", "red"]):
             return 6
-
-        return 2
+        elif any(keyword in level_str for keyword in ["watch", "amber"]):
+            return 12
+        else:  # steady, flat, normal, white, etc.
+            return 15
 
     def _calculate_timing_vs_complexity_score(
         self,

@@ -98,6 +98,7 @@ class OpportunityRescoreService:
                 "demand_strain_next_30d": opportunity.get("demand_strain_next_30d"),
                 "demand_strain_next_60d": opportunity.get("demand_strain_next_60d"),
                 "demand_strain_next_90d": opportunity.get("demand_strain_next_90d"),
+                "latest_demand_forecast": opportunity.get("latest_demand_forecast"),
                 "permits_and_licenses": opportunity.get("permits_and_licenses", []),
             }
 
@@ -155,6 +156,7 @@ class OpportunityRescoreService:
                 "demand_strain_next_30d": opportunity.get("demand_strain_next_30d"),
                 "demand_strain_next_60d": opportunity.get("demand_strain_next_60d"),
                 "demand_strain_next_90d": opportunity.get("demand_strain_next_90d"),
+                "latest_demand_forecast": opportunity.get("latest_demand_forecast"),
                 "permits_and_licenses": opportunity.get("permits_and_licenses", []),
             }
 
@@ -212,6 +214,7 @@ class OpportunityRescoreService:
                 "demand_strain_next_30d": opportunity.get("demand_strain_next_30d"),
                 "demand_strain_next_60d": opportunity.get("demand_strain_next_60d"),
                 "demand_strain_next_90d": opportunity.get("demand_strain_next_90d"),
+                "latest_demand_forecast": opportunity.get("latest_demand_forecast"),
                 "permits_and_licenses": opportunity.get("permits_and_licenses", []),
             }
 
@@ -272,6 +275,7 @@ class OpportunityRescoreService:
                 "demand_strain_next_30d": opportunity.get("demand_strain_next_30d"),
                 "demand_strain_next_60d": opportunity.get("demand_strain_next_60d"),
                 "demand_strain_next_90d": opportunity.get("demand_strain_next_90d"),
+                "latest_demand_forecast": opportunity.get("latest_demand_forecast"),
                 "permits_and_licenses": opportunity.get("permits_and_licenses", []),
             }
 
@@ -332,6 +336,7 @@ class OpportunityRescoreService:
                 "demand_strain_next_30d": opportunity.get("demand_strain_next_30d"),
                 "demand_strain_next_60d": opportunity.get("demand_strain_next_60d"),
                 "demand_strain_next_90d": opportunity.get("demand_strain_next_90d"),
+                "latest_demand_forecast": opportunity.get("latest_demand_forecast"),
                 "permits_and_licenses": opportunity.get("permits_and_licenses", []),
             }
 
@@ -392,6 +397,7 @@ class OpportunityRescoreService:
                 "demand_strain_next_30d": opportunity.get("demand_strain_next_30d"),
                 "demand_strain_next_60d": opportunity.get("demand_strain_next_60d"),
                 "demand_strain_next_90d": opportunity.get("demand_strain_next_90d"),
+                "latest_demand_forecast": opportunity.get("latest_demand_forecast"),
                 "permits_and_licenses": opportunity.get("permits_and_licenses", []),
             }
 

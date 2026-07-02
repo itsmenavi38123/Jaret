@@ -153,6 +153,8 @@ class ClaudeService:
                 print(f"[CLAUDE] Error during vision_json_completion: {str(e)}")
                 raise e
 
+
+
     async def chat_completion(
         self,
         system_prompt: str,
@@ -178,6 +180,68 @@ class ClaudeService:
             return ClaudeResponse(response.content[0].text, model)
         except Exception as e:
             print(f"[CLAUDE] Error during chat_completion: {str(e)}")
+            raise e
+
+    async def text_completion(
+        self,
+        system_prompt: str,
+        user_content: Optional[str] = None,
+        messages: Optional[List[Dict[str, Any]]] = None,
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
+        **kwargs
+    ) -> str:
+        res = await self.chat_completion(
+            system_prompt=system_prompt,
+            user_content=user_content,
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            **kwargs
+        )
+        return str(res)
+
+    async def tool_runner(
+        self,
+        system_prompt: str,
+        messages: List[Dict[str, Any]],
+        tools: List[Any],
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
+        **kwargs
+    ) -> Any:
+        model = self.text_model
+        try:
+            print(f"[CLAUDE] tool_runner -> model={model}")
+            params = {
+                "model": model,
+                "max_tokens": max_tokens or 4096,
+                "system": system_prompt,
+                "messages": messages,
+                "tools": tools,
+            }
+            if temperature is not None:
+                params["temperature"] = temperature
+
+            # Call client.beta.messages.tool_runner
+            runner = self.client.beta.messages.tool_runner(**params)
+            response = await runner.until_done()
+            return response
+        except Exception as e:
+            err_msg = str(e).lower()
+            if "temperature" in err_msg and "deprecated" in err_msg and temperature is not None:
+                print(f"[CLAUDE] Temperature is deprecated for model {model} in tool_runner. Retrying without temperature...")
+                params_copy = dict(params)
+                if "temperature" in params_copy:
+                    del params_copy["temperature"]
+                try:
+                    runner = self.client.beta.messages.tool_runner(**params_copy)
+                    response = await runner.until_done()
+                    return response
+                except Exception as retry_err:
+                    print(f"[CLAUDE] Error during tool_runner retry: {str(retry_err)}")
+                    raise retry_err
+            print(f"[CLAUDE] Error during tool_runner: {str(e)}")
             raise e
 
 claude_service = ClaudeService()
