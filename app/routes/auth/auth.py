@@ -326,6 +326,12 @@ async def login(credentials: UserLogin):
                 content={"success": False, "error": "Invalid email or password"}
             )
 
+        if not verify_password(credentials.password, user_doc.get("password_hash", "")):
+            return JSONResponse(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                content={"success": False, "error": "Invalid email or password"}
+            )
+
         if not user_doc.get("is_verified", False):
             return JSONResponse(
                 status_code=status.HTTP_403_FORBIDDEN,
