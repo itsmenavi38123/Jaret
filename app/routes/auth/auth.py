@@ -88,6 +88,11 @@ class RefreshRequest(BaseModel):
     refresh_token: str
 class EmailContinueRequest(BaseModel):
     token: str
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str = Field(min_length=6)
 
 
 async def get_current_user(token: str = Depends(oauth2_scheme)):
@@ -516,6 +521,179 @@ async def verify_email(token: str):
             "continue_token": continue_token
         }
     )
+
+async def create_password_reset_token(user_id: str) -> str:
+    """
+    Creates a single-use password reset token (30 min expiry)
+    and stores its hash in DB.
+    """
+    raw_token = secrets.token_urlsafe(32)
+    token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
+
+    tokens = get_collection("password_reset_tokens")
+
+    await tokens.insert_one({
+        "_id": str(uuid4()),
+        "user_id": user_id,
+        "token_hash": token_hash,
+        "used": False,
+        "expires_at": _now_utc() + timedelta(minutes=30),
+        "created_at": _now_utc(),
+    })
+
+    return raw_token
+
+
+@router.post("/forgot-password")
+async def forgot_password(payload: ForgotPasswordRequest):
+    """
+    Sends a password reset link to the user's email if an account exists.
+    Always returns a generic success message to avoid leaking whether the email is registered.
+    """
+    try:
+        users = get_collection("users")
+        user_doc = await users.find_one({"email": payload.email})
+
+        if user_doc:
+            tokens = get_collection("password_reset_tokens")
+            # Invalidate any previous unused reset links for this user
+            await tokens.update_many(
+                {"user_id": user_doc["_id"], "used": False},
+                {"$set": {"used": True}}
+            )
+
+            reset_token = await create_password_reset_token(user_doc["_id"])
+            reset_url = f"https://lightsignal.app/auth/reset-password?token={reset_token}"
+
+            send_email(
+                to_email=user_doc["email"],
+                subject="Reset your LightSignal password",
+                html_content=f"""
+                <h2>Reset your password</h2>
+                <p>We received a request to reset your LightSignal password.</p>
+                <a href="{reset_url}"
+                   style="display:inline-block;padding:12px 18px;
+                          background:#2563eb;color:#ffffff;
+                          text-decoration:none;border-radius:6px;">
+                   Reset Password
+                </a>
+                <p>This link will expire in 30 minutes and can only be used once.</p>
+                <p>If you did not request this, you can safely ignore this email.</p>
+                """
+            )
+
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content={
+                "success": True,
+                "message": "If an account exists with this email, a password reset link has been sent."
+            }
+        )
+
+    except Exception as e:
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"success": False, "error": "Internal server error"}
+        )
+
+
+@router.get("/reset-password/verify")
+async def verify_reset_password_token(token: str):
+    """
+    Checks whether a password reset link is still valid, without consuming it.
+    Called by the frontend when the reset page opens, before showing the new-password form.
+    """
+    token_hash = hashlib.sha256(token.encode()).hexdigest()
+    tokens = get_collection("password_reset_tokens")
+
+    record = await tokens.find_one({"token_hash": token_hash})
+
+    if not record:
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content={"success": False, "error": "Invalid or expired reset link"}
+        )
+
+    expires_at = record.get("expires_at")
+    if expires_at and expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+
+    if record.get("used") or expires_at < _now_utc():
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content={"success": False, "error": "Invalid or expired reset link"}
+        )
+
+    return JSONResponse(
+        status_code=status.HTTP_200_OK,
+        content={"success": True, "message": "Reset link is valid"}
+    )
+
+
+@router.post("/reset-password")
+async def reset_password(payload: ResetPasswordRequest):
+    """
+    Verifies a password reset token and sets the new password.
+    The token is single-use: it is marked used as part of a successful reset
+    and can never be opened again afterwards.
+    """
+    try:
+        token_hash = hashlib.sha256(payload.token.encode()).hexdigest()
+        tokens = get_collection("password_reset_tokens")
+
+        record = await tokens.find_one({"token_hash": token_hash})
+
+        if not record:
+            return JSONResponse(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                content={"success": False, "error": "Invalid or expired reset link"}
+            )
+
+        expires_at = record.get("expires_at")
+        if expires_at and expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+
+        if record.get("used") or expires_at < _now_utc():
+            return JSONResponse(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                content={"success": False, "error": "Invalid or expired reset link"}
+            )
+
+        users = get_collection("users")
+        user_doc = await users.find_one({"_id": record["user_id"]})
+        if not user_doc:
+            return JSONResponse(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                content={"success": False, "error": "Invalid or expired reset link"}
+            )
+
+        # Atomically claim the token so a concurrent request can't reuse it
+        claim = await tokens.update_one(
+            {"_id": record["_id"], "used": False},
+            {"$set": {"used": True}}
+        )
+        if claim.modified_count == 0:
+            return JSONResponse(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                content={"success": False, "error": "Invalid or expired reset link"}
+            )
+
+        await users.update_one(
+            {"_id": user_doc["_id"]},
+            {"$set": {"password_hash": hash_password(payload.new_password)}}
+        )
+
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content={"success": True, "message": "Password has been reset successfully."}
+        )
+
+    except Exception as e:
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"success": False, "error": "Internal server error"}
+        )
+
 
 @router.post("/email-continue")
 async def email_continue(payload: EmailContinueRequest):

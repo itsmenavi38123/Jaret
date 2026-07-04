@@ -146,3 +146,8 @@ async def create_indexes() -> None:
     notification_settings = get_collection("notification_settings")
     await notification_settings.create_index("user_id", unique=True)
     await kpi_preferences.create_index("updated_at")
+
+    password_reset_tokens = get_collection("password_reset_tokens")
+    await password_reset_tokens.create_index("user_id")
+    await password_reset_tokens.create_index("token_hash", unique=True)
+    await password_reset_tokens.create_index("expires_at")
