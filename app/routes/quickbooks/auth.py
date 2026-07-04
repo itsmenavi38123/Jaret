@@ -114,6 +114,56 @@ async def get_token_by_realm(realm_id: str, current_user: dict = Depends(get_cur
 
 from fastapi.responses import RedirectResponse
 
+@router.get("/status")
+async def get_status(current_user: dict = Depends(get_current_user)):
+    """
+    Returns whether the authenticated user has an active QuickBooks connection.
+    """
+    user_id = current_user["id"]
+    tokens = await quickbooks_token_service.get_tokens_by_user(user_id)
+    active_tokens = [token for token in tokens if token.is_active]
+
+    return JSONResponse(
+        status_code=status.HTTP_200_OK,
+        content=jsonable_encoder({
+            "success": True,
+            "data": {
+                "connected": len(active_tokens) > 0,
+                "realm_ids": [token.realm_id for token in active_tokens]
+            }
+        })
+    )
+
+@router.post("/disconnect")
+async def disconnect(current_user: dict = Depends(get_current_user)):
+    """
+    Disconnects QuickBooks for the authenticated user: revokes the refresh
+    token(s) with Intuit and deactivates the stored token record(s).
+    """
+    user_id = current_user["id"]
+    tokens = await quickbooks_token_service.get_tokens_by_user(user_id)
+    active_tokens = [token for token in tokens if token.is_active]
+
+    if not active_tokens:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No active QuickBooks connection found"
+        )
+
+    for token in active_tokens:
+        await quickbooks_service.revoke_token(token.refresh_token)
+        await quickbooks_token_service.deactivate_token(token.id)
+
+    return JSONResponse(
+        status_code=status.HTTP_200_OK,
+        content=jsonable_encoder({
+            "success": True,
+            "data": {
+                "connected": False
+            }
+        })
+    )
+
 @router.get("/callback")
 async def callback(request: Request):
     code = request.query_params.get("code")

@@ -13,12 +13,24 @@ from app.db import get_collection
 from app.models.pos_models import OauthState
 from app.routes.auth.auth import get_current_user
 from app.services import square_service, shopify_service, clover_service, lightspeed_service
+from app.services.quickbooks_token_service import quickbooks_token_service
 from fastapi.responses import RedirectResponse
 import base64
 
 router = APIRouter(tags=["integrations"])
 
 ALLOWED_PROVIDERS = {"square", "shopify", "clover", "lightspeed", "toast"}
+DISCONNECTABLE_POS_PROVIDERS = {"square", "shopify"}
+
+
+class DisconnectPosRequest(BaseModel):
+    provider: str
+
+    @field_validator("provider")
+    def validate_provider(cls, v: str) -> str:
+        if v not in DISCONNECTABLE_POS_PROVIDERS:
+            raise ValueError("Invalid provider")
+        return v
 
 
 class ConnectPosRequest(BaseModel):
@@ -113,6 +125,58 @@ def validate_shopify_callback(query_params: dict[str, str]) -> None:
     ).hexdigest()
     if not hmac.compare_digest(digest, provided_hmac):
         raise HTTPException(status_code=400, detail="Invalid Shopify callback signature")
+
+
+@router.get("/integrations/status")
+async def integrations_status(current_user: dict = Depends(get_current_user)):
+    """
+    Returns whether the authenticated user has an active connection for
+    QuickBooks, Square, and Shopify.
+    """
+    user_id = current_user["id"]
+
+    quickbooks_tokens = await quickbooks_token_service.get_tokens_by_user(user_id)
+    quickbooks_connected = any(token.is_active for token in quickbooks_tokens)
+
+    pos_col = get_collection("user_pos_access")
+    square_doc = await pos_col.find_one({"user_id": user_id, "provider": "square"})
+    shopify_doc = await pos_col.find_one({"user_id": user_id, "provider": "shopify"})
+
+    return {
+        "success": True,
+        "data": {
+            "quickbooks": quickbooks_connected,
+            "square": square_doc is not None,
+            "shopify": shopify_doc is not None,
+        }
+    }
+
+
+@router.post("/integrations/disconnect")
+async def disconnect_pos(
+    body: DisconnectPosRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Disconnects a Square or Shopify connection for the authenticated user.
+    """
+    user_id = current_user["id"]
+    pos_col = get_collection("user_pos_access")
+
+    result = await pos_col.delete_one({"user_id": user_id, "provider": body.provider})
+
+    if result.deleted_count == 0:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No active {body.provider} connection found"
+        )
+
+    return {
+        "success": True,
+        "data": {
+            "connected": False
+        }
+    }
 
 
 @router.post("/integrations/connect")

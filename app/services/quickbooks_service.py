@@ -13,6 +13,7 @@ from app.models.system_health_logs import SystemHealthLogCreate
 
 AUTH_BASE_URL = "https://appcenter.intuit.com/connect/oauth2"
 TOKEN_URL = "https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer"
+REVOKE_URL = "https://developer.api.intuit.com/v2/oauth2/tokens/revoke"
 
 API_BASE_URLS = {
     "production": "https://quickbooks.api.intuit.com",
@@ -159,6 +160,27 @@ async def refresh_access_token(refresh_token: str) -> Dict[str, Any]:
     )
 
     return payload
+
+
+async def revoke_token(refresh_token: str) -> None:
+    """Revoke a QuickBooks refresh token with Intuit so it can no longer be used."""
+
+    headers = {
+        "Authorization": f"Basic {_basic_auth_header()}",
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(REVOKE_URL, json={"token": refresh_token}, headers=headers)
+
+    except Exception:
+        logger.exception("QuickBooks token revoke failed to reach Intuit")
+        return
+
+    if response.status_code != httpx.codes.OK:
+        logger.error("QuickBooks token revoke error: %s", response.text)
 
 
 def token_has_expired(created_at: datetime, expires_in_seconds: int, safety_buffer: int = 120) -> bool:
