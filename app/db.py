@@ -142,4 +142,7 @@ async def create_indexes() -> None:
 
     kpi_preferences = get_collection("financial_overview_kpi_preferences")
     await kpi_preferences.create_index("user_id",unique=True)
+
+    notification_settings = get_collection("notification_settings")
+    await notification_settings.create_index("user_id", unique=True)
     await kpi_preferences.create_index("updated_at")
