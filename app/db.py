@@ -151,3 +151,8 @@ async def create_indexes() -> None:
     await password_reset_tokens.create_index("user_id")
     await password_reset_tokens.create_index("token_hash", unique=True)
     await password_reset_tokens.create_index("expires_at")
+
+    admin_sessions = get_collection("admin_sessions")
+    await admin_sessions.create_index("user_id")
+    await admin_sessions.create_index("expires_at")
+    await admin_sessions.create_index([("user_id", 1), ("revoked", 1)])

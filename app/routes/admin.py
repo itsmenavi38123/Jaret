@@ -12,7 +12,7 @@ from fastapi import Response
 import hashlib
 from app.services.email_service import send_email
 from app.config import _now_utc
-from app.routes.auth.auth import get_current_user
+from app.routes.admin_auth import require_admin_session
 from app.services.admin_logs_service import admin_logs_service, AdminLogCreate
 from app.models.beta_profile import BetaProfile, BetaCohort, BetaStatus
 from app.services.feature_usage_service import feature_usage_service
@@ -33,25 +33,13 @@ admin_memory_service = AdminMemoryService()
 admin_search_service = AdminSearchService()
 memory_review_service = MemoryReviewService()
 
-async def require_admin_role(current_user: dict = Depends(get_current_user)):
-    """Dependency to ensure user has Admin or Owner role"""
-    users_collection = get_collection("users")
-    user_doc = await users_collection.find_one({"_id": current_user["id"]})
-
-    if not user_doc:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="User not found"
-        )
-
-    user_role = user_doc.get("role", "Client")
-    if user_role not in ["Admin", "Owner"]:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin access required"
-        )
-
-    return current_user
+async def require_admin_role(current_admin: dict = Depends(require_admin_session)):
+    """
+    Dependency to ensure the caller holds a valid, unexpired, unrevoked admin
+    session (see app.routes.admin_auth) - gated on the dedicated `is_admin`
+    flag, not the customer-facing `role` string.
+    """
+    return current_admin
 
 # Request body models for admin actions
 class UserActionRequest(BaseModel):

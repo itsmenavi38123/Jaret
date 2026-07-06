@@ -30,6 +30,7 @@ from app.services.new_demand_forecast import router as demand_forecast_router
 from app.routes.asset_management import router as asset_management_router
 from app.routes.preparation import router as preparation_router
 from app.routes.admin import router as admin_router
+from app.routes.admin_auth import router as admin_auth_router
 from app.routes.integrations import router as integrations_router
 from app.routes.documents import router as documents_router
 from app.routes.notification_settings import router as notification_settings_router
@@ -78,6 +79,7 @@ app.include_router(asset_management_router, prefix="/api")
 app.include_router(preparation_router, prefix="/api")
 app.include_router(integrations_router, prefix="/api")
 app.include_router(admin_router)
+app.include_router(admin_auth_router)
 app.include_router(documents_router, prefix="/documents")
 app.include_router(notification_settings_router, prefix="/api/notification-settings")
 
