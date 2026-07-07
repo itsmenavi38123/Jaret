@@ -342,19 +342,34 @@ async def ai_opportunities_search(
                 ),
                 media_type="application/json",
             )
-        business_profiles = get_collection("business_profiles")
-        business_profile = await business_profiles.find_one({"user_id": user_id})
 
-        opportunities_profiles = get_collection("opportunities_profiles")
-        opportunities_profile = await opportunities_profiles.find_one({"user_id": user_id})
-        
-        result = await research_scout.search_opportunities(
-            query=request.query,
-            user_id=user_id,
-            business_profile=business_profile,
-            opportunities_profile=opportunities_profile,
-            mode=mode,
-        )
+        from app.services.cost_guardrail_service import cost_guardrail_service
+        allowed, reason = await cost_guardrail_service.check_and_reserve(user_id, "scout_ondemand")
+        if not allowed:
+            detail_msg = (
+                "You've reached today's limit for this action. It resets at midnight."
+                if reason == "surface_cap" else
+                "You've reached today's usage limit for your account. It resets at midnight. Contact support if you need more."
+            )
+            raise HTTPException(status_code=429, detail=detail_msg)
+
+        try:
+            business_profiles = get_collection("business_profiles")
+            business_profile = await business_profiles.find_one({"user_id": user_id})
+
+            opportunities_profiles = get_collection("opportunities_profiles")
+            opportunities_profile = await opportunities_profiles.find_one({"user_id": user_id})
+            
+            result = await research_scout.search_opportunities(
+                query=request.query,
+                user_id=user_id,
+                business_profile=business_profile,
+                opportunities_profile=opportunities_profile,
+                mode=mode,
+            )
+        except Exception as e:
+            await cost_guardrail_service.refund_reserve(user_id, "scout_ondemand")
+            raise e
 
         if ( result.get("opportunities") and result["opportunities"].get("cards")):
             result["opportunities"]["cards"] = (result["opportunities"]["cards"][:8])

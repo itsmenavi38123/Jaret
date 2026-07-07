@@ -43,32 +43,52 @@ async def upload_document(
     results = []
 
     for file in files:
-        content = await file.read()
-        doc_id = await store.save_uploaded_file(
-            customer_id=user_id,
-            file_content=content,
-            filename=file.filename,
-            uploaded_by=user_id,
-            location_id=location_id
-        )
-        
-        await store.update_status(doc_id, "reading")
-        await store.convert_to_pdf(doc_id)
-        
-        print(f"DEBUG: Starting extraction for {doc_id}...")
+        from app.services.cost_guardrail_service import cost_guardrail_service
+        allowed, reason = await cost_guardrail_service.check_and_reserve(user_id, "dia_upload")
+        if not allowed:
+            detail_msg = (
+                "You've reached today's limit for this action. It resets at midnight."
+                if reason == "surface_cap" else
+                "You've reached today's usage limit for your account. It resets at midnight. Contact support if you need more."
+            )
+            raise HTTPException(status_code=429, detail=detail_msg)
+
         try:
-            print(f"DEBUG: Calling agent.process_document with hint: {hint}")
-            extraction_data = await agent.process_document(
-                document_id=doc_id, 
-                hint=hint, 
-                location_label=location_id
+            content = await file.read()
+            doc_id = await store.save_uploaded_file(
+                customer_id=user_id,
+                file_content=content,
+                filename=file.filename,
+                uploaded_by=user_id,
+                location_id=location_id
             )
             
-            if isinstance(extraction_data, dict) and extraction_data.get("status") == "failed":
-                print(f"DEBUG: AI returned failure for {doc_id}: {extraction_data.get('error')}")
-                await store.update_status(doc_id, "failed")
-                results.append({"document_id": doc_id, "status": "failed", "error": extraction_data.get("error")})
-                continue
+            await store.update_status(doc_id, "reading")
+            await store.convert_to_pdf(doc_id)
+            
+            print(f"DEBUG: Starting extraction for {doc_id}...")
+            try:
+                print(f"DEBUG: Calling agent.process_document with hint: {hint}")
+                extraction_data = await agent.process_document(
+                    document_id=doc_id, 
+                    hint=hint, 
+                    location_label=location_id
+                )
+                
+                if isinstance(extraction_data, dict) and extraction_data.get("status") == "failed":
+                    print(f"DEBUG: AI returned failure for {doc_id}: {extraction_data.get('error')}")
+                    await store.update_status(doc_id, "failed")
+                    results.append({"document_id": doc_id, "status": "failed", "error": extraction_data.get("error")})
+                    await cost_guardrail_service.refund_reserve(user_id, "dia_upload")
+                    continue
+            except Exception as inner_exc:
+                await cost_guardrail_service.refund_reserve(user_id, "dia_upload")
+                raise inner_exc
+        except Exception as e:
+            # Re-raise HTTPExceptions (such as 429) directly, wrap others
+            if isinstance(e, HTTPException):
+                raise e
+            raise HTTPException(status_code=500, detail=str(e))
             
             print(f"DEBUG: AI Extraction successful for {doc_id}")
             extraction_data["document_id"] = doc_id

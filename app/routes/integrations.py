@@ -131,23 +131,53 @@ def validate_shopify_callback(query_params: dict[str, str]) -> None:
 async def integrations_status(current_user: dict = Depends(get_current_user)):
     """
     Returns whether the authenticated user has an active connection for
-    QuickBooks, Square, and Shopify.
+    QuickBooks, Xero, Square, and Shopify, along with the data sync progress state.
     """
     user_id = current_user["id"]
 
     quickbooks_tokens = await quickbooks_token_service.get_tokens_by_user(user_id)
     quickbooks_connected = any(token.is_active for token in quickbooks_tokens)
 
+    from app.services.xero_token_service import xero_token_service
+    xero_tokens = await xero_token_service.get_tokens_by_user(user_id)
+    xero_connected = any(token.is_active for token in xero_tokens)
+
+    accounting_connected = quickbooks_connected or xero_connected
+
     pos_col = get_collection("user_pos_access")
     square_doc = await pos_col.find_one({"user_id": user_id, "provider": "square"})
     shopify_doc = await pos_col.find_one({"user_id": user_id, "provider": "shopify"})
+
+    first_read = False
+    syncing = False
+    connected = accounting_connected
+
+    if accounting_connected:
+        opps = get_collection("opportunities")
+        opp_count = await opps.count_documents({"user_id": user_id})
+        
+        health_snaps = get_collection("business_health_snapshot")
+        bh_count = await health_snaps.count_documents({"user_id": user_id})
+        
+        if opp_count > 0 or bh_count > 0:
+            first_read = True
+            syncing = False
+        else:
+            first_read = False
+            syncing = True
 
     return {
         "success": True,
         "data": {
             "quickbooks": quickbooks_connected,
+            "xero": xero_connected,
             "square": square_doc is not None,
             "shopify": shopify_doc is not None,
+            "sync_progress": {
+                "connected": connected,
+                "syncing": syncing,
+                "first_read": first_read
+            }
         }
     }
 

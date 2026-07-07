@@ -52,6 +52,9 @@ async def create_indexes() -> None:
     users = get_collection("users")
     await users.create_index("email", unique=True)
 
+    waitlist = get_collection("waitlist")
+    await waitlist.create_index("email", unique=True)
+
     business_profiles = get_collection("business_profiles")
     await business_profiles.create_index("user_id", unique=True)
     await business_profiles.create_index("created_at")
@@ -156,3 +159,40 @@ async def create_indexes() -> None:
     await admin_sessions.create_index("user_id")
     await admin_sessions.create_index("expires_at")
     await admin_sessions.create_index([("user_id", 1), ("revoked", 1)])
+
+    account_usage_daily = get_collection("account_usage_daily")
+    await account_usage_daily.create_index([("account_id", 1), ("date", 1)], unique=True)
+
+    broadcasts = get_collection("broadcasts")
+    await broadcasts.create_index("created_at")
+
+    # Initialize site settings
+    settings_col = get_collection("settings")
+    existing_config = await settings_col.find_one({"_id": "site_config"})
+    
+    defaults = {
+        "landing_mode": "waitlist",
+        "account_daily_hard_ceiling": 1000,
+        "account_daily_soft_alert": 600,
+        "cap_manual_refresh": 3,
+        "cap_scenario_runs": 15,
+        "cap_dia_uploads": 50,
+        "cost_estimates": {
+            "scout_ondemand": 15,
+            "dashboard_ask": 20,
+            "drawer_ask": 10,
+            "manual_refresh": 150,
+            "scenario_run": 60,
+            "dia_upload": 20
+        }
+    }
+
+    if not existing_config:
+        await settings_col.insert_one({"_id": "site_config", **defaults})
+    else:
+        updates = {}
+        for k, v in defaults.items():
+            if k not in existing_config:
+                updates[k] = v
+        if updates:
+            await settings_col.update_one({"_id": "site_config"}, {"$set": updates})

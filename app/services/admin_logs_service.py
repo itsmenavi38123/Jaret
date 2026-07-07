@@ -25,8 +25,8 @@ class AdminLog(BaseModel):
 class AdminLogCreate(BaseModel):
     admin_user_id: str
     admin_email: str
-    target_user_id: str
-    target_user_email: str
+    target_user_id: Optional[str] = None
+    target_user_email: Optional[str] = None
     action: str
     details: Optional[str] = None
 

@@ -38,49 +38,56 @@ async def scenario_planning_full(
     """
     try:
         user_id = current_user["id"]
-        
-        # Fetch business profile
-        business_profiles = get_collection("business_profiles")
-        business_profile = await business_profiles.find_one({"user_id": user_id})
-        
-        # Fetch opportunities profile
-        opportunities_profiles = get_collection("opportunities_profiles")
-        opportunities_profile = await opportunities_profiles.find_one({"user_id": user_id})
-        
-        # Fetch baseline financials from QuickBooks
-        # Use the optimized dashboard KPI fetch we just built to get real-time snapshot
-        from app.services.quickbooks_financial_service import quickbooks_financial_service
-        
+        from app.services.cost_guardrail_service import cost_guardrail_service
+        allowed, reason = await cost_guardrail_service.check_and_reserve(user_id, "scenario_run")
+        if not allowed:
+            detail_msg = (
+                "You've reached today's limit for this action. It resets at midnight."
+                if reason == "surface_cap" else
+                "You've reached today's usage limit for your account. It resets at midnight. Contact support if you need more."
+            )
+            raise HTTPException(status_code=429, detail=detail_msg)
+
         try:
-            # We want: Revenue (annualized?), Cash, Net Margin, Runway
-            # get_financial_overview is heavy, but we need details for scenario planning.
-            # However, for speed/stability, let's use the lighter KPI source OR handle failure gracefully.
-            # "full" analysis might justify the heavier call, but let's stick to essential KPIs data + Balance Sheet checks if needed.
+            # Fetch business profile
+            business_profiles = get_collection("business_profiles")
+            business_profile = await business_profiles.find_one({"user_id": user_id})
             
-            # Use get_dashboard_kpis for speed + essential liquidity/profit metrics
-            kpis_data = await quickbooks_financial_service.get_dashboard_kpis(user_id)
+            # Fetch opportunities profile
+            opportunities_profiles = get_collection("opportunities_profiles")
+            opportunities_profile = await opportunities_profiles.find_one({"user_id": user_id})
             
-            # Map to structure expected by FinanceAnalyst
-            baseline_financials = {
-                "revenue_monthly": kpis_data.get("revenue_mtd", 0.0),
-                "net_margin_pct": kpis_data.get("net_margin_pct", 0.0),
-                "cash_on_hand": kpis_data.get("cash", 0.0),
-                "runway_months": kpis_data.get("runway_months", 0.0),
-                "burn_rate": 0.0, # Not strictly returned by new kpi method but implied by runway. 
-                # If we need more (e.g. debt), we might need extended fetch. For now this is better than empty.
-            }
+            # Fetch baseline financials from QuickBooks
+            # Use the optimized dashboard KPI fetch we just built to get real-time snapshot
+            from app.services.quickbooks_financial_service import quickbooks_financial_service
+            
+            try:
+                # Use get_dashboard_kpis for speed + essential liquidity/profit metrics
+                kpis_data = await quickbooks_financial_service.get_dashboard_kpis(user_id)
+                
+                # Map to structure expected by FinanceAnalyst
+                baseline_financials = {
+                    "revenue_monthly": kpis_data.get("revenue_mtd", 0.0),
+                    "net_margin_pct": kpis_data.get("net_margin_pct", 0.0),
+                    "cash_on_hand": kpis_data.get("cash", 0.0),
+                    "runway_months": kpis_data.get("runway_months", 0.0),
+                    "burn_rate": 0.0,
+                }
+            except Exception as e:
+                print(f"Failed to fetch baseline financials for scenario: {e}")
+                baseline_financials = {}
+            
+            # Call Orchestrator
+            result = await orchestrator.orchestrate_scenario_planning(
+                query=request.query,
+                user_id=user_id,
+                business_profile=business_profile,
+                opportunities_profile=opportunities_profile,
+                baseline_financials=baseline_financials,
+            )
         except Exception as e:
-            print(f"Failed to fetch baseline financials for scenario: {e}")
-            baseline_financials = {}
-        
-        # Call Orchestrator
-        result = await orchestrator.orchestrate_scenario_planning(
-            query=request.query,
-            user_id=user_id,
-            business_profile=business_profile,
-            opportunities_profile=opportunities_profile,
-            baseline_financials=baseline_financials,
-        )
+            await cost_guardrail_service.refund_reserve(user_id, "scenario_run")
+            raise e
         
         # Return strict JSON
         return JSONResponse(
@@ -89,6 +96,9 @@ async def scenario_planning_full(
             media_type="application/json",
         )
     
+    except HTTPException as exc:
+        raise exc
+
     except Exception as e:
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

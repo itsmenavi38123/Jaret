@@ -72,6 +72,15 @@ class ClaudeService:
         self.vision_model = os.getenv("VISION_MODEL", "claude-opus-4-7")
         self.vision_fallback_model = os.getenv("VISION_FALLBACK_MODEL")
 
+    def _format_system_prompt_with_cache(self, system_prompt: str) -> list:
+        return [
+            {
+                "type": "text",
+                "text": system_prompt,
+                "cache_control": {"type": "ephemeral", "ttl": "1h"}
+            }
+        ]
+
     async def _create_message_with_fallback(self, params: dict) -> Any:
         try:
             return await self.client.messages.create(**params)
@@ -100,7 +109,7 @@ class ClaudeService:
             params = {
                 "model": model,
                 "max_tokens": max_tokens or 4096,
-                "system": system_prompt,
+                "system": self._format_system_prompt_with_cache(system_prompt),
                 "messages": messages if messages is not None else [{"role": "user", "content": _prepare_user_content(user_content)}]
             }
             if temperature is not None:
@@ -128,7 +137,7 @@ class ClaudeService:
             params = {
                 "model": model,
                 "max_tokens": max_tokens or 4096,
-                "system": system_prompt,
+                "system": self._format_system_prompt_with_cache(system_prompt),
                 "messages": messages if messages is not None else [{"role": "user", "content": _prepare_user_content(user_content)}]
             }
             if temperature is not None:
@@ -170,7 +179,7 @@ class ClaudeService:
             params = {
                 "model": model,
                 "max_tokens": max_tokens or 4096,
-                "system": system_prompt,
+                "system": self._format_system_prompt_with_cache(system_prompt),
                 "messages": messages if messages is not None else [{"role": "user", "content": _prepare_user_content(user_content)}]
             }
             if temperature is not None:
@@ -216,7 +225,7 @@ class ClaudeService:
             params = {
                 "model": model,
                 "max_tokens": max_tokens or 4096,
-                "system": system_prompt,
+                "system": self._format_system_prompt_with_cache(system_prompt),
                 "messages": messages,
                 "tools": tools,
             }

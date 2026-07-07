@@ -34,6 +34,8 @@ from app.routes.admin_auth import router as admin_auth_router
 from app.routes.integrations import router as integrations_router
 from app.routes.documents import router as documents_router
 from app.routes.notification_settings import router as notification_settings_router
+from app.routes.waitlist import router as waitlist_router
+from app.routes.settings import router as settings_router
 
 scout_scheduler = ScoutSchedulerService()
 dreaming_scheduler = DreamingSchedulerService()
@@ -82,6 +84,8 @@ app.include_router(admin_router)
 app.include_router(admin_auth_router)
 app.include_router(documents_router, prefix="/documents")
 app.include_router(notification_settings_router, prefix="/api/notification-settings")
+app.include_router(waitlist_router, prefix="/api")
+app.include_router(settings_router, prefix="/api")
 
 @app.on_event("startup")
 async def on_startup():

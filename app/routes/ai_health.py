@@ -838,12 +838,25 @@ async def refresh_business_health(
     Manually refresh Business Health data.
     Forces latest QuickBooks pull and regenerates health metrics.
     """
-    try:
-        user_id = current_user["id"]
-
-        refresh_result = await orchestrator_service.refresh_all_business_data(
-            user_id=user_id
+    user_id = current_user["id"]
+    from app.services.cost_guardrail_service import cost_guardrail_service
+    allowed, reason = await cost_guardrail_service.check_and_reserve(user_id, "manual_refresh")
+    if not allowed:
+        detail_msg = (
+            "You've reached today's limit for this action. It resets at midnight."
+            if reason == "surface_cap" else
+            "You've reached today's usage limit for your account. It resets at midnight. Contact support if you need more."
         )
+        raise HTTPException(status_code=429, detail=detail_msg)
+
+    try:
+        try:
+            refresh_result = await orchestrator_service.refresh_all_business_data(
+                user_id=user_id
+            )
+        except Exception as e:
+            await cost_guardrail_service.refund_reserve(user_id, "manual_refresh")
+            raise e
 
         return refresh_result
 

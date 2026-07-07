@@ -1491,3 +1491,122 @@ async def get_memory_failures(
                 "error": str(e)
             }
         )
+
+class BroadcastCreateRequest(BaseModel):
+    message: str
+    severity: str
+    audience: str
+
+@router.post("/broadcast")
+async def create_broadcast(
+    body: BroadcastCreateRequest,
+    current_user: dict = Depends(require_admin_role)
+):
+    try:
+        broadcasts_col = get_collection("broadcasts")
+        now = datetime.utcnow()
+        doc_id = str(uuid4())
+        
+        broadcast_doc = {
+            "_id": doc_id,
+            "message": body.message,
+            "severity": body.severity,
+            "audience": body.audience,
+            "created_at": now,
+            "created_by": current_user["id"],
+            "dismissed_by": []
+        }
+        
+        await broadcasts_col.insert_one(broadcast_doc)
+        
+        # Log the admin action
+        await admin_logs_service.log_action(
+            AdminLogCreate(
+                admin_user_id=current_user["id"],
+                admin_email=current_user["email"],
+                target_user_id=None,
+                target_user_email=None,
+                action=f"Created Broadcast Banner: {body.message[:50]}..."
+            )
+        )
+        
+        return JSONResponse(
+            status_code=201,
+            content={
+                "success": True,
+                "data": {
+                    "id": broadcast_doc["_id"],
+                    "message": broadcast_doc["message"],
+                    "severity": broadcast_doc["severity"],
+                    "audience": broadcast_doc["audience"],
+                    "created_at": now.isoformat(),
+                    "created_by": broadcast_doc["created_by"],
+                    "dismissed_by": []
+                }
+            }
+        )
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "error": str(e)}
+        )
+
+@router.get("/broadcasts")
+async def get_recent_broadcasts(
+    current_user: dict = Depends(require_admin_role),
+    page: int = 1,
+    per_page: int = 10
+):
+    try:
+        broadcasts_col = get_collection("broadcasts")
+        users_col = get_collection("users")
+
+        if page < 1:
+            page = 1
+        skip = (page - 1) * per_page
+
+        # Total non-admin users (used for dismissed_count context)
+        total_matching_all = await users_col.count_documents({"role": {"$ne": "Admin"}})
+
+        # Total broadcasts for pagination metadata
+        total_count = await broadcasts_col.count_documents({})
+        total_pages = (total_count + per_page - 1) // per_page
+
+        # Fetch page, latest first
+        cursor = broadcasts_col.find({}).sort("created_at", -1).skip(skip).limit(per_page)
+        broadcasts = [doc async for doc in cursor]
+
+        formatted_list = []
+        for b in broadcasts:
+            dismissed_count = len(b.get("dismissed_by", []))
+            formatted_list.append({
+                "id": b["_id"],
+                "message": b["message"],
+                "severity": b["severity"],
+                "audience": b["audience"],
+                "created_at": b["created_at"].isoformat() if b.get("created_at") else None,
+                "dismissed_count": dismissed_count,
+                "audience_count": total_matching_all
+            })
+
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": True,
+                "data": formatted_list,
+                "pagination": {
+                    "page": page,
+                    "per_page": per_page,
+                    "total_count": total_count,
+                    "total_pages": total_pages,
+                    "has_next": page < total_pages,
+                    "has_prev": page > 1
+                }
+            }
+        )
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "error": str(e)}
+        )
+

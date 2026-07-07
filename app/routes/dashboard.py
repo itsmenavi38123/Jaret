@@ -269,9 +269,20 @@ async def explain_kpi_drawer(
     current_user: dict = Depends(get_current_user),
     openai_service: OpenAIService = Depends(),
 ):
+    user_id = current_user["id"]
+    from app.services.cost_guardrail_service import cost_guardrail_service
+    allowed, reason = await cost_guardrail_service.check_and_reserve(user_id, "drawer_ask")
+    if not allowed:
+        detail_msg = (
+            "You've reached today's limit for this action. It resets at midnight."
+            if reason == "surface_cap" else
+            "You've reached today's usage limit for your account. It resets at midnight. Contact support if you need more."
+        )
+        raise HTTPException(status_code=429, detail=detail_msg)
+
     try:
         business_profiles = get_collection("business_profiles")
-        profile = await business_profiles.find_one({"user_id": current_user["id"]})
+        profile = await business_profiles.find_one({"user_id": user_id})
 
         enriched_context = body.optional_context.model_dump() if body.optional_context else {}
 
@@ -344,7 +355,11 @@ async def explain_kpi_drawer(
         payload = body.model_dump()
         payload["optional_context"] = enriched_context
 
-        result = await openai_service.explain_kpi_drawer(payload=payload)
+        try:
+            result = await openai_service.explain_kpi_drawer(payload=payload)
+        except Exception as e:
+            await cost_guardrail_service.refund_reserve(user_id, "drawer_ask")
+            raise e
 
     except ValueError as exc:
         raise HTTPException(
@@ -369,10 +384,25 @@ async def ask_kpi_ai(
     current_user: dict = Depends(get_current_user),
     openai_service: OpenAIService = Depends(),
 ):
-    try:
-        result = await openai_service.ask_kpi_ai(
-            payload=body.model_dump()
+    user_id = current_user["id"]
+    from app.services.cost_guardrail_service import cost_guardrail_service
+    allowed, reason = await cost_guardrail_service.check_and_reserve(user_id, "dashboard_ask")
+    if not allowed:
+        detail_msg = (
+            "You've reached today's limit for this action. It resets at midnight."
+            if reason == "surface_cap" else
+            "You've reached today's usage limit for your account. It resets at midnight. Contact support if you need more."
         )
+        raise HTTPException(status_code=429, detail=detail_msg)
+
+    try:
+        try:
+            result = await openai_service.ask_kpi_ai(
+                payload=body.model_dump()
+            )
+        except Exception as e:
+            await cost_guardrail_service.refund_reserve(user_id, "dashboard_ask")
+            raise e
 
     except HTTPException as exc:
         raise exc

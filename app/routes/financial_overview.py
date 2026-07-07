@@ -215,10 +215,25 @@ async def get_financial_overview_drawer(
     body: FinancialOverviewDrawerRequest,
     current_user: dict = Depends(get_current_user),
 ):
-    try:
-        result = await financial_overview_drawer_service.explain(
-            payload=body.model_dump(),
+    user_id = current_user["id"]
+    from app.services.cost_guardrail_service import cost_guardrail_service
+    allowed, reason = await cost_guardrail_service.check_and_reserve(user_id, "drawer_ask")
+    if not allowed:
+        detail_msg = (
+            "You've reached today's limit for this action. It resets at midnight."
+            if reason == "surface_cap" else
+            "You've reached today's usage limit for your account. It resets at midnight. Contact support if you need more."
         )
+        raise HTTPException(status_code=429, detail=detail_msg)
+
+    try:
+        try:
+            result = await financial_overview_drawer_service.explain(
+                payload=body.model_dump(),
+            )
+        except Exception as e:
+            await cost_guardrail_service.refund_reserve(user_id, "drawer_ask")
+            raise e
 
     except HTTPException as exc:
         raise exc
@@ -243,10 +258,25 @@ async def ask_financial_overview_ai(
     body: FinancialOverviewAskAIRequest,
     current_user: dict = Depends(get_current_user),
 ):
-    try:
-        result = await financial_overview_drawer_service.ask_ai(
-            payload=body.model_dump(),
+    user_id = current_user["id"]
+    from app.services.cost_guardrail_service import cost_guardrail_service
+    allowed, reason = await cost_guardrail_service.check_and_reserve(user_id, "drawer_ask")
+    if not allowed:
+        detail_msg = (
+            "You've reached today's limit for this action. It resets at midnight."
+            if reason == "surface_cap" else
+            "You've reached today's usage limit for your account. It resets at midnight. Contact support if you need more."
         )
+        raise HTTPException(status_code=429, detail=detail_msg)
+
+    try:
+        try:
+            result = await financial_overview_drawer_service.ask_ai(
+                payload=body.model_dump(),
+            )
+        except Exception as e:
+            await cost_guardrail_service.refund_reserve(user_id, "drawer_ask")
+            raise e
 
     except HTTPException as exc:
         raise exc

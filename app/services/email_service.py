@@ -11,11 +11,20 @@ FROM_EMAIL = os.getenv("SMTP_FROM_EMAIL")
 FROM_NAME = os.getenv("SMTP_FROM_NAME", "LightSignal")
 
 
-def send_email(to_email: str, subject: str, html_content: str):
-    if not all([SMTP_HOST, SMTP_USERNAME, SMTP_PASSWORD, FROM_EMAIL]):
+def send_email(
+    to_email: str,
+    subject: str,
+    html_content: str,
+    from_email: str = None,
+    from_name: str = None,
+):
+    sender_email = from_email or FROM_EMAIL
+    sender_name = from_name or FROM_NAME
+
+    if not all([SMTP_HOST, SMTP_USERNAME, SMTP_PASSWORD, sender_email]):
         raise RuntimeError("SMTP email config missing")
     msg = MIMEMultipart()
-    msg["From"] = f"{FROM_NAME} <{FROM_EMAIL}>"
+    msg["From"] = f"{sender_name} <{sender_email}>"
     msg["To"] = to_email
     msg["Subject"] = subject
 
