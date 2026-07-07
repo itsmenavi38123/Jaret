@@ -81,10 +81,10 @@ def _decode_token(token: str, expected_type: str) -> str:
 
 
 async def _load_admin_user(user_id: str) -> Dict[str, Any]:
-    """Re-checks is_admin on every step, in case it was revoked mid-flow."""
+    """Re-checks is_admin/role on every step, in case it was revoked mid-flow."""
     users = get_collection("users")
     user_doc = await users.find_one({"_id": user_id})
-    if not user_doc or not user_doc.get("is_admin", False):
+    if not user_doc or not (user_doc.get("is_admin", False) or user_doc.get("role") == "Admin"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
     return user_doc
 
@@ -158,7 +158,7 @@ async def require_admin_session(
 
     users = get_collection("users")
     user_doc = await users.find_one({"_id": user_id})
-    if not user_doc or not user_doc.get("is_admin", False):
+    if not user_doc or not (user_doc.get("is_admin", False) or user_doc.get("role") == "Admin"):
         raise credentials_exception
 
     return {"id": user_doc["_id"], "email": user_doc["email"], "session_id": session_id}
@@ -177,7 +177,7 @@ async def admin_login(payload: AdminLoginRequest):
     if (
         not user_doc
         or not verify_password(payload.password, user_doc.get("password_hash", ""))
-        or not user_doc.get("is_admin", False)
+        or not (user_doc.get("is_admin", False) or user_doc.get("role") == "Admin")
     ):
         return JSONResponse(
             status_code=status.HTTP_403_FORBIDDEN,

@@ -32,15 +32,18 @@ def _prehash(password: str) -> bytes:
 
 def hash_password(password: str) -> str:
     try:
+        import bcrypt
         pre = _prehash(password)
-        return pwd_ctx.hash(pre)
+        salt = bcrypt.gensalt()
+        return bcrypt.hashpw(pre, salt).decode("utf-8")
     except Exception:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to hash password")
 
 def verify_password(plain: str, hashed: str) -> bool:
     pre = _prehash(plain)
     try:
-        return pwd_ctx.verify(pre, hashed)
+        import bcrypt
+        return bcrypt.checkpw(pre, hashed.encode("utf-8"))
     except Exception:
         return False
 
