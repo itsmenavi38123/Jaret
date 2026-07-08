@@ -51,10 +51,44 @@ class AdminLogsService:
         await self.collection.insert_one(log_doc)
         return log_id
 
-    async def get_logs(self, limit: int = 100, skip: int = 0) -> dict:
-        """Get admin logs with pagination"""
-        total_count = await self.collection.count_documents({})
-        cursor = self.collection.find({}).sort("timestamp", -1).skip(skip).limit(limit)
+    async def get_logs(self, limit: int = 100, skip: int = 0, search: Optional[str] = None, action_type: Optional[str] = None) -> dict:
+        """Get admin logs with pagination, search, and action type filtering"""
+        query = {}
+        
+        # 1. Action type filter mapping
+        if action_type:
+            action_type_lower = action_type.lower()
+            if "memory" in action_type_lower:
+                # Matches memory-related operations (approve, reject, pin, edit, delete, inspect)
+                query["action"] = {"$regex": "memory", "$options": "i"}
+            elif "delete" in action_type_lower:
+                # Matches delete actions
+                query["action"] = {"$regex": "delete", "$options": "i"}
+            elif "beta" in action_type_lower:
+                # Matches beta account creation or actions
+                query["action"] = {"$regex": "beta", "$options": "i"}
+            elif "teaser" in action_type_lower:
+                # Matches teasers
+                query["action"] = {"$regex": "teaser", "$options": "i"}
+            elif "rerun" in action_type_lower or "re-run" in action_type_lower:
+                # Matches agent reruns
+                query["action"] = {"$regex": "rerun|re-run", "$options": "i"}
+            elif "broadcast" in action_type_lower:
+                # Matches broadcasts
+                query["action"] = {"$regex": "broadcast", "$options": "i"}
+                
+        # 2. Free-text search
+        if search:
+            search_regex = {"$regex": search, "$options": "i"}
+            query["$or"] = [
+                {"action": search_regex},
+                {"details": search_regex},
+                {"target_user_email": search_regex},
+                {"admin_email": search_regex}
+            ]
+            
+        total_count = await self.collection.count_documents(query)
+        cursor = self.collection.find(query).sort("timestamp", -1).skip(skip).limit(limit)
         logs = await cursor.to_list(length=None)
         return {"logs": logs, "total_count": total_count}
 

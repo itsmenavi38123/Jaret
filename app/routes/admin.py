@@ -15,6 +15,8 @@ from app.config import _now_utc
 from app.routes.admin_auth import require_admin_session
 from app.services.admin_logs_service import admin_logs_service, AdminLogCreate
 from app.models.beta_profile import BetaProfile, BetaCohort, BetaStatus
+from app.models.peer_teaser import PeerTeaser, PeerTeaserCreate, PeerTeaserUpdate
+from app.models.dreaming_run import DreamingRun
 from app.services.feature_usage_service import feature_usage_service
 from app.services.memory_search_service import MemorySearchService
 from app.services.customer_memory_service import CustomerMemoryService
@@ -600,14 +602,19 @@ async def force_user_logout(request: UserActionRequest, current_user: dict = Dep
 @router.get("/logs")
 async def get_admin_logs(
     current_user: dict = Depends(require_admin_role),
-    page: int = 1,
-    per_page: int = 20
+    page: int = Query(1, ge=1, description="Page number"),
+    per_page: int = Query(20, ge=1, description="Items per page"),
+    search: Optional[str] = Query(None, description="Search actions"),
+    action_type: Optional[str] = Query(None, description="Filter action types")
 ):
     try:
-        if page < 1:
-            page = 1
         skip = (page - 1) * per_page
-        result = await admin_logs_service.get_logs(limit=per_page, skip=skip)
+        result = await admin_logs_service.get_logs(
+            limit=per_page,
+            skip=skip,
+            search=search,
+            action_type=action_type
+        )
         logs = result["logs"]
         total_count = result["total_count"]
         total_pages = (total_count + per_page - 1) // per_page
@@ -1609,4 +1616,316 @@ async def get_recent_broadcasts(
             status_code=500,
             content={"success": False, "error": str(e)}
         )
+
+
+@router.get("/shape-gaps")
+async def get_shape_gaps(
+    current_user: dict = Depends(require_admin_role)
+):
+    """
+    Retrieve all shape gaps (signals fired without a matching layout shape),
+    aggregated and sorted by frequency.
+    """
+    try:
+        shape_gaps_col = get_collection("shape_gaps")
+
+        pipeline = [
+            {"$group": {"_id": "$signal_id", "count": {"$sum": 1}}},
+            {"$sort": {"count": -1}},
+            {"$project": {"signal_id": "$_id", "count": 1, "_id": 0}}
+        ]
+
+        cursor = shape_gaps_col.aggregate(pipeline)
+        gaps = [gap async for gap in cursor]
+
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": True,
+                "data": gaps
+            }
+        )
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "error": str(e)}
+        )
+
+
+@router.get("/teasers")
+async def get_teasers(
+    page: int = Query(1, ge=1, description="Page number"),
+    per_page: int = Query(10, ge=1, description="Items per page"),
+    status: Optional[str] = Query(None, description="Filter teasers by status"),
+    current_user: dict = Depends(require_admin_role)
+):
+    try:
+        peer_teasers_col = get_collection("peer_teasers")
+        query = {}
+        if status:
+            query["status"] = status
+        
+        # Count total documents matching query
+        total_count = await peer_teasers_col.count_documents(query)
+        total_pages = (total_count + per_page - 1) // per_page
+        
+        skip = (page - 1) * per_page
+        cursor = peer_teasers_col.find(query).sort("created_at", -1).skip(skip).limit(per_page)
+        teasers = await cursor.to_list(length=None)
+        
+        users_col = get_collection("users")
+        
+        # Serialize using Pydantic model to handle proper format/aliases
+        serialized_teasers = []
+        for teaser_doc in teasers:
+            teaser_obj = PeerTeaser.model_validate(teaser_doc)
+            
+            # Resolve company_name dynamically for source_customer_id
+            user_doc = await users_col.find_one({"_id": teaser_obj.source_customer_id})
+            company_name = user_doc.get("company_name", "Unknown Business") if user_doc else "Unknown Business"
+            
+            teaser_dict = teaser_obj.model_dump(by_alias=False)
+            teaser_dict["source_business_name"] = company_name
+            serialized_teasers.append(teaser_dict)
+            
+        return JSONResponse(
+            status_code=200,
+            content=jsonable_encoder({
+                "success": True,
+                "data": serialized_teasers,
+                "pagination": {
+                    "total_count": total_count,
+                    "page": page,
+                    "per_page": per_page,
+                    "total_pages": total_pages,
+                    "has_next": page < total_pages,
+                    "has_prev": page > 1
+                }
+            })
+        )
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "error": str(e)}
+        )
+
+
+@router.post("/teasers")
+async def create_teaser(
+    payload: PeerTeaserCreate,
+    current_user: dict = Depends(require_admin_role)
+):
+    try:
+        # Create new PeerTeaser instance, validating rules
+        teaser_doc = PeerTeaser(
+            source_customer_id=payload.source_customer_id,
+            verified_anonymized=payload.verified_anonymized,
+            status=payload.status or "approved",
+            teaser_text=payload.teaser_text,
+            onboarding_section=payload.onboarding_section or "Financials",
+            proposed_by=payload.proposed_by or "manual"
+        )
+        
+        insert_data = teaser_doc.model_dump(by_alias=True)
+        peer_teasers_col = get_collection("peer_teasers")
+        await peer_teasers_col.insert_one(insert_data)
+        
+        # Audit log mutating action
+        await admin_logs_service.log_action(
+            AdminLogCreate(
+                admin_user_id=current_user["id"],
+                admin_email=current_user["email"],
+                target_user_id=payload.source_customer_id,
+                action="Create Peer Teaser",
+                details=f"Created teaser (id: {teaser_doc.id}, status: {teaser_doc.status}) with content: {teaser_doc.teaser_text[:100]}"
+            )
+        )
+        
+        return JSONResponse(
+            status_code=201,
+            content=jsonable_encoder({
+                "success": True,
+                "data": teaser_doc.model_dump(by_alias=False)
+            })
+        )
+    except ValueError as val_err:
+        return JSONResponse(
+            status_code=400,
+            content={"success": False, "error": str(val_err)}
+        )
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "error": str(e)}
+        )
+
+
+@router.put("/teasers/{teaser_id}")
+async def update_teaser(
+    teaser_id: str,
+    payload: PeerTeaserUpdate,
+    current_user: dict = Depends(require_admin_role)
+):
+    try:
+        peer_teasers_col = get_collection("peer_teasers")
+        existing_teaser = await peer_teasers_col.find_one({"_id": teaser_id})
+        if not existing_teaser:
+            raise HTTPException(status_code=404, detail="Peer teaser not found")
+        
+        # Dry-run validation of the update data
+        merged_teaser = {**existing_teaser, **payload.model_dump(exclude_unset=True)}
+        teaser_obj = PeerTeaser.model_validate(merged_teaser)
+        
+        update_data = payload.model_dump(exclude_unset=True)
+        if update_data:
+            update_data["updated_at"] = _now_utc()
+            await peer_teasers_col.update_one({"_id": teaser_id}, {"$set": update_data})
+            
+            # Audit log mutating action
+            await admin_logs_service.log_action(
+                AdminLogCreate(
+                    admin_user_id=current_user["id"],
+                    admin_email=current_user["email"],
+                    target_user_id=teaser_obj.source_customer_id,
+                    action="Update Peer Teaser",
+                    details=f"Updated teaser (id: {teaser_id}). Set fields: {list(update_data.keys())}"
+                )
+            )
+            
+        return JSONResponse(
+            status_code=200,
+            content=jsonable_encoder({
+                "success": True,
+                "data": teaser_obj.model_dump(by_alias=False)
+            })
+        )
+    except HTTPException as http_err:
+        raise http_err
+    except ValueError as val_err:
+        return JSONResponse(
+            status_code=400,
+            content={"success": False, "error": str(val_err)}
+        )
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "error": str(e)}
+        )
+
+
+@router.delete("/teasers/{teaser_id}")
+async def delete_teaser(
+    teaser_id: str,
+    current_user: dict = Depends(require_admin_role)
+):
+    try:
+        peer_teasers_col = get_collection("peer_teasers")
+        existing_teaser = await peer_teasers_col.find_one({"_id": teaser_id})
+        if not existing_teaser:
+            raise HTTPException(status_code=404, detail="Peer teaser not found")
+        
+        await peer_teasers_col.delete_one({"_id": teaser_id})
+        teaser_obj = PeerTeaser.model_validate(existing_teaser)
+        
+        # Audit log mutating action
+        await admin_logs_service.log_action(
+            AdminLogCreate(
+                admin_user_id=current_user["id"],
+                admin_email=current_user["email"],
+                target_user_id=teaser_obj.source_customer_id,
+                action="Delete Peer Teaser",
+                details=f"Deleted teaser (id: {teaser_id})"
+            )
+        )
+        
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": True,
+                "message": "Peer teaser deleted successfully"
+            }
+        )
+    except HTTPException as http_err:
+        raise http_err
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "error": str(e)}
+        )
+
+
+@router.get("/dreaming")
+async def get_dreaming_runs(
+    page: int = Query(1, ge=1, description="Page number"),
+    per_page: int = Query(10, ge=1, description="Items per page"),
+    current_user: dict = Depends(require_admin_role)
+):
+    try:
+        dreaming_runs_col = get_collection("dreaming_runs")
+        total_count = await dreaming_runs_col.count_documents({})
+        total_pages = (total_count + per_page - 1) // per_page
+        
+        skip = (page - 1) * per_page
+        cursor = dreaming_runs_col.find({}).sort("pass_number", -1).skip(skip).limit(per_page)
+        runs = await cursor.to_list(length=None)
+        
+        serialized_runs = []
+        for run_doc in runs:
+            run_obj = DreamingRun.model_validate(run_doc)
+            run_dict = run_obj.model_dump(by_alias=False)
+            if "full_log" in run_dict:
+                del run_dict["full_log"]
+            serialized_runs.append(run_dict)
+            
+        return JSONResponse(
+            status_code=200,
+            content=jsonable_encoder({
+                "success": True,
+                "data": serialized_runs,
+                "pagination": {
+                    "total_count": total_count,
+                    "page": page,
+                    "per_page": per_page,
+                    "total_pages": total_pages,
+                    "has_next": page < total_pages,
+                    "has_prev": page > 1
+                }
+            })
+        )
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "error": str(e)}
+        )
+
+
+@router.get("/dreaming/{pass_id}")
+async def get_dreaming_run_detail(
+    pass_id: str,
+    current_user: dict = Depends(require_admin_role)
+):
+    try:
+        dreaming_runs_col = get_collection("dreaming_runs")
+        run_doc = await dreaming_runs_col.find_one({"_id": pass_id})
+        if not run_doc:
+            raise HTTPException(status_code=404, detail="Dreaming run log not found")
+            
+        run_obj = DreamingRun.model_validate(run_doc)
+        return JSONResponse(
+            status_code=200,
+            content=jsonable_encoder({
+                "success": True,
+                "data": run_obj.model_dump(by_alias=False)
+            })
+        )
+    except HTTPException as http_err:
+        raise http_err
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "error": str(e)}
+        )
+
+
+
 

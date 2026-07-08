@@ -166,6 +166,16 @@ async def create_indexes() -> None:
     broadcasts = get_collection("broadcasts")
     await broadcasts.create_index("created_at")
 
+    peer_teasers = get_collection("peer_teasers")
+    await peer_teasers.create_index("source_customer_id")
+    await peer_teasers.create_index("status")
+    await peer_teasers.create_index("created_at")
+
+    dreaming_runs = get_collection("dreaming_runs")
+    await dreaming_runs.create_index("pass_number", unique=True)
+    await dreaming_runs.create_index("timestamp")
+
+
     # Initialize site settings
     settings_col = get_collection("settings")
     existing_config = await settings_col.find_one({"_id": "site_config"})
