@@ -8,7 +8,7 @@ from fastapi.security import OAuth2PasswordBearer
 from jose import jwt, JWTError
 from passlib.context import CryptContext
 from pydantic import BaseModel, EmailStr, Field
-from app.config import JWT_SECRET, JWT_ALGORITHM, create_access_token, create_refresh_token, _now_utc
+from app.config import JWT_SECRET, JWT_ALGORITHM, create_access_token, create_refresh_token, _now_utc, settings
 import hashlib
 
 from app.db import get_collection
