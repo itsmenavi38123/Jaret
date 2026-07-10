@@ -7,7 +7,7 @@ if settings.stripe_api_key:
 
 class StripeService:
     @staticmethod
-    def create_checkout_session(email: str, trial_days: int = 14) -> str:
+    def create_checkout_session(email: str, success_url: str = None, trial_days: int = 14) -> str:
         """
         Creates a Stripe Checkout Session for a new user subscribing to the plan.
         Returns the session URL.
@@ -24,6 +24,8 @@ class StripeService:
         # Add email metadata to identify the pending user upon webhook success
         metadata = {"email": email}
 
+        redirect_success = success_url or settings.stripe_success_url
+
         session = stripe.checkout.Session.create(
             payment_method_types=["card"],
             mode="subscription",
@@ -35,7 +37,7 @@ class StripeService:
                 }
             ],
             subscription_data=subscription_data,
-            success_url=settings.stripe_success_url + "?session_id={CHECKOUT_SESSION_ID}",
+            success_url=redirect_success,
             cancel_url=settings.stripe_cancel_url,
             metadata=metadata,
         )
@@ -64,22 +66,25 @@ class StripeService:
             pm_id = None
             if subscription_id:
                 sub = stripe.Subscription.retrieve(subscription_id)
-                pm_id = sub.get("default_payment_method")
+                pm_id = getattr(sub, "default_payment_method", None)
             
             if not pm_id and customer_id:
                 customer = stripe.Customer.retrieve(customer_id)
-                pm_id = customer.get("invoice_settings", {}).get("default_payment_method")
+                invoice_settings = getattr(customer, "invoice_settings", None)
+                pm_id = getattr(invoice_settings, "default_payment_method", None) if invoice_settings else None
                 
             if pm_id:
                 pm = stripe.PaymentMethod.retrieve(pm_id)
-                if pm and pm.get("type") == "card":
-                    card = pm.get("card", {})
-                    return {
-                        "brand": card.get("brand"),
-                        "last4": card.get("last4"),
-                        "exp_month": card.get("exp_month"),
-                        "exp_year": card.get("exp_year")
-                    }
+                pm_type = getattr(pm, "type", None)
+                if pm_type == "card":
+                    card = getattr(pm, "card", None)
+                    if card:
+                        return {
+                            "brand": getattr(card, "brand", None),
+                            "last4": getattr(card, "last4", None),
+                            "exp_month": getattr(card, "exp_month", None),
+                            "exp_year": getattr(card, "exp_year", None)
+                        }
         except Exception as e:
             print(f"Error fetching card details from Stripe: {e}")
         return {}

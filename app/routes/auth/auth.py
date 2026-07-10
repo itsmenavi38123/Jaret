@@ -492,6 +492,75 @@ async def verify_email(token: str):
     record = await tokens.find_one({"token_hash": token_hash})
 
     if not record:
+        # Check if this verification token belongs to a pending signup that has paid
+        pending_signups = get_collection("pending_signups")
+        pending = await pending_signups.find_one({"verification_token_hash": token_hash})
+        if pending:
+            try:
+                import stripe
+                email = pending["email"]
+                
+                # Check Stripe for active subscriptions
+                customers = stripe.Customer.list(email=email, limit=1)
+                if customers.data:
+                    customer = customers.data[0]
+                    subs = stripe.Subscription.list(customer=customer.id, limit=1)
+                    if subs.data and subs.data[0].status in ["active", "trialing"]:
+                        sub = subs.data[0]
+                        subscription_id = sub.id
+                        customer_id = customer.id
+                        trial_end = getattr(sub, "trial_end", None)
+                        trial_ends_at = datetime.fromtimestamp(trial_end, tz=timezone.utc) if trial_end else None
+                        
+                        card_details = StripeService.get_card_details(subscription_id, customer_id)
+                        user_id = str(uuid4())
+                        
+                        # Process user creation synchronously
+                        users = get_collection("users")
+                        new_user = {
+                            "_id": user_id,
+                            "full_name": pending["full_name"],
+                            "email": pending["email"],
+                            "password_hash": pending["password_hash"],
+                            "company_name": pending["company_name"],
+                            "is_verified": True,
+                            "is_beta": False,
+                            "role": "Viewer",
+                            "signup_source": "stripe",
+                            "is_paused": False,
+                            "last_active": _now_utc(),
+                            "created_at": _now_utc(),
+                            "stripe_customer_id": customer_id,
+                            "stripe_subscription_id": subscription_id,
+                            "trial_ends_at": trial_ends_at,
+                            "trial_warning_sent": False,
+                            "card_details": card_details
+                        }
+                        await users.insert_one(new_user)
+                        
+                        # Save the verification token in tokens collection as used
+                        await tokens.insert_one({
+                            "_id": str(uuid4()),
+                            "user_id": user_id,
+                            "token_hash": token_hash,
+                            "used": True,
+                            "expires_at": _now_utc() + timedelta(hours=24),
+                            "created_at": _now_utc(),
+                        })
+                        
+                        await pending_signups.delete_one({"_id": pending["_id"]})
+                        
+                        continue_token = await create_email_continue_token(user_id)
+                        return JSONResponse(
+                            status_code=status.HTTP_200_OK,
+                            content={
+                                "success": True,
+                                "continue_token": continue_token
+                            }
+                        )
+            except Exception as sync_err:
+                print(f"Error during synchronous verification process: {sync_err}")
+                
         return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
             content={
@@ -809,6 +878,9 @@ async def signup(payload: SignupRequest, request: Request, background_tasks: Bac
                     }
                 )
 
+        verification_token = secrets.token_urlsafe(32)
+        token_hash = hashlib.sha256(verification_token.encode()).hexdigest()
+
         pending_signups = get_collection("pending_signups")
         await pending_signups.update_one(
             {"email": payload.email},
@@ -817,13 +889,16 @@ async def signup(payload: SignupRequest, request: Request, background_tasks: Bac
                     "full_name": payload.name,
                     "company_name": payload.company,
                     "password_hash": hash_password(payload.password),
+                    "verification_token": verification_token,
+                    "verification_token_hash": token_hash,
                     "created_at": _now_utc()
                 }
             },
             upsert=True
         )
 
-        checkout_url = StripeService.create_checkout_session(payload.email)
+        success_url = f"{settings.stripe_success_url}?token={verification_token}"
+        checkout_url = StripeService.create_checkout_session(payload.email, success_url=success_url)
 
         return JSONResponse(
             status_code=status.HTTP_200_OK,
@@ -858,11 +933,28 @@ async def stripe_webhook(request: Request, background_tasks: BackgroundTasks):
                 content={"success": False, "error": f"Invalid signature: {str(e)}"}
             )
 
-        event_type = event.get("type")
-        data_object = event.get("data", {}).get("object", {})
+        event_type = getattr(event, "type", None)
+        event_data = getattr(event, "data", None)
+        data_object = getattr(event_data, "object", None) if event_data else None
+
+        if not event_type or not data_object:
+            return JSONResponse(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                content={"success": False, "error": "Invalid event structure"}
+            )
 
         if event_type == "checkout.session.completed":
-            email = data_object.get("metadata", {}).get("email") or data_object.get("customer_details", {}).get("email") or data_object.get("customer_email")
+            metadata = getattr(data_object, "metadata", None) or {}
+            customer_details = getattr(data_object, "customer_details", None) or {}
+            
+            email = None
+            if isinstance(metadata, dict):
+                email = metadata.get("email")
+            if not email and isinstance(customer_details, dict):
+                email = customer_details.get("email")
+            if not email:
+                email = getattr(data_object, "customer_email", None)
+
             if not email:
                 return JSONResponse(
                     status_code=status.HTTP_400_BAD_REQUEST,
@@ -881,16 +973,17 @@ async def stripe_webhook(request: Request, background_tasks: BackgroundTasks):
                         content={"success": False, "error": f"No pending signup found for {email}"}
                     )
 
-                subscription_id = data_object.get("subscription")
-                customer_id = data_object.get("customer")
+                subscription_id = getattr(data_object, "subscription", None)
+                customer_id = getattr(data_object, "customer", None)
                 trial_ends_at = None
 
                 if subscription_id:
                     try:
                         import stripe
                         sub = stripe.Subscription.retrieve(subscription_id)
-                        if sub and sub.get("trial_end"):
-                            trial_ends_at = datetime.fromtimestamp(sub.get("trial_end"), tz=timezone.utc)
+                        trial_end = getattr(sub, "trial_end", None)
+                        if trial_end:
+                            trial_ends_at = datetime.fromtimestamp(trial_end, tz=timezone.utc)
                     except Exception as sub_err:
                         print(f"Error fetching subscription details: {sub_err}")
 
@@ -920,7 +1013,23 @@ async def stripe_webhook(request: Request, background_tasks: BackgroundTasks):
 
                 await users.insert_one(to_insert)
 
-                verification_token = await create_email_verification_token(user_id)
+                pending_token_hash = pending.get("verification_token_hash")
+                raw_token = pending.get("verification_token")
+                
+                if pending_token_hash and raw_token:
+                    tokens = get_collection("email_verification_tokens")
+                    await tokens.insert_one({
+                        "_id": str(uuid4()),
+                        "user_id": user_id,
+                        "token_hash": pending_token_hash,
+                        "used": False,
+                        "expires_at": _now_utc() + timedelta(hours=24),
+                        "created_at": _now_utc(),
+                    })
+                    verification_token = raw_token
+                else:
+                    verification_token = await create_email_verification_token(user_id)
+
                 verify_url = f"https://lightsignal.app/auth/verification?token={verification_token}"
                 
                 background_tasks.add_task(
@@ -944,7 +1053,7 @@ async def stripe_webhook(request: Request, background_tasks: BackgroundTasks):
                 await pending_signups.delete_one({"_id": pending["_id"]})
 
         elif event_type == "customer.subscription.deleted":
-            subscription_id = data_object.get("id")
+            subscription_id = getattr(data_object, "id", None)
             users = get_collection("users")
             user = await users.find_one({"stripe_subscription_id": subscription_id})
             if user:
@@ -954,9 +1063,9 @@ async def stripe_webhook(request: Request, background_tasks: BackgroundTasks):
                 )
 
         elif event_type == "customer.subscription.updated":
-            status_val = data_object.get("status")
-            subscription_id = data_object.get("id")
-            customer_id = data_object.get("customer")
+            status_val = getattr(data_object, "status", None)
+            subscription_id = getattr(data_object, "id", None)
+            customer_id = getattr(data_object, "customer", None)
 
             users = get_collection("users")
             user = await users.find_one({"stripe_subscription_id": subscription_id})
@@ -967,7 +1076,7 @@ async def stripe_webhook(request: Request, background_tasks: BackgroundTasks):
                         {"$set": {"is_paused": True, "subscription_status": status_val}}
                     )
                 else:
-                    trial_end_ts = data_object.get("trial_end")
+                    trial_end_ts = getattr(data_object, "trial_end", None)
                     trial_ends_at = datetime.fromtimestamp(trial_end_ts, tz=timezone.utc) if trial_end_ts else None
                     card_details = StripeService.get_card_details(subscription_id, customer_id)
                     await users.update_one(
@@ -984,6 +1093,8 @@ async def stripe_webhook(request: Request, background_tasks: BackgroundTasks):
         return JSONResponse(status_code=200, content={"success": True})
 
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={"success": False, "error": str(e)}
@@ -1047,13 +1158,25 @@ async def verify_stripe_session(payload: StripeVerifyRequest):
         
         # Retrieve checkout session from Stripe
         session = stripe.checkout.Session.retrieve(session_id)
-        if not session or session.get("payment_status") not in ["paid", "no_payment_required"]:
+        payment_status = getattr(session, "payment_status", None)
+        
+        if not session or payment_status not in ["paid", "no_payment_required"]:
             return JSONResponse(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 content={"success": False, "error": "Checkout session is not paid or completed."}
             )
             
-        email = session.get("metadata", {}).get("email") or session.get("customer_details", {}).get("email") or session.get("customer_email")
+        metadata = getattr(session, "metadata", None) or {}
+        customer_details = getattr(session, "customer_details", None) or {}
+        
+        email = None
+        if isinstance(metadata, dict):
+            email = metadata.get("email")
+        if not email and isinstance(customer_details, dict):
+            email = customer_details.get("email")
+        if not email:
+            email = getattr(session, "customer_email", None)
+            
         if not email:
             return JSONResponse(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -1073,15 +1196,16 @@ async def verify_stripe_session(payload: StripeVerifyRequest):
                     content={"success": False, "error": f"No account or pending signup found for {email}"}
                 )
                 
-            subscription_id = session.get("subscription")
-            customer_id = session.get("customer")
+            subscription_id = getattr(session, "subscription", None)
+            customer_id = getattr(session, "customer", None)
             trial_ends_at = None
 
             if subscription_id:
                 try:
                     sub = stripe.Subscription.retrieve(subscription_id)
-                    if sub and sub.get("trial_end"):
-                        trial_ends_at = datetime.fromtimestamp(sub.get("trial_end"), tz=timezone.utc)
+                    trial_end = getattr(sub, "trial_end", None)
+                    if trial_end:
+                        trial_ends_at = datetime.fromtimestamp(trial_end, tz=timezone.utc)
                 except Exception as sub_err:
                     print(f"Error fetching subscription details in direct verify: {sub_err}")
 
