@@ -538,6 +538,22 @@ async def verify_email(token: str):
                         }
                         await users.insert_one(new_user)
                         
+                        try:
+                            transactions = get_collection("stripe_transactions")
+                            await transactions.insert_one({
+                                "_id": str(uuid4()),
+                                "user_id": user_id,
+                                "email": pending["email"],
+                                "stripe_customer_id": customer_id,
+                                "stripe_subscription_id": subscription_id,
+                                "event_type": "checkout.session.completed",
+                                "status": "trialing" if trial_ends_at else "active",
+                                "trial_ends_at": trial_ends_at,
+                                "created_at": _now_utc()
+                            })
+                        except Exception as tx_err:
+                            print(f"Error logging transaction in verify_email: {tx_err}")
+                        
                         # Save the verification token in tokens collection as used
                         await tokens.insert_one({
                             "_id": str(uuid4()),
@@ -897,8 +913,7 @@ async def signup(payload: SignupRequest, request: Request, background_tasks: Bac
             upsert=True
         )
 
-        success_url = f"{settings.stripe_success_url}?token={verification_token}"
-        checkout_url = StripeService.create_checkout_session(payload.email, success_url=success_url)
+        checkout_url = StripeService.create_checkout_session(payload.email, success_url=settings.stripe_success_url)
 
         return JSONResponse(
             status_code=status.HTTP_200_OK,
@@ -1013,6 +1028,22 @@ async def stripe_webhook(request: Request, background_tasks: BackgroundTasks):
 
                 await users.insert_one(to_insert)
 
+                try:
+                    transactions = get_collection("stripe_transactions")
+                    await transactions.insert_one({
+                        "_id": str(uuid4()),
+                        "user_id": user_id,
+                        "email": pending["email"],
+                        "stripe_customer_id": customer_id,
+                        "stripe_subscription_id": subscription_id,
+                        "event_type": "checkout.session.completed",
+                        "status": "trialing" if trial_ends_at else "active",
+                        "trial_ends_at": trial_ends_at,
+                        "created_at": _now_utc()
+                    })
+                except Exception as tx_err:
+                    print(f"Error logging transaction: {tx_err}")
+
                 pending_token_hash = pending.get("verification_token_hash")
                 raw_token = pending.get("verification_token")
                 
@@ -1061,6 +1092,21 @@ async def stripe_webhook(request: Request, background_tasks: BackgroundTasks):
                     {"_id": user["_id"]},
                     {"$set": {"is_paused": True, "subscription_status": "canceled"}}
                 )
+                
+                try:
+                    transactions = get_collection("stripe_transactions")
+                    await transactions.insert_one({
+                        "_id": str(uuid4()),
+                        "user_id": user["_id"],
+                        "email": user["email"],
+                        "stripe_customer_id": user.get("stripe_customer_id"),
+                        "stripe_subscription_id": subscription_id,
+                        "event_type": "customer.subscription.deleted",
+                        "status": "canceled",
+                        "created_at": _now_utc()
+                    })
+                except Exception as tx_err:
+                    print(f"Error logging transaction: {tx_err}")
 
         elif event_type == "customer.subscription.updated":
             status_val = getattr(data_object, "status", None)
@@ -1070,6 +1116,7 @@ async def stripe_webhook(request: Request, background_tasks: BackgroundTasks):
             users = get_collection("users")
             user = await users.find_one({"stripe_subscription_id": subscription_id})
             if user:
+                trial_ends_at = None
                 if status_val in ["canceled", "unpaid"]:
                     await users.update_one(
                         {"_id": user["_id"]},
@@ -1089,6 +1136,22 @@ async def stripe_webhook(request: Request, background_tasks: BackgroundTasks):
                             }
                         }
                     )
+                
+                try:
+                    transactions = get_collection("stripe_transactions")
+                    await transactions.insert_one({
+                        "_id": str(uuid4()),
+                        "user_id": user["_id"],
+                        "email": user["email"],
+                        "stripe_customer_id": customer_id,
+                        "stripe_subscription_id": subscription_id,
+                        "event_type": "customer.subscription.updated",
+                        "status": status_val,
+                        "trial_ends_at": trial_ends_at,
+                        "created_at": _now_utc()
+                    })
+                except Exception as tx_err:
+                    print(f"Error logging transaction: {tx_err}")
 
         return JSONResponse(status_code=200, content={"success": True})
 
@@ -1231,6 +1294,23 @@ async def verify_stripe_session(payload: StripeVerifyRequest):
                 "card_details": card_details
             }
             await users.insert_one(user)
+
+            try:
+                transactions = get_collection("stripe_transactions")
+                await transactions.insert_one({
+                    "_id": str(uuid4()),
+                    "user_id": user_id,
+                    "email": pending["email"],
+                    "stripe_customer_id": customer_id,
+                    "stripe_subscription_id": subscription_id,
+                    "event_type": "checkout.session.completed",
+                    "status": "trialing" if trial_ends_at else "active",
+                    "trial_ends_at": trial_ends_at,
+                    "created_at": _now_utc()
+                })
+            except Exception as tx_err:
+                print(f"Error logging transaction in verify_stripe_session: {tx_err}")
+
             await pending_signups.delete_one({"_id": pending["_id"]})
         else:
             # If the user exists (webhook already run), ensure they are marked verified
@@ -1261,6 +1341,82 @@ async def verify_stripe_session(payload: StripeVerifyRequest):
             }
         )
         
+    except Exception as e:
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"success": False, "error": str(e)}
+        )
+
+@router.post("/subscription/cancel")
+async def cancel_subscription(current_user: dict = Depends(get_current_user)):
+    """
+    Cancels the logged-in user's active Stripe subscription at period end.
+    """
+    try:
+        users = get_collection("users")
+        user = await users.find_one({"_id": current_user["id"]})
+        if not user:
+            return JSONResponse(
+                status_code=status.HTTP_404_NOT_FOUND,
+                content={"success": False, "error": "User not found"}
+            )
+        
+        subscription_id = user.get("stripe_subscription_id")
+        if not subscription_id:
+            return JSONResponse(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                content={"success": False, "error": "No active subscription found for this user."}
+            )
+        
+        import stripe
+        # Cancel subscription at period end so they still have access until the trial/paid term completes
+        sub = stripe.Subscription.modify(
+            subscription_id,
+            cancel_at_period_end=True
+        )
+        
+        status_val = getattr(sub, "status", "canceled")
+        cancel_at = getattr(sub, "cancel_at", None)
+        cancel_at_dt = datetime.fromtimestamp(cancel_at, tz=timezone.utc) if cancel_at else None
+        
+        await users.update_one(
+            {"_id": user["_id"]},
+            {
+                "$set": {
+                    "subscription_status": status_val,
+                    "cancel_at_period_end": True,
+                    "cancel_at": cancel_at_dt
+                }
+            }
+        )
+        
+        # Log this transaction in stripe_transactions collection
+        try:
+            transactions = get_collection("stripe_transactions")
+            await transactions.insert_one({
+                "_id": str(uuid4()),
+                "user_id": user["_id"],
+                "email": user["email"],
+                "stripe_customer_id": user.get("stripe_customer_id"),
+                "stripe_subscription_id": subscription_id,
+                "event_type": "subscription.cancelled_by_user",
+                "status": status_val,
+                "created_at": _now_utc()
+            })
+        except Exception as tx_err:
+            print(f"Error logging cancellation transaction: {tx_err}")
+            
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content={
+                "success": True,
+                "message": "Subscription has been set to cancel at the end of the current billing period.",
+                "data": {
+                    "status": status_val,
+                    "cancel_at": cancel_at_dt.isoformat() if cancel_at_dt else None
+                }
+            }
+        )
     except Exception as e:
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

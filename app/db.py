@@ -179,6 +179,11 @@ async def create_indexes() -> None:
     await pending_signups.create_index("email", unique=True)
     await pending_signups.create_index("created_at", expireAfterSeconds=86400)
 
+    stripe_transactions = get_collection("stripe_transactions")
+    await stripe_transactions.create_index("user_id")
+    await stripe_transactions.create_index("stripe_subscription_id")
+    await stripe_transactions.create_index("created_at")
+
     # Initialize site settings
     settings_col = get_collection("settings")
     existing_config = await settings_col.find_one({"_id": "site_config"})
