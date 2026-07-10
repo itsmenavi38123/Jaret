@@ -1624,19 +1624,47 @@ async def get_shape_gaps(
 ):
     """
     Retrieve all shape gaps (signals fired without a matching layout shape),
-    aggregated and sorted by frequency.
+    aggregated with frequencies, last fired times, and mapping statuses.
     """
     try:
         shape_gaps_col = get_collection("shape_gaps")
 
         pipeline = [
-            {"$group": {"_id": "$signal_id", "count": {"$sum": 1}}},
+            {
+                "$group": {
+                    "_id": "$signal_id",
+                    "count": {"$sum": 1},
+                    "last_fired": {"$max": "$timestamp"}
+                }
+            },
             {"$sort": {"count": -1}},
-            {"$project": {"signal_id": "$_id", "count": 1, "_id": 0}}
+            {
+                "$project": {
+                    "signal_id": "$_id",
+                    "count": 1,
+                    "last_fired": 1,
+                    "_id": 0
+                }
+            }
         ]
 
+        from app.services.signal_shape_mapper import SIGNAL_TO_SHAPE
+
         cursor = shape_gaps_col.aggregate(pipeline)
-        gaps = [gap async for gap in cursor]
+        gaps = []
+        async for gap in cursor:
+            sig_id = gap["signal_id"]
+            is_mapped = (sig_id in SIGNAL_TO_SHAPE) or (sig_id in SIGNAL_TO_SHAPE.values())
+            
+            last_fired_val = gap.get("last_fired")
+            last_fired_str = last_fired_val.isoformat() if last_fired_val else None
+
+            gaps.append({
+                "signal_id": sig_id,
+                "count": gap["count"],
+                "last_fired": last_fired_str,
+                "is_mapped": is_mapped
+            })
 
         return JSONResponse(
             status_code=200,
