@@ -1927,5 +1927,298 @@ async def get_dreaming_run_detail(
         )
 
 
+@router.get("/documents")
+async def get_admin_documents(current_user: dict = Depends(require_admin_role)):
+    try:
+        docs_coll = get_collection("documents_metadata")
+        users_col = get_collection("users")
+        
+        # 1. Extraction Failures: extraction_status: "failed" and deleted_by_owner: {"$ne": True}
+        failures_cursor = docs_coll.find({
+            "extraction_status": "failed",
+            "deleted_by_owner": {"$ne": True}
+        }).sort("upload_timestamp", -1)
+        failures_docs = await failures_cursor.to_list(length=None)
+        
+        failures_list = []
+        for doc in failures_docs:
+            user = await users_col.find_one({"_id": doc["customer_id"]})
+            company_name = user.get("company_name", "Unknown Business") if user else "Unknown Business"
+            failures_list.append({
+                "document_id": doc.get("document_id"),
+                "filename": doc.get("original_filename"),
+                "business_name": company_name,
+                "upload_timestamp": doc.get("upload_timestamp").isoformat() if isinstance(doc.get("upload_timestamp"), datetime) else doc.get("upload_timestamp"),
+                "failure_reason": doc.get("failure_reason") or "unreadable scan",
+                "owner_notified": doc.get("owner_notified", True)
+            })
+            
+        # 2. Soft-deleted documents: deleted_by_owner: True
+        soft_deleted_cursor = docs_coll.find({
+            "deleted_by_owner": True
+        }).sort("owner_deleted_at", -1)
+        soft_deleted_docs = await soft_deleted_cursor.to_list(length=None)
+        
+        soft_deleted_list = []
+        for doc in soft_deleted_docs:
+            user = await users_col.find_one({"_id": doc["customer_id"]})
+            company_name = user.get("company_name", "Unknown Business") if user else "Unknown Business"
+            owner_deleted_at = doc.get("owner_deleted_at")
+            owner_deleted_at_str = owner_deleted_at.isoformat() if isinstance(owner_deleted_at, datetime) else owner_deleted_at
+            
+            soft_deleted_list.append({
+                "document_id": doc.get("document_id"),
+                "filename": doc.get("original_filename"),
+                "business_name": company_name,
+                "owner_deleted_at": owner_deleted_at_str,
+                "extraction_status": doc.get("extraction_status"),
+                "extraction_record_id": doc.get("extraction_record_id")
+            })
+            
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": True,
+                "data": {
+                    "extraction_failures": failures_list,
+                    "soft_deleted_documents": soft_deleted_list
+                }
+            }
+        )
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "error": str(e)}
+        )
+
+
+@router.post("/documents/{document_id}/resolve")
+async def resolve_document_failure(
+    document_id: str,
+    current_user: dict = Depends(require_admin_role)
+):
+    try:
+        docs_coll = get_collection("documents_metadata")
+        doc = await docs_coll.find_one({"document_id": document_id})
+        if not doc:
+            raise HTTPException(status_code=404, detail="Document not found")
+            
+        await docs_coll.update_one(
+            {"document_id": document_id},
+            {"$set": {"extraction_status": "resolved"}}
+        )
+        
+        # Log admin action
+        users_col = get_collection("users")
+        user = await users_col.find_one({"_id": doc["customer_id"]})
+        user_email = user.get("email") if user else "unknown@customer.com"
+        
+        await admin_logs_service.log_action(
+            AdminLogCreate(
+                admin_user_id=current_user["id"],
+                admin_email=current_user["email"],
+                target_user_id=doc["customer_id"],
+                target_user_email=user_email,
+                action="Resolve document extraction failure",
+                details=f"Resolved DIA failure for document: {doc.get('original_filename')}"
+            )
+        )
+        
+        return JSONResponse(
+            status_code=200,
+            content={"success": True, "message": "Document failure marked as resolved"}
+        )
+    except HTTPException as http_err:
+        raise http_err
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "error": str(e)}
+        )
+
+
+@router.delete("/documents/{document_id}")
+async def hard_delete_document(
+    document_id: str,
+    current_user: dict = Depends(require_admin_role)
+):
+    try:
+        docs_coll = get_collection("documents_metadata")
+        ext_coll = get_collection("extraction_records")
+        
+        doc = await docs_coll.find_one({"document_id": document_id})
+        if not doc:
+            raise HTTPException(status_code=404, detail="Document not found")
+            
+        from app.db import get_gridfs_bucket
+        bucket = get_gridfs_bucket()
+        
+        deleted_fids = set()
+        for field in ("original_file_id", "working_file_id"):
+            file_id = doc.get(field)
+            if file_id and file_id not in deleted_fids:
+                try:
+                    await bucket.delete(file_id)
+                    deleted_fids.add(file_id)
+                except Exception as e:
+                    print(f"Error deleting GridFS file {file_id}: {e}")
+                    
+        await docs_coll.delete_one({"document_id": document_id})
+        await ext_coll.delete_many({"document_id": document_id})
+        
+        # Log admin action
+        users_col = get_collection("users")
+        user = await users_col.find_one({"_id": doc["customer_id"]})
+        user_email = user.get("email") if user else "unknown@customer.com"
+        
+        await admin_logs_service.log_action(
+            AdminLogCreate(
+                admin_user_id=current_user["id"],
+                admin_email=current_user["email"],
+                target_user_id=doc["customer_id"],
+                target_user_email=user_email,
+                action="Hard delete document",
+                details=f"Hard-deleted document: {doc.get('original_filename')}"
+            )
+        )
+        
+        return JSONResponse(
+            status_code=200,
+            content={"success": True, "message": f"Document {doc.get('original_filename')} hard-deleted successfully"}
+        )
+    except HTTPException as http_err:
+        raise http_err
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "error": str(e)}
+        )
+
+
+@router.get("/documents/{document_id}/extraction")
+async def get_admin_document_extraction(
+    document_id: str,
+    current_user: dict = Depends(require_admin_role)
+):
+    try:
+        docs_coll = get_collection("documents_metadata")
+        doc = await docs_coll.find_one({"document_id": document_id})
+        if not doc:
+            raise HTTPException(status_code=404, detail="Document not found")
+            
+        ext_coll = get_collection("extraction_records")
+        ext_record = await ext_coll.find_one({"document_id": document_id})
+        if not ext_record:
+            raise HTTPException(status_code=404, detail="Extraction record not found")
+            
+        fields = []
+        for field in ext_record.get("written_fields", []):
+            target = field.get("target") or ""
+            clean = target.replace("[]", "").replace("_", " ")
+            acronyms = {"ein", "id", "ssn", "us", "dba"}
+            display_name = " ".join(w.upper() if w.lower() in acronyms else w.capitalize() for w in clean.split())
+            
+            edited = field.get("edited", False)
+            current_value = field.get("edited_value") if edited else field.get("value")
+            
+            fields.append({
+                "key": target,
+                "display_name": display_name,
+                "current_value": current_value,
+                "edited": edited
+            })
+            
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": True,
+                "data": {
+                    "document_id": document_id,
+                    "doc_type": doc.get("doc_type") or ext_record.get("doc_type_detected"),
+                    "extraction_status": doc.get("extraction_status"),
+                    "owner_corrected": doc.get("owner_corrected", False),
+                    "fields": fields
+                }
+            }
+        )
+    except HTTPException as http_err:
+        raise http_err
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "error": str(e)}
+        )
+
+
+@router.get("/documents/{document_id}/download")
+async def get_admin_document_download(
+    document_id: str,
+    version: str = "working",
+    current_user: dict = Depends(require_admin_role)
+):
+    if version not in ("working", "original"):
+        raise HTTPException(status_code=400, detail="Invalid version parameter. Must be 'working' or 'original'.")
+        
+    try:
+        docs_coll = get_collection("documents_metadata")
+        meta = await docs_coll.find_one({"document_id": document_id})
+        if not meta:
+            raise HTTPException(status_code=404, detail="Document not found")
+            
+        if version == "original":
+            file_id = meta.get("original_file_id")
+            fmt = meta.get("original_format")
+            filename = meta.get("original_filename", "document")
+        else:
+            file_id = meta.get("working_file_id") or meta.get("original_file_id")
+            fmt = meta.get("working_format") or meta.get("original_format") or "bin"
+            filename = meta.get("original_filename", "document")
+            if fmt == "pdf" and not filename.lower().endswith(".pdf"):
+                base, _ = os.path.splitext(filename)
+                filename = f"{base}.pdf"
+                
+        if not file_id:
+            raise HTTPException(status_code=404, detail="No file found for this document")
+            
+        from app.db import get_gridfs_bucket
+        from bson.objectid import ObjectId
+        import io
+        bucket = get_gridfs_bucket()
+        
+        if isinstance(file_id, str):
+            file_id = ObjectId(file_id)
+            
+        grid_out = await bucket.open_download_stream(file_id)
+        content = await grid_out.read()
+        
+        mime_mapping = {
+            "pdf": "application/pdf",
+            "png": "image/png",
+            "jpg": "image/jpeg",
+            "jpeg": "image/jpeg",
+            "csv": "text/csv",
+            "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "xls": "application/vnd.ms-excel",
+            "txt": "text/plain",
+            "md": "text/markdown",
+            "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        }
+        media_type = mime_mapping.get(fmt.lower(), "application/octet-stream")
+        
+        import os
+        return Response(
+            content=content,
+            media_type=media_type,
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"'
+            }
+        )
+    except HTTPException as http_err:
+        raise http_err
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Download error: {str(e)}")
+
+
+
 
 

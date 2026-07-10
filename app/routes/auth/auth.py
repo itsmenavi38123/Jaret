@@ -2,7 +2,7 @@ import os
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 from uuid import uuid4
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi import APIRouter, Depends, HTTPException, status, Request, BackgroundTasks
 from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordBearer
 from jose import jwt, JWTError
@@ -20,6 +20,9 @@ from app.services.email_service import send_email
 from datetime import timezone
 
 router = APIRouter(tags=["auth"])
+api_router = APIRouter(tags=["auth"])
+
+from app.services.stripe_service import StripeService
 
 pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -83,6 +86,12 @@ class UserLogin(BaseModel):
     email: EmailStr
     password: str
 
+class SignupRequest(BaseModel):
+    name: str = Field(..., min_length=2)
+    company: str = Field(..., min_length=2)
+    email: EmailStr
+    password: str = Field(min_length=8)
+
 class Token(BaseModel):
     user: Dict[str, Any]
     access_token: str
@@ -96,6 +105,9 @@ class ForgotPasswordRequest(BaseModel):
 class ResetPasswordRequest(BaseModel):
     token: str
     new_password: str = Field(min_length=6)
+
+class StripeVerifyRequest(BaseModel):
+    session_id: str
 
 
 async def get_current_user(token: str = Depends(oauth2_scheme)):
@@ -745,3 +757,388 @@ async def email_continue(payload: EmailContinueRequest):
             }
         }
     )
+
+@api_router.post("/signup")
+async def signup(payload: SignupRequest, request: Request, background_tasks: BackgroundTasks):
+    try:
+        users = get_collection("users")
+        existing = await users.find_one({"email": payload.email})
+
+        if existing:
+            if existing.get("is_verified"):
+                return JSONResponse(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    content={
+                        "success": False,
+                        "error": "Email already registered. Please log in."
+                    }
+                )
+            else:
+                tokens = get_collection("email_verification_tokens")
+                await tokens.update_many(
+                    {"user_id": existing["_id"], "used": False},
+                    {"$set": {"used": True}}
+                )
+
+                verification_token = await create_email_verification_token(existing["_id"])
+                verify_url = f"https://lightsignal.app/auth/verification?token={verification_token}"
+
+                background_tasks.add_task(
+                    send_email,
+                    to_email=existing["email"],
+                    subject="Confirm your email to get started",
+                    html_content=f"""
+                    <h2>Confirm your email to get started</h2>
+                    <p>Please confirm your email so we can keep your account secure.</p>
+                    <a href="{verify_url}"
+                       style="display:inline-block;padding:12px 18px;
+                              background:#2563eb;color:#ffffff;
+                              text-decoration:none;border-radius:6px;">
+                       Verify Email
+                    </a>
+                    <p>This link will expire in 10 minutes.</p>
+                    """,
+                    from_email="hello@lightsignal.app"
+                )
+
+                return JSONResponse(
+                    status_code=status.HTTP_200_OK,
+                    content={
+                        "success": True,
+                        "message": "You are already registered but not verified. Verification email resent. Please check your inbox."
+                    }
+                )
+
+        pending_signups = get_collection("pending_signups")
+        await pending_signups.update_one(
+            {"email": payload.email},
+            {
+                "$set": {
+                    "full_name": payload.name,
+                    "company_name": payload.company,
+                    "password_hash": hash_password(payload.password),
+                    "created_at": _now_utc()
+                }
+            },
+            upsert=True
+        )
+
+        checkout_url = StripeService.create_checkout_session(payload.email)
+
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content={
+                "success": True,
+                "checkout_url": checkout_url
+            }
+        )
+
+    except Exception as e:
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"success": False, "error": str(e)}
+        )
+
+@router.post("/stripe-webhook")
+async def stripe_webhook(request: Request, background_tasks: BackgroundTasks):
+    try:
+        payload = await request.body()
+        sig_header = request.headers.get("stripe-signature")
+        if not sig_header:
+            return JSONResponse(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                content={"success": False, "error": "Missing stripe-signature header"}
+            )
+
+        try:
+            event = StripeService.construct_webhook_event(payload, sig_header)
+        except Exception as e:
+            return JSONResponse(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                content={"success": False, "error": f"Invalid signature: {str(e)}"}
+            )
+
+        event_type = event.get("type")
+        data_object = event.get("data", {}).get("object", {})
+
+        if event_type == "checkout.session.completed":
+            email = data_object.get("metadata", {}).get("email") or data_object.get("customer_details", {}).get("email") or data_object.get("customer_email")
+            if not email:
+                return JSONResponse(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    content={"success": False, "error": "No email found in event"}
+                )
+
+            users = get_collection("users")
+            existing = await users.find_one({"email": email})
+
+            if not existing:
+                pending_signups = get_collection("pending_signups")
+                pending = await pending_signups.find_one({"email": email})
+                if not pending:
+                    return JSONResponse(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        content={"success": False, "error": f"No pending signup found for {email}"}
+                    )
+
+                subscription_id = data_object.get("subscription")
+                customer_id = data_object.get("customer")
+                trial_ends_at = None
+
+                if subscription_id:
+                    try:
+                        import stripe
+                        sub = stripe.Subscription.retrieve(subscription_id)
+                        if sub and sub.get("trial_end"):
+                            trial_ends_at = datetime.fromtimestamp(sub.get("trial_end"), tz=timezone.utc)
+                    except Exception as sub_err:
+                        print(f"Error fetching subscription details: {sub_err}")
+
+                # Retrieve credit card details securely from Stripe
+                card_details = StripeService.get_card_details(subscription_id, customer_id)
+
+                user_id = str(uuid4())
+                to_insert = {
+                    "_id": user_id,
+                    "full_name": pending["full_name"],
+                    "email": pending["email"],
+                    "password_hash": pending["password_hash"],
+                    "company_name": pending["company_name"],
+                    "is_verified": False,
+                    "is_beta": False,
+                    "role": "Viewer",
+                    "signup_source": "stripe",
+                    "is_paused": False,
+                    "last_active": _now_utc(),
+                    "created_at": _now_utc(),
+                    "stripe_customer_id": customer_id,
+                    "stripe_subscription_id": subscription_id,
+                    "trial_ends_at": trial_ends_at,
+                    "trial_warning_sent": False,
+                    "card_details": card_details
+                }
+
+                await users.insert_one(to_insert)
+
+                verification_token = await create_email_verification_token(user_id)
+                verify_url = f"https://lightsignal.app/auth/verification?token={verification_token}"
+                
+                background_tasks.add_task(
+                    send_email,
+                    to_email=email,
+                    subject="Confirm your email to get started",
+                    html_content=f"""
+                    <h2>Welcome to LightSignal 👋</h2>
+                    <p>Please verify your email to activate your account.</p>
+                    <a href="{verify_url}"
+                       style="display:inline-block;padding:12px 18px;
+                              background:#2563eb;color:#ffffff;
+                              text-decoration:none;border-radius:6px;">
+                       Verify Email
+                    </a>
+                    <p>This link will expire in 10 minutes.</p>
+                    """,
+                    from_email="hello@lightsignal.app"
+                )
+
+                await pending_signups.delete_one({"_id": pending["_id"]})
+
+        elif event_type == "customer.subscription.deleted":
+            subscription_id = data_object.get("id")
+            users = get_collection("users")
+            user = await users.find_one({"stripe_subscription_id": subscription_id})
+            if user:
+                await users.update_one(
+                    {"_id": user["_id"]},
+                    {"$set": {"is_paused": True, "subscription_status": "canceled"}}
+                )
+
+        elif event_type == "customer.subscription.updated":
+            status_val = data_object.get("status")
+            subscription_id = data_object.get("id")
+            customer_id = data_object.get("customer")
+
+            users = get_collection("users")
+            user = await users.find_one({"stripe_subscription_id": subscription_id})
+            if user:
+                if status_val in ["canceled", "unpaid"]:
+                    await users.update_one(
+                        {"_id": user["_id"]},
+                        {"$set": {"is_paused": True, "subscription_status": status_val}}
+                    )
+                else:
+                    trial_end_ts = data_object.get("trial_end")
+                    trial_ends_at = datetime.fromtimestamp(trial_end_ts, tz=timezone.utc) if trial_end_ts else None
+                    card_details = StripeService.get_card_details(subscription_id, customer_id)
+                    await users.update_one(
+                        {"_id": user["_id"]},
+                        {
+                            "$set": {
+                                "trial_ends_at": trial_ends_at,
+                                "subscription_status": status_val,
+                                "card_details": card_details
+                            }
+                        }
+                    )
+
+        return JSONResponse(status_code=200, content={"success": True})
+
+    except Exception as e:
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"success": False, "error": str(e)}
+        )
+
+@router.get("/subscription/status")
+async def get_subscription_status(current_user: dict = Depends(get_current_user)):
+    """
+    Returns the current logged-in user's subscription status, trial details, and card details.
+    """
+    try:
+        users = get_collection("users")
+        user = await users.find_one({"_id": current_user["id"]})
+        if not user:
+            return JSONResponse(
+                status_code=status.HTTP_404_NOT_FOUND,
+                content={"success": False, "error": "User not found"}
+            )
+        
+        trial_ends_at = user.get("trial_ends_at")
+        trial_days_left = 0
+        if trial_ends_at:
+            if trial_ends_at.tzinfo is None:
+                trial_ends_at = trial_ends_at.replace(tzinfo=timezone.utc)
+            delta = trial_ends_at - _now_utc()
+            trial_days_left = max(0, delta.days)
+
+        sub_status = user.get("subscription_status") or ("active" if user.get("is_beta") else "trialing")
+        is_active = not user.get("is_paused", False)
+        
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content={
+                "success": True,
+                "data": {
+                    "is_active": is_active,
+                    "stripe_subscription_status": sub_status,
+                    "is_beta": user.get("is_beta", False),
+                    "trial_ends_at": trial_ends_at.isoformat() if trial_ends_at else None,
+                    "trial_days_left": trial_days_left,
+                    "card_details": user.get("card_details", {})
+                }
+            }
+        )
+    except Exception as e:
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"success": False, "error": str(e)}
+        )
+
+@api_router.post("/stripe-session/verify")
+async def verify_stripe_session(payload: StripeVerifyRequest):
+    """
+    Directly verifies a Stripe Checkout Session status on success redirect.
+    If the webhook hasn't processed the account creation yet, this endpoint processes it
+    synchronously to avoid race conditions. Returns JWT tokens for instant auto-login.
+    """
+    try:
+        import stripe
+        session_id = payload.session_id
+        
+        # Retrieve checkout session from Stripe
+        session = stripe.checkout.Session.retrieve(session_id)
+        if not session or session.get("payment_status") not in ["paid", "no_payment_required"]:
+            return JSONResponse(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                content={"success": False, "error": "Checkout session is not paid or completed."}
+            )
+            
+        email = session.get("metadata", {}).get("email") or session.get("customer_details", {}).get("email") or session.get("customer_email")
+        if not email:
+            return JSONResponse(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                content={"success": False, "error": "No email found associated with this Stripe session."}
+            )
+            
+        users = get_collection("users")
+        user = await users.find_one({"email": email})
+        
+        if not user:
+            # Webhook has not run yet. Process account creation immediately to avoid latency for the user
+            pending_signups = get_collection("pending_signups")
+            pending = await pending_signups.find_one({"email": email})
+            if not pending:
+                return JSONResponse(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    content={"success": False, "error": f"No account or pending signup found for {email}"}
+                )
+                
+            subscription_id = session.get("subscription")
+            customer_id = session.get("customer")
+            trial_ends_at = None
+
+            if subscription_id:
+                try:
+                    sub = stripe.Subscription.retrieve(subscription_id)
+                    if sub and sub.get("trial_end"):
+                        trial_ends_at = datetime.fromtimestamp(sub.get("trial_end"), tz=timezone.utc)
+                except Exception as sub_err:
+                    print(f"Error fetching subscription details in direct verify: {sub_err}")
+
+            card_details = StripeService.get_card_details(subscription_id, customer_id)
+            user_id = str(uuid4())
+            user = {
+                "_id": user_id,
+                "full_name": pending["full_name"],
+                "email": pending["email"],
+                "password_hash": pending["password_hash"],
+                "company_name": pending["company_name"],
+                "is_verified": True,  # Auto-verify directly upon checkout redirect success
+                "is_beta": False,
+                "role": "Viewer",
+                "signup_source": "stripe",
+                "is_paused": False,
+                "last_active": _now_utc(),
+                "created_at": _now_utc(),
+                "stripe_customer_id": customer_id,
+                "stripe_subscription_id": subscription_id,
+                "trial_ends_at": trial_ends_at,
+                "trial_warning_sent": False,
+                "card_details": card_details
+            }
+            await users.insert_one(user)
+            await pending_signups.delete_one({"_id": pending["_id"]})
+        else:
+            # If the user exists (webhook already run), ensure they are marked verified
+            if not user.get("is_verified"):
+                await users.update_one(
+                    {"_id": user["_id"]},
+                    {"$set": {"is_verified": True}}
+                )
+                user["is_verified"] = True
+                
+        # Generate JWT tokens for instant auto-login
+        token_data = {"sub": user["_id"], "email": user["email"]}
+        access_token = create_access_token(token_data)
+        refresh_token = create_refresh_token(token_data)
+        
+        user_info = await _build_user_payload(user)
+        
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content={
+                "success": True,
+                "message": "Session verified. User activated.",
+                "data": {
+                    "access_token": access_token,
+                    "refresh_token": refresh_token,
+                    "user": user_info
+                }
+            }
+        )
+        
+    except Exception as e:
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"success": False, "error": str(e)}
+        )

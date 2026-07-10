@@ -124,7 +124,10 @@ async def list_documents(current_user: dict = Depends(get_current_user)):
     user_id = current_user["id"]
     store = DocumentStoreService()
     
-    cursor = get_collection(store.collection_name).find({"customer_id": user_id}).sort("upload_timestamp", -1)
+    cursor = get_collection(store.collection_name).find({
+        "customer_id": user_id,
+        "deleted_by_owner": {"$ne": True}
+    }).sort("upload_timestamp", -1)
     docs = await cursor.to_list(length=100)
     
     summary_docs = []
@@ -155,7 +158,7 @@ async def download_document(
     store = DocumentStoreService()
     
     meta = await store.get_metadata(document_id)
-    if not meta or meta.get("customer_id") != user_id:
+    if not meta or meta.get("customer_id") != user_id or meta.get("deleted_by_owner") is True:
         raise HTTPException(status_code=404, detail="Document not found")
         
     if version == "original":
@@ -210,7 +213,7 @@ async def get_document_extraction(
     user_id = current_user["id"]
     
     meta = await store.get_metadata(document_id)
-    if not meta or meta.get("customer_id") != user_id:
+    if not meta or meta.get("customer_id") != user_id or meta.get("deleted_by_owner") is True:
         raise HTTPException(status_code=404, detail="Document not found")
         
     ext_coll = get_collection("extraction_records")
@@ -249,10 +252,10 @@ async def review_fact(
     review_data: ReviewRequest, 
     pipeline: tuple = Depends(get_dia_pipeline)
     ):
-    store, agent, orchestrator, current_user = pipeline
-    user_id = current_user["id"]
-    memory = CustomerMemoryService()
-    
+    meta = await store.get_metadata(document_id)
+    if not meta or meta.get("customer_id") != user_id or meta.get("deleted_by_owner") is True:
+        raise HTTPException(status_code=404, detail="Document not found")
+        
     # 1. Update business profiles preserving provenance objects inside onboarding_data
     profile_coll = get_collection("business_profiles")
     profile = await profile_coll.find_one({"user_id": user_id})
@@ -464,27 +467,18 @@ async def delete_document(
 ):
     user_id = current_user["id"]
     docs_coll = get_collection("documents_metadata")
-    ext_coll = get_collection("extraction_records")
     
-    doc = await docs_coll.find_one({"document_id": document_id, "customer_id": user_id})
+    doc = await docs_coll.find_one({"document_id": document_id, "customer_id": user_id, "deleted_by_owner": {"$ne": True}})
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
         
-    from app.db import get_gridfs_bucket
-    bucket = get_gridfs_bucket()
-    
-    deleted_fids = set()
-    for field in ("original_file_id", "working_file_id"):
-        file_id = doc.get(field)
-        if file_id and file_id not in deleted_fids:
-            try:
-                await bucket.delete(file_id)
-                deleted_fids.add(file_id)
-            except Exception as e:
-                print(f"Error deleting GridFS file {file_id}: {e}")
-                
-    await docs_coll.delete_one({"document_id": document_id, "customer_id": user_id})
-    await ext_coll.delete_many({"document_id": document_id, "customer_id": user_id})
+    await docs_coll.update_one(
+        {"document_id": document_id, "customer_id": user_id},
+        {"$set": {
+            "deleted_by_owner": True,
+            "owner_deleted_at": datetime.utcnow()
+        }}
+    )
     
     filename = doc.get("original_filename") or "document"
     return {"status": "success", "message": f"Document {filename} is deleted successfully"}

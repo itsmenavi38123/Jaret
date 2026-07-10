@@ -175,6 +175,9 @@ async def create_indexes() -> None:
     await dreaming_runs.create_index("pass_number", unique=True)
     await dreaming_runs.create_index("timestamp")
 
+    pending_signups = get_collection("pending_signups")
+    await pending_signups.create_index("email", unique=True)
+    await pending_signups.create_index("created_at", expireAfterSeconds=86400)
 
     # Initialize site settings
     settings_col = get_collection("settings")

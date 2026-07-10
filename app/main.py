@@ -13,7 +13,7 @@ from app.services.scout_scheduler_service import ScoutSchedulerService
 from app.services.dreaming_scheduler_service import DreamingSchedulerService
 
 # import routers
-from app.routes.auth.auth import router as auth_router
+from app.routes.auth.auth import router as auth_router, api_router as auth_api_router
 from app.routes.quickbooks.auth import router as quickbooks_router
 from app.routes.xero.auth import router as xero_auth_router
 from app.routes.xero.accounts import router as xero_accounts_router
@@ -64,6 +64,7 @@ app.add_middleware(
 
 # ROUTER REGISTRATIONS
 app.include_router(auth_router, prefix="/auth")
+app.include_router(auth_api_router, prefix="/api")
 app.include_router(quickbooks_router, prefix="/quickbooks")
 app.include_router(xero_auth_router, prefix="/xero/auth")
 app.include_router(xero_accounts_router, prefix="/xero")
@@ -117,6 +118,64 @@ async def on_startup():
                     await dreaming_scheduler.run_daily_dreaming_pass()
                 except Exception as e:
                     print(f"Dreaming scheduler error: {e}")
+                await asyncio.sleep(60)
+            if now.hour == 5 and now.minute == 0:
+                try:
+                    from app.db import get_collection
+                    from app.services.email_service import send_email
+                    from datetime import timedelta, timezone
+                    
+                    users_col = get_collection("users")
+                    now_time = datetime.now(timezone.utc)
+                    min_trial_end = now_time + timedelta(days=2)
+                    max_trial_end = now_time + timedelta(days=3)
+                    
+                    cursor = users_col.find({
+                        "trial_ends_at": {
+                            "$gte": min_trial_end,
+                            "$lte": max_trial_end
+                        },
+                        "trial_warning_sent": {"$ne": True},
+                        "is_paused": False,
+                        "is_beta": False
+                    })
+                    
+                    # Load template
+                    import os
+                    base_dir = os.path.dirname(os.path.abspath(__file__))
+                    template_path = os.path.join(base_dir, "utils", "templates", "trial_ending.html")
+                    
+                    if not os.path.exists(template_path):
+                        print(f"Trial ending template not found at {template_path}. Skipping warning emails.")
+                    else:
+                        with open(template_path, "r", encoding="utf-8") as f:
+                            html_template = f.read()
+
+                        async for user in cursor:
+                            trial_end_str = user["trial_ends_at"].strftime("%B %d, %Y")
+                            manage_subscription_url = "https://lightsignal.app/settings"
+                            
+                            html_content = html_template.format(
+                                first_name=user.get("full_name", "there"),
+                                trial_end_date=trial_end_str,
+                                manage_subscription_url=manage_subscription_url
+                            )
+                            
+                            try:
+                                send_email(
+                                    to_email=user["email"],
+                                    subject="Your LightSignal trial ends in 2 days",
+                                    html_content=html_content,
+                                    from_email="hello@lightsignal.app"
+                                )
+                                await users_col.update_one(
+                                    {"_id": user["_id"]},
+                                    {"$set": {"trial_warning_sent": True}}
+                                )
+                            except Exception as email_err:
+                                print(f"Error sending trial warning email to {user['email']}: {email_err}")
+                except Exception as scheduler_err:
+                    print(f"Trial warning scheduler error: {scheduler_err}")
                 await asyncio.sleep(60)
             await asyncio.sleep(20)
     print("Scheduler started")

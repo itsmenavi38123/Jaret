@@ -56,6 +56,14 @@ class Settings(BaseSettings):
     # Redis
     redis_url: Optional[str] = "redis://localhost:6379"
 
+    # Stripe
+    stripe_api_key: Optional[str] = None
+    stripe_webhook_secret: Optional[str] = None
+    stripe_price_id: Optional[str] = None
+    stripe_success_url: Optional[str] = None
+    stripe_cancel_url: Optional[str] = None
+    stripe_trial_period_days: int = 14
+
     jwt_secret_key: str
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60
