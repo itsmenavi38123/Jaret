@@ -62,6 +62,8 @@ class Settings(BaseSettings):
     stripe_price_id: Optional[str] = None
     stripe_success_url: Optional[str] = None
     stripe_cancel_url: Optional[str] = None
+    stripe_mobile_success_url: Optional[str] = "lightsignal://success"
+    stripe_mobile_cancel_url: Optional[str] = "lightsignal://cancel"
     stripe_trial_period_days: int = 14
 
     jwt_secret_key: str

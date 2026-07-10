@@ -929,6 +929,96 @@ async def signup(payload: SignupRequest, request: Request, background_tasks: Bac
             content={"success": False, "error": str(e)}
         )
 
+@api_router.post("/signup/mobile")
+async def signup_mobile(payload: SignupRequest, request: Request, background_tasks: BackgroundTasks):
+    try:
+        users = get_collection("users")
+        existing = await users.find_one({"email": payload.email})
+
+        if existing:
+            if existing.get("is_verified"):
+                return JSONResponse(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    content={
+                        "success": False,
+                        "error": "Email already registered. Please log in."
+                    }
+                )
+            else:
+                tokens = get_collection("email_verification_tokens")
+                await tokens.update_many(
+                    {"user_id": existing["_id"], "used": False},
+                    {"$set": {"used": True}}
+                )
+
+                verification_token = await create_email_verification_token(existing["_id"])
+                verify_url = f"https://lightsignal.app/auth/verification?token={verification_token}"
+
+                background_tasks.add_task(
+                    send_email,
+                    to_email=existing["email"],
+                    subject="Confirm your email to get started",
+                    html_content=f"""
+                    <h2>Confirm your email to get started</h2>
+                    <p>Please confirm your email so we can keep your account secure.</p>
+                    <a href="{verify_url}"
+                       style="display:inline-block;padding:12px 18px;
+                              background:#2563eb;color:#ffffff;
+                              text-decoration:none;border-radius:6px;">
+                       Verify Email
+                    </a>
+                    <p>This link will expire in 10 minutes.</p>
+                    """,
+                    from_email="hello@lightsignal.app"
+                )
+
+                return JSONResponse(
+                    status_code=status.HTTP_200_OK,
+                    content={
+                        "success": True,
+                        "message": "You are already registered but not verified. Verification email resent. Please check your inbox."
+                    }
+                )
+
+        verification_token = secrets.token_urlsafe(32)
+        token_hash = hashlib.sha256(verification_token.encode()).hexdigest()
+
+        pending_signups = get_collection("pending_signups")
+        await pending_signups.update_one(
+            {"email": payload.email},
+            {
+                "$set": {
+                    "full_name": payload.name,
+                    "company_name": payload.company,
+                    "password_hash": hash_password(payload.password),
+                    "verification_token": verification_token,
+                    "verification_token_hash": token_hash,
+                    "created_at": _now_utc()
+                }
+            },
+            upsert=True
+        )
+
+        checkout_url = StripeService.create_checkout_session(
+            payload.email,
+            success_url=settings.stripe_mobile_success_url,
+            cancel_url=settings.stripe_mobile_cancel_url
+        )
+
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content={
+                "success": True,
+                "checkout_url": checkout_url
+            }
+        )
+
+    except Exception as e:
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"success": False, "error": str(e)}
+        )
+
 @router.post("/stripe-webhook")
 async def stripe_webhook(request: Request, background_tasks: BackgroundTasks):
     try:

@@ -1,0 +1,45 @@
+Admin logs---------------------------------------
+
+curl --location --request GET 'https://api.lightsignal.app/admin/logs?action_type=teaser&search=3%2C200' \
+--header 'Content-Type: application/json' \
+--header 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxOGYyZDdhNi1mMmNmLTRjNDUtYjNjMi00MWUwNzNkMjdhZTUiLCJqdGkiOiIwNmZiNjQyMi1kNTdlLTRkYTAtYjA4NS1lOWI2YTE2ODk5ZGQiLCJ0eXBlIjoiYWRtaW5fc2Vzc2lvbiIsImlhdCI6MTc4MzQ5NTg0NywiZXhwIjoxNzgzNTE3NDQ3fQ.sZELbE63LEZ4HZdzOxu4Kjr4MTEqw7iG6vABf0RKv1c' \
+--data '
+
+types---
+// memory
+// delete
+// beta
+// teaser
+// rerun
+// broadcast
+
+
+
+broadcast----------------------------------------
+
+curl --location 'https://api.lightsignal.app/admin/broadcasts' \
+--header 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxOGYyZDdhNi1mMmNmLTRjNDUtYjNjMi00MWUwNzNkMjdhZTUiLCJqdGkiOiJkMWIwMmZjNS1kOTc5LTQwYjQtOTRlOC00MjQ3YzE2YzAwYzMiLCJ0eXBlIjoiYWRtaW5fc2Vzc2lvbiIsImlhdCI6MTc4MzQyMDA2OCwiZXhwIjoxNzgzNDQxNjY4fQ.4vjhCVHwuczBfJFwZk1Q6c7mM1AC7z8t_ZZ5aSQER34'
+
+
+curl --location 'https://api.lightsignal.app/admin/broadcast' \
+--header 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxOGYyZDdhNi1mMmNmLTRjNDUtYjNjMi00MWUwNzNkMjdhZTUiLCJqdGkiOiJkMWIwMmZjNS1kOTc5LTQwYjQtOTRlOC00MjQ3YzE2YzAwYzMiLCJ0eXBlIjoiYWRtaW5fc2Vzc2lvbiIsImlhdCI6MTc4MzQyMDA2OCwiZXhwIjoxNzgzNDQxNjY4fQ.4vjhCVHwuczBfJFwZk1Q6c7mM1AC7z8t_ZZ5aSQER34' \
+--header 'Content-Type: application/json' \
+--data '{
+    "message": "System is Back.",
+    "severity": "info",
+    "audience": "all"
+  }'
+
+
+
+Dreaming audit------------------------------------
+
+curl --location 'https://api.lightsignal.app/admin/dreaming' \
+--header 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxOGYyZDdhNi1mMmNmLTRjNDUtYjNjMi00MWUwNzNkMjdhZTUiLCJqdGkiOiIzNzgyZjA1Mi1lNTY2LTQ2YzQtODFhYi0zMjM3ZGQ1MDliNDciLCJ0eXBlIjoiYWRtaW5fc2Vzc2lvbiIsImlhdCI6MTc4MzUwNjYyOSwiZXhwIjoxNzgzNTI4MjI5fQ.ArgYx-xUCG3owGecBvmnl_DQzACIWIk7kuqDTgFGyL0'
+
+curl --location 'https://api.lightsignal.app/admin/dreaming/run_pass_38' \
+--header 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxOGYyZDdhNi1mMmNmLTRjNDUtYjNjMi00MWUwNzNkMjdhZTUiLCJqdGkiOiIzNzgyZjA1Mi1lNTY2LTQ2YzQtODFhYi0zMjM3ZGQ1MDliNDciLCJ0eXBlIjoiYWRtaW5fc2Vzc2lvbiIsImlhdCI6MTc4MzUwNjYyOSwiZXhwIjoxNzgzNTI4MjI5fQ.ArgYx-xUCG3owGecBvmnl_DQzACIWIk7kuqDTgFGyL0'
+
+
+Peer teasers --------------------------------------
+

@@ -7,7 +7,7 @@ if settings.stripe_api_key:
 
 class StripeService:
     @staticmethod
-    def create_checkout_session(email: str, success_url: str = None, trial_days: int = 14) -> str:
+    def create_checkout_session(email: str, success_url: str = None, cancel_url: str = None, trial_days: int = 14) -> str:
         """
         Creates a Stripe Checkout Session for a new user subscribing to the plan.
         Returns the session URL.
@@ -25,6 +25,7 @@ class StripeService:
         metadata = {"email": email}
 
         redirect_success = success_url or settings.stripe_success_url
+        redirect_cancel = cancel_url or settings.stripe_cancel_url
 
         session = stripe.checkout.Session.create(
             payment_method_types=["card"],
@@ -38,7 +39,7 @@ class StripeService:
             ],
             subscription_data=subscription_data,
             success_url=redirect_success,
-            cancel_url=settings.stripe_cancel_url,
+            cancel_url=redirect_cancel,
             metadata=metadata,
         )
         return session.url
