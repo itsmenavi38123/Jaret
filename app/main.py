@@ -1,6 +1,6 @@
 # backend/app/main.py
 import os
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 from app.db import create_indexes, close_client
@@ -61,6 +61,38 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Middleware to log API and Webhook errors to system_health_logs
+@app.middleware("http")
+async def db_health_logging_middleware(request: Request, call_next):
+    try:
+        response = await call_next(request)
+        if response.status_code >= 500:
+            from app.services.system_health_logs_service import system_health_logs_service
+            from app.models.system_health_logs import SystemHealthLogCreate
+            log_type = "webhook_failure" if "webhook" in str(request.url.path).lower() else "api_error"
+            with suppress(Exception):
+                await system_health_logs_service.log_error(SystemHealthLogCreate(
+                    log_type=log_type,
+                    service="api",
+                    endpoint=str(request.url.path),
+                    error_message=f"HTTP status {response.status_code}",
+                    status_code=response.status_code
+                ))
+        return response
+    except Exception as e:
+        from app.services.system_health_logs_service import system_health_logs_service
+        from app.models.system_health_logs import SystemHealthLogCreate
+        log_type = "webhook_failure" if "webhook" in str(request.url.path).lower() else "api_error"
+        with suppress(Exception):
+            await system_health_logs_service.log_error(SystemHealthLogCreate(
+                log_type=log_type,
+                service="api",
+                endpoint=str(request.url.path),
+                error_message=str(e),
+                status_code=500
+            ))
+        raise e
 
 # ROUTER REGISTRATIONS
 app.include_router(auth_router, prefix="/auth")

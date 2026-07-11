@@ -1522,6 +1522,117 @@ async def get_system_health(current_user: dict = Depends(require_admin_role), ho
             content={"success": False, "error": str(e)}
         )
 
+@router.get("/health/status")
+async def get_system_health_status(current_user: dict = Depends(require_admin_role), hours: int = Query(24, ge=1)):
+    try:
+        health_data = await system_health_service.get_health_metrics(hours)
+        
+        # 1. API error rate
+        api_rate = health_data.get("api_error_rate", {})
+        total_errors = api_rate.get("total_errors", 0)
+        rate_per_hour = api_rate.get("rate_per_hour", 0.0)
+        period_hours = api_rate.get("period_hours", hours)
+        
+        api_status = "healthy"
+        api_dot = "green"
+        if total_errors > 0:
+            api_status = "unhealthy" if rate_per_hour > 5.0 else "warning"
+            api_dot = "red" if rate_per_hour > 5.0 else "yellow"
+            
+        # 2. Webhook delivery
+        webhook_failures = health_data.get("webhook_failures", {})
+        webhook_count = webhook_failures.get("count", 0)
+        webhook_status = "healthy"
+        webhook_dot = "green"
+        if webhook_count > 0:
+            webhook_status = "unhealthy"
+            webhook_dot = "red"
+            
+        # 3. Background jobs
+        job_failures = health_data.get("background_job_failures", {})
+        job_count = job_failures.get("count", 0)
+        job_status = "healthy"
+        job_dot = "green"
+        if job_count > 0:
+            job_status = "unhealthy"
+            job_dot = "red"
+            
+        # 4. Rate limit warnings
+        rate_warnings = health_data.get("rate_limit_warnings", {})
+        rate_count = rate_warnings.get("count", 0)
+        rate_status = "healthy"
+        rate_dot = "green"
+        rate_details = "None"
+        if rate_count > 0:
+            rate_status = "warning"
+            rate_dot = "yellow"
+            rate_details = f"{rate_count} warnings"
+            
+        # 5/6. Third party status
+        third_party = health_data.get("third_party_status", {})
+        qb_health = third_party.get("quickbooks", "unknown")
+        xero_health = third_party.get("xero", "unknown")
+        
+        qb_status = "healthy" if qb_health == "healthy" else "unhealthy"
+        qb_dot = "green" if qb_health == "healthy" else "red"
+        
+        xero_status = "healthy" if xero_health == "healthy" else "unhealthy"
+        xero_dot = "green" if xero_health == "healthy" else "red"
+        
+        # Format response data list
+        formatted_health = [
+            {
+                "name": "API error rate",
+                "details": f"{rate_per_hour}/hr over the last {period_hours}h ({total_errors} total)",
+                "status": api_status,
+                "dot_color": api_dot
+            },
+            {
+                "name": "Webhook delivery",
+                "details": f"{webhook_count} failures",
+                "status": webhook_status,
+                "dot_color": webhook_dot
+            },
+            {
+                "name": "Background jobs",
+                "details": f"{job_count} failures",
+                "status": job_status,
+                "dot_color": job_dot
+            },
+            {
+                "name": "Rate limit warnings",
+                "details": rate_details,
+                "status": rate_status,
+                "dot_color": rate_dot
+            },
+            {
+                "name": "Quickbooks",
+                "details": qb_health,
+                "status": qb_status,
+                "dot_color": qb_dot
+            },
+            {
+                "name": "Xero",
+                "details": xero_health,
+                "status": xero_status,
+                "dot_color": xero_dot
+            }
+        ]
+        
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": True,
+                "data": formatted_health
+            }
+        )
+        
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "error": str(e)}
+        )
+
 
 @router.get("/memories/search")
 async def search_memories(
