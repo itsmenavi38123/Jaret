@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from fastapi.responses import JSONResponse
 from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel
@@ -148,6 +148,388 @@ async def get_admin_stats(current_user: dict = Depends(require_admin_role)):
             status_code=500,
             content={"success": False, "error": str(e)}
             )
+
+@router.get("/dashboard/metrics")
+async def get_admin_dashboard_metrics(current_user: dict = Depends(require_admin_role)):
+    try:
+        users_collection = get_collection("users")
+        qb_tokens_collection = get_collection("quickbooks_tokens")
+        xero_tokens_collection = get_collection("xero_tokens")
+        stripe_transactions_collection = get_collection("stripe_transactions")
+        
+        now = datetime.utcnow()
+
+        # 1. Total customers (non-admin users)
+        total_customers = await users_collection.count_documents({
+            "is_admin": {"$ne": True},
+            "role": {"$ne": "Admin"}
+        })
+
+        # 2. On trial
+        on_trial = await users_collection.count_documents({
+            "is_admin": {"$ne": True},
+            "role": {"$ne": "Admin"},
+            "$or": [
+                {"subscription_status": "trialing"},
+                {"trial_ends_at": {"$gt": now}},
+                {
+                    "subscription_status": {"$exists": False},
+                    "is_beta": {"$ne": True}
+                }
+            ]
+        })
+
+        # 3. Paying
+        paying = await users_collection.count_documents({
+            "is_admin": {"$ne": True},
+            "role": {"$ne": "Admin"},
+            "subscription_status": "active",
+            "is_beta": {"$ne": True}
+        })
+
+        # 4. MRR
+        mrr = paying * 249
+
+        # 5. Trial -> paid conversion rate
+        converted_count = paying
+        trial_ended_count = await users_collection.count_documents({
+            "is_admin": {"$ne": True},
+            "role": {"$ne": "Admin"},
+            "subscription_status": {"$in": ["active", "canceled", "unpaid"]}
+        })
+        trial_to_paid_conversion = (converted_count / trial_ended_count * 100) if trial_ended_count > 0 else 0
+
+        # 6. Trials ending in 3 days
+        three_days_later = now + timedelta(days=3)
+        trials_ending_in_3_days = await users_collection.count_documents({
+            "is_admin": {"$ne": True},
+            "role": {"$ne": "Admin"},
+            "subscription_status": "trialing",
+            "trial_ends_at": {"$gte": now, "$lte": three_days_later}
+        })
+
+        # 7. Broken data connections
+        qb_users_all = await qb_tokens_collection.distinct("user_id")
+        qb_users_active = await qb_tokens_collection.distinct("user_id", {"is_active": True})
+        qb_broken = set(qb_users_all) - set(qb_users_active)
+
+        xero_users_all = await xero_tokens_collection.distinct("user_id")
+        xero_users_active = await xero_tokens_collection.distinct("user_id", {"is_active": True})
+        xero_broken = set(xero_users_all) - set(xero_users_active)
+
+        broken_data_connections = len(qb_broken.union(xero_broken))
+
+        # 8. Churn (30d)
+        thirty_days_ago = now - timedelta(days=30)
+        churned_count = await stripe_transactions_collection.count_documents({
+            "event_type": {"$in": ["customer.subscription.deleted", "customer.subscription.updated"]},
+            "status": {"$in": ["canceled", "unpaid"]},
+            "created_at": {"$gte": thirty_days_ago}
+        })
+        churn_rate_30d = (churned_count / (paying + churned_count) * 100) if (paying + churned_count) > 0 else 0
+
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": True,
+                "data": {
+                    "total_customers": total_customers,
+                    "on_trial": on_trial,
+                    "paying": paying,
+                    "mrr": mrr,
+                    "trial_to_paid_conversion": round(trial_to_paid_conversion, 1),
+                    "trials_ending_in_3_days": trials_ending_in_3_days,
+                    "broken_data_connections": broken_data_connections,
+                    "churn_rate_30d": round(churn_rate_30d, 1)
+                }
+            }
+        )
+
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "error": str(e)}
+        )
+
+def get_relative_time_text(dt: Optional[datetime]) -> str:
+    if not dt:
+        return "never active"
+    if dt.tzinfo:
+        dt = dt.replace(tzinfo=None)
+    now = datetime.utcnow()
+    diff = now - dt
+    
+    seconds = diff.total_seconds()
+    if seconds < 0:
+        return "active just now"
+    
+    minutes = int(seconds // 60)
+    if minutes < 1:
+        return "active just now"
+    if minutes < 60:
+        return f"active {minutes} min ago" if minutes != 1 else "active 1 min ago"
+        
+    hours = int(minutes // 60)
+    if hours < 24:
+        return f"active {hours}h ago" if hours != 1 else "active 1h ago"
+        
+    days = int(hours // 24)
+    if days == 1:
+        return "active yesterday"
+    if days < 30:
+        return f"active {days}d ago"
+        
+    return f"active on {dt.strftime('%b %d, %Y')}"
+
+@router.get("/customers")
+async def get_customers(
+    request: Request,
+    current_user: dict = Depends(require_admin_role),
+    page: int = Query(1, ge=1, description="Page number"),
+    per_page: int = Query(5, ge=1, description="Items per page"),
+    search: Optional[str] = Query(None, description="Search term"),
+    status: Optional[str] = Query(None, description="Status filter (paying, trial, past_due, beta)"),
+    connection: Optional[str] = Query(None, description="Connection filter (quickbooks, xero, connected, broken)")
+):
+    try:
+        users_collection = get_collection("users")
+        qb_tokens_collection = get_collection("quickbooks_tokens")
+        xero_tokens_collection = get_collection("xero_tokens")
+        
+        now = datetime.utcnow()
+        
+        # Build query excluding admin users
+        query = {
+            "is_admin": {"$ne": True},
+            "role": {"$ne": "Admin"}
+        }
+        
+        # 1. Search Filter
+        if search:
+            search_regex = {"$regex": search, "$options": "i"}
+            query["$or"] = [
+                {"full_name": search_regex},
+                {"company_name": search_regex},
+                {"email": search_regex}
+            ]
+            
+        # 2. Status Filter
+        if status:
+            status_lower = status.lower()
+            if status_lower == "beta":
+                query["is_beta"] = True
+            elif status_lower == "paying":
+                query["subscription_status"] = "active"
+                query["is_beta"] = {"$ne": True}
+            elif status_lower == "past_due":
+                query["subscription_status"] = "unpaid"
+                query["is_beta"] = {"$ne": True}
+            elif status_lower == "trial":
+                query["is_beta"] = {"$ne": True}
+                query["$or"] = [
+                    {"subscription_status": "trialing"},
+                    {"trial_ends_at": {"$gt": now}},
+                    {"subscription_status": {"$exists": False}}
+                ]
+                
+        # 3. Connection Filter
+        user_id_filter = None
+        if connection:
+            conn_lower = connection.lower()
+            if conn_lower == "quickbooks":
+                user_id_filter = await qb_tokens_collection.distinct("user_id")
+            elif conn_lower == "xero":
+                user_id_filter = await xero_tokens_collection.distinct("user_id")
+            elif conn_lower == "connected":
+                qb_active = await qb_tokens_collection.distinct("user_id", {"is_active": True})
+                xero_active = await xero_tokens_collection.distinct("user_id", {"is_active": True})
+                user_id_filter = list(set(qb_active + xero_active))
+            elif conn_lower == "broken":
+                qb_all = await qb_tokens_collection.distinct("user_id")
+                qb_active = await qb_tokens_collection.distinct("user_id", {"is_active": True})
+                qb_broken = set(qb_all) - set(qb_active)
+                
+                xero_all = await xero_tokens_collection.distinct("user_id")
+                xero_active = await xero_tokens_collection.distinct("user_id", {"is_active": True})
+                xero_broken = set(xero_all) - set(xero_active)
+                
+                user_id_filter = list(qb_broken.union(xero_broken))
+                
+        if user_id_filter is not None:
+            query["_id"] = {"$in": user_id_filter}
+            
+        # Count total documents matching query
+        total_count = await users_collection.count_documents(query)
+        total_pages = (total_count + per_page - 1) // per_page
+        
+        # Paginated query
+        skip = (page - 1) * per_page
+        cursor = users_collection.find(query).skip(skip).limit(per_page)
+        page_users = await cursor.to_list(length=None)
+        
+        # Format connection details helper
+        user_ids = [u["_id"] for u in page_users]
+        
+        qb_tokens = await qb_tokens_collection.find({"user_id": {"$in": user_ids}}).to_list(length=None)
+        xero_tokens = await xero_tokens_collection.find({"user_id": {"$in": user_ids}}).to_list(length=None)
+        
+        user_qb_tokens = {}
+        for t in qb_tokens:
+            user_qb_tokens.setdefault(t["user_id"], []).append(t)
+            
+        user_xero_tokens = {}
+        for t in xero_tokens:
+            user_xero_tokens.setdefault(t["user_id"], []).append(t)
+            
+        formatted_customers = []
+        for user in page_users:
+            uid = user["_id"]
+            created_at = user.get("created_at") or now
+            last_active = user.get("last_active")
+            is_beta = user.get("is_beta", False)
+            sub_status = user.get("subscription_status")
+            
+            # Determine UI Status
+            if is_beta:
+                ui_status = "BETA"
+            elif sub_status == "active":
+                ui_status = "PAYING"
+            elif sub_status == "unpaid":
+                ui_status = "PAST_DUE"
+            elif sub_status == "trialing" or (sub_status is None and not is_beta):
+                ui_status = "TRIAL"
+            else:
+                ui_status = "PAST_DUE"
+                
+            # Pricing/Comped text
+            price_text = "Comped" if is_beta else "$249/mo"
+            
+            # Last active text
+            last_active_text = get_relative_time_text(last_active)
+            
+            # Connection Health Text
+            qb_list = user_qb_tokens.get(uid, [])
+            xero_list = user_xero_tokens.get(uid, [])
+            
+            has_qb = len(qb_list) > 0
+            has_xero = len(xero_list) > 0
+            
+            qb_active = any(t.get("is_active", False) for t in qb_list)
+            xero_active = any(t.get("is_active", False) for t in xero_list)
+            
+            connection_health_text = "No connection"
+            connection_details_text = ""
+            
+            if has_qb:
+                if qb_active:
+                    connection_health_text = "QuickBooks healthy"
+                else:
+                    # Find days broken
+                    broken_days = 1
+                    for t in qb_list:
+                        if not t.get("is_active", False) and t.get("updated_at"):
+                            upd_at = t["updated_at"]
+                            if upd_at.tzinfo:
+                                upd_at = upd_at.replace(tzinfo=None)
+                            broken_days = max(1, (now - upd_at).days)
+                            break
+                    connection_health_text = f"QuickBooks sync broken {broken_days} days"
+                    connection_details_text = "needs attention"
+            elif has_xero:
+                if xero_active:
+                    connection_health_text = "Xero healthy"
+                else:
+                    broken_days = 1
+                    for t in xero_list:
+                        if not t.get("is_active", False) and t.get("updated_at"):
+                            upd_at = t["updated_at"]
+                            if upd_at.tzinfo:
+                                upd_at = upd_at.replace(tzinfo=None)
+                            broken_days = max(1, (now - upd_at).days)
+                            break
+                    connection_health_text = f"Xero sync broken {broken_days} days"
+                    connection_details_text = "needs attention"
+                    
+            # Creation / trial details
+            creation_info_text = ""
+            if ui_status == "BETA":
+                creation_info_text = f"manually created {created_at.strftime('%b %d')}"
+            elif ui_status == "PAYING":
+                creation_info_text = f"customer since {created_at.strftime('%b %Y')}"
+            elif ui_status == "TRIAL":
+                created_naive = created_at.replace(tzinfo=None) if created_at.tzinfo else created_at
+                days_since = (now - created_naive).days
+                day_number = min(14, max(1, days_since + 1))
+                creation_info_text = f"Day {day_number} of 14"
+                if user.get("trial_warning_sent"):
+                    creation_info_text += " · trial-ending email sent"
+            else:
+                creation_info_text = f"account created {created_at.strftime('%b %d, %Y')}"
+                
+            # Build full formatted description line
+            desc_parts = []
+            if ui_status == "TRIAL":
+                desc_parts.append(creation_info_text)
+                desc_parts.append(last_active_text)
+                desc_parts.append(connection_health_text)
+            else:
+                desc_parts.append(price_text)
+                desc_parts.append(last_active_text)
+                desc_parts.append(connection_health_text)
+                if creation_info_text:
+                    desc_parts.append(creation_info_text)
+                    
+            if connection_details_text:
+                desc_parts.append(connection_details_text)
+                
+            formatted_description = " · ".join([p for p in desc_parts if p])
+            
+            # Dot color logic
+            if "broken" in connection_health_text.lower() or ui_status == "PAST_DUE":
+                dot_color = "red"
+            elif ui_status == "PAYING":
+                dot_color = "green"
+            elif ui_status == "TRIAL":
+                dot_color = "yellow"
+            else:
+                dot_color = "white"
+                
+            name = user.get("company_name") or user.get("full_name") or user.get("email")
+
+            formatted_customers.append({
+                "id": uid,
+                "name": name,
+                "status": ui_status,
+                "details": formatted_description,
+                "dot_color": dot_color
+            })
+            
+        next_page_url = str(request.url.include_query_params(page=page + 1)) if page < total_pages else None
+        prev_page_url = str(request.url.include_query_params(page=page - 1)) if page > 1 else None
+        
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": True,
+                "data": formatted_customers,
+                "pagination": {
+                    "page": page,
+                    "per_page": per_page,
+                    "total_count": total_count,
+                    "total_pages": total_pages,
+                    "has_next": page < total_pages,
+                    "has_prev": page > 1,
+                    "next_page_url": next_page_url,
+                    "prev_page_url": prev_page_url
+                }
+            }
+        )
+        
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "error": str(e)}
+        )
 
 @router.post("/beta-mode")
 async def set_beta_mode(
@@ -601,6 +983,7 @@ async def force_user_logout(request: UserActionRequest, current_user: dict = Dep
 
 @router.get("/logs")
 async def get_admin_logs(
+    request: Request,
     current_user: dict = Depends(require_admin_role),
     page: int = Query(1, ge=1, description="Page number"),
     per_page: int = Query(20, ge=1, description="Items per page"),
@@ -632,6 +1015,9 @@ async def get_admin_logs(
                 "details": log.get("details")
             })
 
+        next_page_url = str(request.url.include_query_params(page=page + 1)) if page < total_pages else None
+        prev_page_url = str(request.url.include_query_params(page=page - 1)) if page > 1 else None
+
         return JSONResponse(
             status_code=200,
             content={
@@ -643,7 +1029,9 @@ async def get_admin_logs(
                     "total_count": total_count,
                     "total_pages": total_pages,
                     "has_next": page < total_pages,
-                    "has_prev": page > 1
+                    "has_prev": page > 1,
+                    "next_page_url": next_page_url,
+                    "prev_page_url": prev_page_url
                 }
             }
         )
@@ -2249,4 +2637,4 @@ async def get_admin_document_download(
 
 
 
-
+
