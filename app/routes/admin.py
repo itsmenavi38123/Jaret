@@ -1846,6 +1846,7 @@ async def get_memories_customers(
 
 @router.get("/customers/list")
 async def get_customers_compact(
+    search: str | None = None,
     page: int = 1,
     per_page: int = 20,
     current_user: dict = Depends(require_admin_role)
@@ -1853,11 +1854,18 @@ async def get_customers_compact(
     try:
         users_collection = get_collection("users")
         
+        # We query only customers (is_admin: {"$ne": True})
+        filter_query = {"is_admin": {"$ne": True}}
+        if search:
+            filter_query["$or"] = [
+                {"company_name": {"$regex": search, "$options": "i"}},
+                {"full_name": {"$regex": search, "$options": "i"}},
+                {"email": {"$regex": search, "$options": "i"}}
+            ]
+            
         # Paginate
         skip = (page - 1) * per_page
         
-        # We query only customers (is_admin: {"$ne": True})
-        filter_query = {"is_admin": {"$ne": True}}
         total_count = await users_collection.count_documents(filter_query)
         
         cursor = users_collection.find(filter_query).skip(skip).limit(per_page)
