@@ -16,19 +16,23 @@ class AdminMemoryService:
         self,
         memory: dict
     ):
-
-        if memory.get("_id"):
-            memory["_id"] = str(
-                memory["_id"]
-            )
-
-        return memory
+        return {
+            "_id": str(memory["_id"]) if memory.get("_id") else None,
+            "content": memory.get("content"),
+            "observation_type": memory.get("observation_type"),
+            "agent_name": memory.get("agent_name"),
+            "confidence": memory.get("confidence"),
+            "created_at": memory.get("created_at").isoformat() if isinstance(memory.get("created_at"), datetime) else memory.get("created_at"),
+            "outdated": memory.get("outdated", False)
+        }
 
     async def get_customer_memories(
         self,
         user_id: str,
         query: str | None = None,
-        include_outdated: bool = False,
+        living_summary: bool = True,
+        show_outdated: bool = False,
+        show_seeded_backfilled: bool = False,
         page: int = 1,
         page_size: int = 10,
         observation_type: str | None = None,
@@ -42,8 +46,18 @@ class AdminMemoryService:
             "user_id": user_id
         }
 
-        if not include_outdated:
-            filters["outdated"] = False
+        # Exclude living summary document if living_summary is False
+        if not living_summary:
+            filters["observation_type"] = {"$ne": "living_summary"}
+
+        # Exclude outdated memories if show_outdated is False
+        if not show_outdated:
+            filters["outdated"] = {"$ne": True}
+
+        # Exclude seeded/backfilled memories if show_seeded_backfilled is False
+        if not show_seeded_backfilled:
+            filters["seed"] = {"$ne": True}
+            filters["backfilled"] = {"$ne": True}
 
         if query:
             filters["content"] = {
@@ -51,11 +65,33 @@ class AdminMemoryService:
                 "$options": "i"
             }
 
-        if observation_type:
-            filters["observation_type"] = observation_type
+        # Observation Type mapping
+        if observation_type and observation_type != "All types":
+            obs_type_lower = observation_type.lower()
+            if obs_type_lower == "observation":
+                filters["observation_type"] = {"$in": ["observation", "metric_observation"]}
+            elif obs_type_lower == "correction":
+                filters["observation_type"] = "correction"
+            elif obs_type_lower == "learning":
+                filters["observation_type"] = "learning"
+            else:
+                filters["observation_type"] = observation_type
 
-        if agent_name:
-            filters["agent_name"] = agent_name
+        # Agent Name mapping
+        if agent_name and agent_name != "All agents":
+            agent_lower = agent_name.lower()
+            if agent_lower == "financial analyst":
+                filters["agent_name"] = {"$in": ["financial_analyst", "finance_analyst", "fa"]}
+            elif agent_lower == "demand forecast":
+                filters["agent_name"] = {"$in": ["demand_forecast", "df"]}
+            elif agent_lower == "orchestrator":
+                filters["agent_name"] = "orchestrator"
+            elif agent_lower == "opportunity prep":
+                filters["agent_name"] = {"$in": ["opportunity_prep", "prep_agent"]}
+            elif agent_lower == "dia":
+                filters["agent_name"] = {"$in": ["dia", "dia_agent"]}
+            else:
+                filters["agent_name"] = agent_name
 
         if tags:
             filters["tags"] = {
@@ -113,6 +149,7 @@ class AdminMemoryService:
             }
         }
 
+
     async def edit_memory(
         self,
         memory_id: str,
@@ -134,7 +171,8 @@ class AdminMemoryService:
 
         new_memory = dict(memory)
 
-        new_memory.pop("_id", None)
+        from uuid import uuid4
+        new_memory["_id"] = str(uuid4())
 
         new_memory["content"] = updated_content
         new_memory["outdated"] = False
@@ -165,12 +203,13 @@ class AdminMemoryService:
         self,
         memory_id: str
     ):
+        try:
+            from bson import ObjectId
+            id_filter = {"$or": [{"_id": memory_id}, {"_id": ObjectId(memory_id)}]}
+        except Exception:
+            id_filter = {"_id": memory_id}
 
-        await self.collection.delete_one(
-            {
-                "_id": memory_id
-            }
-        )
+        await self.collection.delete_one(id_filter)
 
     async def export_customer_memories(
         self,

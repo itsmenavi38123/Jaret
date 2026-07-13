@@ -1,7 +1,14 @@
 from datetime import datetime
 from typing import List, Optional
+from bson import ObjectId
 
 from app.db import get_collection
+
+def _id_filter(memory_id: str) -> dict:
+    try:
+        return {"$or": [{"_id": memory_id}, {"_id": ObjectId(memory_id)}]}
+    except Exception:
+        return {"_id": memory_id}
 from app.models.customer_memory import CustomerMemory
 
 
@@ -54,9 +61,7 @@ class CustomerMemoryService:
     ) -> Optional[dict]:
 
         return await self.collection.find_one(
-            {
-                "_id": memory_id
-            }
+            _id_filter(memory_id)
         )
 
     async def get_memories_by_path_prefix(
@@ -112,9 +117,7 @@ class CustomerMemoryService:
     ):
 
         await self.collection.update_one(
-            {
-                "_id": memory_id
-            },
+            _id_filter(memory_id),
             {
                 "$set": {
                     "pinned": True,
@@ -129,9 +132,7 @@ class CustomerMemoryService:
     ):
 
         await self.collection.update_one(
-            {
-                "_id": memory_id
-            },
+            _id_filter(memory_id),
             {
                 "$set": {
                     "pinned": False,
@@ -146,9 +147,7 @@ class CustomerMemoryService:
     ):
 
         await self.collection.update_one(
-            {
-                "_id": memory_id
-            },
+            _id_filter(memory_id),
             {
                 "$set": {
                     "outdated": True,
@@ -165,9 +164,7 @@ class CustomerMemoryService:
     ):
 
         await self.collection.update_one(
-            {
-                "_id": memory_id
-            },
+            _id_filter(memory_id),
             {
                 "$set": {
                     "superseded_by": superseded_by,

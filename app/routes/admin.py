@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Request, BackgroundTasks
 from fastapi.responses import JSONResponse
 from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel
@@ -25,6 +25,9 @@ from app.services.admin_memory_service import AdminMemoryService
 from app.services.admin_search_service import AdminSearchService
 from app.services.memory_export_service import MemoryExportService
 from app.services.memory_review_service import MemoryReviewService
+from app.services.business_profile_classifier_service import business_profile_classifier_service
+from app.services.internal_event_bus import internal_event_bus
+from app.services.dreaming_scheduler_service import DreamingSchedulerService
 from typing import List
 
 memory_export_service = MemoryExportService()
@@ -34,6 +37,8 @@ memory_failure_service = MemoryFailureService()
 admin_memory_service = AdminMemoryService()
 admin_search_service = AdminSearchService()
 memory_review_service = MemoryReviewService()
+dreaming_scheduler_service = DreamingSchedulerService()
+
 
 async def require_admin_role(current_admin: dict = Depends(require_admin_session)):
     """
@@ -1634,74 +1639,282 @@ async def get_system_health_status(current_user: dict = Depends(require_admin_ro
         )
 
 
-@router.get("/memories/search")
-async def search_memories(
-    query: str,
-    user_id: str | None = None,
-    observation_type: str | None = None,
-    agent_name: str | None = None,
-    tag: str | None = None,
-    start_date: datetime | None = None,
-    end_date: datetime | None = None,
+
+
+
+class EditMemoryRequest(BaseModel):
+    content: str
+
+
+async def execute_rerun_pipeline(user_id: str, admin_user_id: str, admin_email: str, target_email: str | None):
+    # 1. Re-run classifier
+    try:
+        profiles_col = get_collection("business_profiles")
+        profile = await profiles_col.find_one({"user_id": user_id})
+        if profile and profile.get("onboarding_data"):
+            onboarding_data = profile["onboarding_data"]
+            opp_profiles_col = get_collection("opportunities_profiles")
+            opp_profile = await opp_profiles_col.find_one({"user_id": user_id})
+            
+            classification_result = business_profile_classifier_service.classify_business(
+                onboarding=onboarding_data,
+                opportunities_profile=opp_profile,
+            )
+            
+            await profiles_col.update_one(
+                {"user_id": user_id},
+                {
+                    "$set": {
+                        "business_classifications": classification_result["business_classifications"],
+                        "business_tags": classification_result["business_tags"],
+                        "proven_capabilities": classification_result["proven_capabilities"],
+                        "updated_at": datetime.utcnow()
+                    }
+                }
+            )
+            
+            # Publish event
+            await internal_event_bus.publish(
+                "business.profile_classified",
+                {
+                    "business_id": user_id,
+                    "business_classifications": classification_result["business_classifications"],
+                    "business_tags": classification_result["business_tags"],
+                    "proven_capabilities": classification_result["proven_capabilities"],
+                    "classified_at": datetime.utcnow().isoformat(),
+                }
+            )
+            print(f"[Rerun] Re-classification completed for {user_id}")
+    except Exception as e:
+        print(f"[Rerun] Re-classification failed for {user_id}: {e}")
+
+    # 2. Re-run dreaming scheduler pipeline
+    try:
+        await dreaming_scheduler_service.run_customer_dreaming_pipeline(user_id)
+        print(f"[Rerun] Customer dreaming pipeline re-run completed for {user_id}")
+    except Exception as e:
+        print(f"[Rerun] Customer dreaming pipeline re-run failed for {user_id}: {e}")
+
+
+@router.get("/memories/customers")
+async def get_memories_customers(
+    search: str | None = None,
+    page: int = 1,
+    per_page: int = 5,
+    global_search: bool = False,
     current_user: dict = Depends(require_admin_role)
 ):
     try:
-
-        memories = await admin_search_service.search_memories(
-            query=query,
-            user_id=user_id,
-            observation_type=observation_type,
-            agent_name=agent_name,
-            tag=tag,
-            start_date=start_date,
-            end_date=end_date
-        )
-
+        memories_collection = get_collection("customer_memory")
+        users_collection = get_collection("users")
+        
+        # Group and calculate stats via aggregation
+        pipeline = [
+            {
+                "$group": {
+                    "_id": "$user_id",
+                    "entry_count": {"$sum": 1},
+                    "last_write": {"$max": "$created_at"},
+                    "outdated_count": {
+                        "$sum": {"$cond": [{"$eq": ["$outdated", True]}, 1, 0]}
+                    },
+                    "seeded_count": {
+                        "$sum": {
+                            "$cond": [
+                                {
+                                    "$or": [
+                                        {"$eq": ["$seed", True]},
+                                        {"$eq": ["$backfilled", True]}
+                                    ]
+                                },
+                                1,
+                                0
+                            ]
+                        }
+                    }
+                }
+            }
+        ]
+        
+        stats_cursor = memories_collection.aggregate(pipeline)
+        stats = [doc async for doc in stats_cursor]
+        
+        # Filter users
+        user_ids = [s["_id"] for s in stats if s.get("_id")]
+        
+        user_filter = {"is_admin": {"$ne": True}}
+        if search:
+            # Get users matching by memory content first
+            matching_user_ids_by_mem = await memories_collection.distinct(
+                "user_id", 
+                {"content": {"$regex": search, "$options": "i"}}
+            )
+            
+            if global_search:
+                user_filter["_id"] = {"$in": list(set(user_ids) & set(matching_user_ids_by_mem))}
+            else:
+                user_filter["_id"] = {"$in": user_ids}
+                user_filter["$or"] = [
+                    {"_id": {"$in": matching_user_ids_by_mem}},
+                    {"company_name": {"$regex": search, "$options": "i"}},
+                    {"full_name": {"$regex": search, "$options": "i"}},
+                    {"email": {"$regex": search, "$options": "i"}}
+                ]
+        else:
+            user_filter["_id"] = {"$in": user_ids}
+            
+        users_cursor = users_collection.find(user_filter)
+        users = [u async for u in users_cursor]
+        user_map = {str(u["_id"]): u for u in users}
+        
+        def format_time_diff(dt: datetime) -> str:
+            if not dt:
+                return "never"
+            now = datetime.utcnow()
+            diff = now - dt
+            if diff.total_seconds() < 0:
+                return "just now"
+            
+            seconds = int(diff.total_seconds())
+            minutes = seconds // 60
+            hours = minutes // 60
+            days = hours // 24
+            
+            if days > 0:
+                if days == 1:
+                    return "yesterday"
+                return f"{days} days ago"
+            elif hours > 0:
+                return f"{hours}h ago"
+            elif minutes > 0:
+                return f"{minutes} min ago"
+            else:
+                return "just now"
+        
+        # Merge results
+        merged_list = []
+        for stat in stats:
+            uid = stat["_id"]
+            if not uid:
+                continue
+            user = user_map.get(str(uid))
+            if not user:
+                continue
+                
+            cname = user.get("company_name") or user.get("full_name") or user.get("email")
+            last_write = stat.get("last_write")
+            
+            merged_list.append({
+                "user_id": uid,
+                "customer_name": cname,
+                "entry_count": stat.get("entry_count", 0),
+                "last_write": last_write.isoformat() if last_write else None,
+                "last_write_diff": format_time_diff(last_write),
+                "outdated_count": stat.get("outdated_count", 0),
+                "seeded_count": stat.get("seeded_count", 0)
+            })
+            
+        # Sort list chronological (last_write desc)
+        merged_list.sort(key=lambda x: x["last_write"] or "", reverse=True)
+        
+        # Paginate
+        total_count = len(merged_list)
+        skip = (page - 1) * per_page
+        paginated = merged_list[skip:skip+per_page]
+        
         return JSONResponse(
             status_code=200,
-            content=jsonable_encoder(
-                {
-                    "success": True,
-                    "data": memories
+            content=jsonable_encoder({
+                "success": True,
+                "data": paginated,
+                "pagination": {
+                    "page": page,
+                    "per_page": per_page,
+                    "total_count": total_count,
+                    "total_pages": (total_count + per_page - 1) // per_page,
+                    "has_next": (page * per_page) < total_count,
+                    "has_prev": page > 1
                 }
-            )
+            })
         )
-
     except Exception as e:
         return JSONResponse(
             status_code=500,
-            content={
-                "success": False,
-                "error": str(e)
-            }
+            content={"success": False, "error": str(e)}
         )
 
 
-@router.get("/memories/review")
-async def review_queue(
+@router.get("/customers/list")
+async def get_customers_compact(
+    page: int = 1,
+    per_page: int = 20,
     current_user: dict = Depends(require_admin_role)
 ):
     try:
-
-        memories = await memory_review_service.get_review_queue()
-
+        users_collection = get_collection("users")
+        
+        # Paginate
+        skip = (page - 1) * per_page
+        
+        # We query only customers (is_admin: {"$ne": True})
+        filter_query = {"is_admin": {"$ne": True}}
+        total_count = await users_collection.count_documents(filter_query)
+        
+        cursor = users_collection.find(filter_query).skip(skip).limit(per_page)
+        users = [u async for u in cursor]
+        
+        compact_users = []
+        for u in users:
+            cname = u.get("company_name") or u.get("full_name") or u.get("email")
+            compact_users.append({
+                "user_id": str(u["_id"]),
+                "name": cname
+            })
+            
         return JSONResponse(
             status_code=200,
-            content=jsonable_encoder(
-                {
-                    "success": True,
-                    "data": memories
+            content=jsonable_encoder({
+                "success": True,
+                "data": compact_users,
+                "pagination": {
+                    "page": page,
+                    "per_page": per_page,
+                    "total_count": total_count,
+                    "total_pages": (total_count + per_page - 1) // per_page,
+                    "has_next": (page * per_page) < total_count,
+                    "has_prev": page > 1
                 }
-            )
+            })
         )
-
     except Exception as e:
         return JSONResponse(
             status_code=500,
-            content={
-                "success": False,
-                "error": str(e)
-            }
+            content={"success": False, "error": str(e)}
+        )
+
+
+@router.get("/memories/export/all")
+async def export_all_memories(
+    current_user: dict = Depends(require_admin_role)
+):
+    try:
+        memories_col = get_collection("customer_memory")
+        cursor = memories_col.find({}).sort("created_at", -1)
+        memories = [doc async for doc in cursor]
+        for memory in memories:
+            if memory.get("_id"):
+                memory["_id"] = str(memory["_id"])
+        return JSONResponse(
+            status_code=200,
+            content=jsonable_encoder({
+                "success": True,
+                "data": memories
+            })
+        )
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "error": str(e)}
         )
 
 
@@ -1711,11 +1924,9 @@ async def export_memories(
     current_user: dict = Depends(require_admin_role)
 ):
     try:
-
         memories = await memory_export_service.export_customer_memories(
             user_id=user_id
         )
-
         return JSONResponse(
             status_code=200,
             content=jsonable_encoder(
@@ -1725,7 +1936,6 @@ async def export_memories(
                 }
             )
         )
-
     except Exception as e:
         return JSONResponse(
             status_code=500,
@@ -1742,11 +1952,9 @@ async def export_memories_csv(
     current_user: dict = Depends(require_admin_role)
 ):
     try:
-
         csv_data = await memory_export_service.export_customer_memories_csv(
             user_id=user_id
         )
-
         return Response(
             content=csv_data,
             media_type="text/csv",
@@ -1755,7 +1963,6 @@ async def export_memories_csv(
                 f"attachment; filename=customer_{user_id}_memories.csv"
             }
         )
-
     except Exception as e:
         return JSONResponse(
             status_code=500,
@@ -1765,26 +1972,52 @@ async def export_memories_csv(
             }
         )
 
+
+@router.get("/memories/{user_id}/export/json")
+async def export_memories_json_alt(
+    user_id: str,
+    current_user: dict = Depends(require_admin_role)
+):
+    return await export_memories(user_id, current_user)
+
+
+@router.get("/memories/{user_id}/export/csv")
+async def export_memories_csv_alt(
+    user_id: str,
+    current_user: dict = Depends(require_admin_role)
+):
+    return await export_memories_csv(user_id, current_user)
+
+
 @router.get("/memories/{user_id}")
 async def get_customer_memories(
     user_id: str,
     query: str | None = None,
     page: int = 1,
     page_size: int = 20,
-    include_outdated: bool = False,
+    living_summary: bool = True,
+    show_outdated: bool = False,
+    show_seeded_backfilled: bool = False,
     observation_type: str | None = None,
     agent_name: str | None = None,
     tags: List[str] | None = Query(None),
-    start_date: datetime | None = None,
-    end_date: datetime | None = None,
+    date_filter: str | None = None,
     current_user: dict = Depends(require_admin_role)
 ):
     try:
+        start_date = None
+        end_date = None
+        if date_filter == "Last 7 days":
+            start_date = datetime.utcnow() - timedelta(days=7)
+        elif date_filter == "Last 30 days":
+            start_date = datetime.utcnow() - timedelta(days=30)
 
         result = await admin_memory_service.get_customer_memories(
             user_id=user_id,
             query=query,
-            include_outdated=include_outdated,
+            living_summary=living_summary,
+            show_outdated=show_outdated,
+            show_seeded_backfilled=show_seeded_backfilled,
             page=page,
             page_size=page_size,
             observation_type=observation_type,
@@ -1804,7 +2037,6 @@ async def get_customer_memories(
                 }
             )
         )
-
     except Exception as e:
         return JSONResponse(
             status_code=500,
@@ -1815,119 +2047,94 @@ async def get_customer_memories(
         )
 
 
-@router.post("/memories/{memory_id}/approve")
-async def approve_memory(
+@router.put("/memories/{memory_id}")
+async def edit_memory(
     memory_id: str,
+    body: EditMemoryRequest,
     current_user: dict = Depends(require_admin_role)
 ):
     try:
+        memory = await customer_memory_service.get_memory_by_id(memory_id)
+        if not memory:
+            raise HTTPException(status_code=404, detail="Memory not found")
+            
+        user_id = memory.get("user_id")
+        users_col = get_collection("users")
+        target_user = await users_col.find_one({"_id": user_id})
+        target_email = target_user.get("email") if target_user else None
 
-        await memory_review_service.approve_memory(
-            memory_id=memory_id
+        new_id = await admin_memory_service.edit_memory(
+            memory_id=memory_id,
+            updated_content=body.content
+        )
+
+        # Log the action
+        await admin_logs_service.log_action(
+            AdminLogCreate(
+                admin_user_id=current_user["id"],
+                admin_email=current_user["email"],
+                target_user_id=user_id,
+                target_user_email=target_email,
+                action="Edit Memory",
+                details=f"Superseded memory {memory_id} with new entry {new_id}."
+            )
         )
 
         return JSONResponse(
             status_code=200,
             content={
                 "success": True,
-                "message": "Memory approved"
+                "message": "Memory updated",
+                "data": {"id": new_id}
             }
         )
-
     except Exception as e:
         return JSONResponse(
             status_code=500,
-            content={
-                "success": False,
-                "error": str(e)
-            }
+            content={"success": False, "error": str(e)}
         )
 
 
-@router.post("/memories/{memory_id}/reject")
-async def reject_memory(
+@router.post("/memories/{memory_id}/outdated")
+async def mark_memory_outdated(
     memory_id: str,
     current_user: dict = Depends(require_admin_role)
 ):
     try:
+        memory = await customer_memory_service.get_memory_by_id(memory_id)
+        if not memory:
+            raise HTTPException(status_code=404, detail="Memory not found")
+            
+        user_id = memory.get("user_id")
+        users_col = get_collection("users")
+        target_user = await users_col.find_one({"_id": user_id})
+        target_email = target_user.get("email") if target_user else None
 
-        await memory_review_service.reject_memory(
-            memory_id=memory_id
+        await admin_memory_service.soft_delete_memory(memory_id)
+
+        # Log the action
+        await admin_logs_service.log_action(
+            AdminLogCreate(
+                admin_user_id=current_user["id"],
+                admin_email=current_user["email"],
+                target_user_id=user_id,
+                target_user_email=target_email,
+                action="Mark Outdated",
+                details=f"Marked memory {memory_id} as outdated."
+            )
         )
 
         return JSONResponse(
             status_code=200,
             content={
                 "success": True,
-                "message": "Memory rejected"
+                "message": "Memory marked outdated"
             }
         )
-
     except Exception as e:
         return JSONResponse(
             status_code=500,
-            content={
-                "success": False,
-                "error": str(e)
-            }
-        )
-
-
-@router.post("/memories/{memory_id}/pin")
-async def pin_memory(
-    memory_id: str,
-    current_user: dict = Depends(require_admin_role)
-):
-    try:
-
-        await customer_memory_service.pin_memory(
-            memory_id=memory_id
-        )
-
-        return JSONResponse(
-            status_code=200,
-            content={
-                "success": True,
-                "message": "Memory pinned"
-            }
-        )
-
-    except Exception as e:
-        return JSONResponse(
-            status_code=500,
-            content={
-                "success": False,
-                "error": str(e)
-            }
-        )
-
-
-@router.post("/memories/{memory_id}/unpin")
-async def unpin_memory(
-    memory_id: str,
-    current_user: dict = Depends(require_admin_role)
-):
-    try:
-
-        await customer_memory_service.unpin_memory(
-            memory_id=memory_id
-        )
-
-        return JSONResponse(
-            status_code=200,
-            content={
-                "success": True,
-                "message": "Memory unpinned"
-            }
-        )
-
-    except Exception as e:
-        return JSONResponse(
-            status_code=500,
-            content={
-                "success": False,
-                "error": str(e)
-            }
+            content={"success": False, "error": str(e)}
         )
 
 
@@ -1937,26 +2144,137 @@ async def delete_memory(
     current_user: dict = Depends(require_admin_role)
 ):
     try:
+        memory = await customer_memory_service.get_memory_by_id(memory_id)
+        if not memory:
+            raise HTTPException(status_code=404, detail="Memory not found")
+            
+        user_id = memory.get("user_id")
+        users_col = get_collection("users")
+        target_user = await users_col.find_one({"_id": user_id})
+        target_email = target_user.get("email") if target_user else None
 
-        await admin_memory_service.soft_delete_memory(
-            memory_id=memory_id
+        await admin_memory_service.hard_delete_memory(memory_id)
+
+        # Log the action
+        await admin_logs_service.log_action(
+            AdminLogCreate(
+                admin_user_id=current_user["id"],
+                admin_email=current_user["email"],
+                target_user_id=user_id,
+                target_user_email=target_email,
+                action="Hard Delete",
+                details=f"Permanently deleted memory {memory_id}."
+            )
         )
 
         return JSONResponse(
             status_code=200,
             content={
                 "success": True,
-                "message": "Memory deleted"
+                "message": "Memory permanently deleted"
             }
         )
-
     except Exception as e:
         return JSONResponse(
             status_code=500,
+            content={"success": False, "error": str(e)}
+        )
+
+
+@router.post("/rerun")
+async def trigger_rerun(
+    body: UserActionRequest,
+    background_tasks: BackgroundTasks,
+    current_user: dict = Depends(require_admin_role)
+):
+    try:
+        user_id = body.user_id
+        users_col = get_collection("users")
+        target_user = await users_col.find_one({"_id": user_id})
+        if not target_user:
+            raise HTTPException(status_code=404, detail="User not found")
+        target_email = target_user.get("email")
+
+        # Add task to background tasks
+        background_tasks.add_task(
+            execute_rerun_pipeline,
+            user_id=user_id,
+            admin_user_id=current_user["id"],
+            admin_email=current_user["email"],
+            target_email=target_email
+        )
+
+        # Log the action
+        await admin_logs_service.log_action(
+            AdminLogCreate(
+                admin_user_id=current_user["id"],
+                admin_email=current_user["email"],
+                target_user_id=user_id,
+                target_user_email=target_email,
+                action="Agent Re-run",
+                details=f"Triggered re-classification and dreaming pass re-run in background."
+            )
+        )
+
+        return JSONResponse(
+            status_code=200,
             content={
-                "success": False,
-                "error": str(e)
+                "success": True,
+                "message": "AI analyst re-run triggered successfully in the background"
             }
+        )
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "error": str(e)}
+        )
+
+
+@router.post("/memories/{user_id}/rerun")
+async def trigger_customer_rerun(
+    user_id: str,
+    background_tasks: BackgroundTasks,
+    current_user: dict = Depends(require_admin_role)
+):
+    try:
+        users_col = get_collection("users")
+        target_user = await users_col.find_one({"_id": user_id})
+        if not target_user:
+            raise HTTPException(status_code=404, detail="User not found")
+        target_email = target_user.get("email")
+
+        # Add task to background tasks
+        background_tasks.add_task(
+            execute_rerun_pipeline,
+            user_id=user_id,
+            admin_user_id=current_user["id"],
+            admin_email=current_user["email"],
+            target_email=target_email
+        )
+
+        # Log the action
+        await admin_logs_service.log_action(
+            AdminLogCreate(
+                admin_user_id=current_user["id"],
+                admin_email=current_user["email"],
+                target_user_id=user_id,
+                target_user_email=target_email,
+                action="Agent Re-run",
+                details=f"Triggered re-classification and dreaming pass re-run in background."
+            )
+        )
+
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": True,
+                "message": "AI analyst re-run triggered successfully in the background"
+            }
+        )
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "error": str(e)}
         )
 
 @router.get("/memory-failures")

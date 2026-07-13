@@ -206,3 +206,42 @@ class DreamingSchedulerService:
         print(
             "[Dreaming] ====================================="
         )
+
+    async def run_customer_dreaming_pipeline(self, user_id: str):
+        """Runs the complete memory dreaming extraction pipeline for a single customer on-demand."""
+        print(f"[Dreaming] Running on-demand customer dreaming pipeline for: {user_id}")
+        
+        # 1. Pattern extraction
+        try:
+            pattern_count = await self.pattern_service.extract_patterns(user_id=user_id)
+            print(f"[Dreaming] On-Demand Pattern Extraction Complete | Created={pattern_count}")
+        except Exception as e:
+            print(f"[Dreaming] On-Demand Pattern Extraction Failed | User={user_id} | Error={e}")
+            
+        # 2. Consolidation
+        try:
+            consolidated_count = await self.consolidation_service.consolidate_patterns(user_id=user_id)
+            print(f"[Dreaming] On-Demand Consolidation Complete | Consolidated={consolidated_count}")
+        except Exception as e:
+            print(f"[Dreaming] On-Demand Consolidation Failed | User={user_id} | Error={e}")
+            
+        # 3. Learning extraction
+        try:
+            learning_count = await self.learning_service.extract_learnings(user_id=user_id)
+            print(f"[Dreaming] On-Demand Learning Extraction Complete | Created={learning_count}")
+        except Exception as e:
+            print(f"[Dreaming] On-Demand Learning Extraction Failed | User={user_id} | Error={e}")
+            
+        # 4. Behavior extraction
+        try:
+            behavior_count = await self.behavior_service.extract_behavior_patterns(user_id=user_id)
+            print(f"[Dreaming] On-Demand Behavior Extraction Complete | Created={behavior_count}")
+        except Exception as e:
+            print(f"[Dreaming] On-Demand Behavior Extraction Failed | User={user_id} | Error={e}")
+            
+        # 5. Summary generation
+        try:
+            summary = await self.dreaming_service.run_customer_dreaming(user_id=user_id)
+            print(f"[Dreaming] On-Demand Summary Generation Complete | Length={len(summary) if summary else 0}")
+        except Exception as e:
+            print(f"[Dreaming] On-Demand Summary Generation Failed | User={user_id} | Error={e}")
