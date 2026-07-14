@@ -109,6 +109,9 @@ class ResetPasswordRequest(BaseModel):
 class StripeVerifyRequest(BaseModel):
     session_id: str
 
+class SetupPasswordRequest(BaseModel):
+    password: str = Field(min_length=8)
+
 
 async def get_current_user(token: str = Depends(oauth2_scheme)):
     credentials_exception = HTTPException(
@@ -152,6 +155,7 @@ async def _build_user_payload(user_doc: Dict[str, Any]) -> Dict[str, Any]:
         "name": user_doc.get("full_name"),
         "role": user_doc.get("role"),
         "created_at": created_at.isoformat() if created_at else None,
+        "needs_password_setup": user_doc.get("needs_password_setup", False),
     }
     user_info.update(await _connection_statuses(user_doc["_id"]))
     return user_info
@@ -842,6 +846,40 @@ async def email_continue(payload: EmailContinueRequest):
             }
         }
     )
+
+@router.post("/setup-password")
+async def setup_password(
+    payload: SetupPasswordRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    try:
+        users = get_collection("users")
+        user = await users.find_one({"_id": current_user["id"]})
+        if not user:
+            return JSONResponse(
+                status_code=status.HTTP_404_NOT_FOUND,
+                content={"success": False, "error": "User not found"}
+            )
+
+        await users.update_one(
+            {"_id": current_user["id"]},
+            {
+                "$set": {
+                    "password_hash": hash_password(payload.password),
+                    "needs_password_setup": False
+                }
+            }
+        )
+
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content={"success": True, "message": "Password setup successfully"}
+        )
+    except Exception as e:
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"success": False, "error": str(e)}
+        )
 
 @api_router.post("/signup")
 async def signup(payload: SignupRequest, request: Request, background_tasks: BackgroundTasks):

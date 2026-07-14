@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Request, BackgroundTasks
 from fastapi.responses import JSONResponse
 from fastapi.encoders import jsonable_encoder
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 from typing import Optional
 from app.db import get_collection
 from datetime import datetime, timedelta
@@ -13,6 +13,7 @@ import hashlib
 from app.services.email_service import send_email
 from app.config import _now_utc
 from app.routes.admin_auth import require_admin_session
+from app.routes.auth.auth import hash_password
 from app.services.admin_logs_service import admin_logs_service, AdminLogCreate
 from app.models.beta_profile import BetaProfile, BetaCohort, BetaStatus
 from app.models.peer_teaser import PeerTeaser, PeerTeaserCreate, PeerTeaserUpdate
@@ -65,6 +66,11 @@ class UpdateBetaNotesRequest(BaseModel):
 
 class BetaModeToggleRequest(BaseModel):
     is_beta_mode_enabled: bool
+
+class CreateBetaAccountRequest(BaseModel):
+    name: str
+    email: EmailStr
+    owner_name: str
 
 router = APIRouter(
     prefix="/admin",
@@ -1110,6 +1116,133 @@ async def set_user_beta_status(request: SetBetaRequest, current_user: dict = Dep
             content={"success": True, "message": f"Beta status updated successfully"}
         )
 
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "error": str(e)}
+        )
+
+@router.post("/accounts/beta")
+async def create_beta_account(
+    request: CreateBetaAccountRequest,
+    current_admin: dict = Depends(require_admin_role)
+):
+    try:
+        users_collection = get_collection("users")
+        beta_profiles_collection = get_collection("beta_profiles")
+        tokens_collection = get_collection("email_verification_tokens")
+
+        # Check if email already exists
+        email_clean = request.email.strip().lower()
+        existing_user = await users_collection.find_one({"email": email_clean})
+        if existing_user:
+            return JSONResponse(
+                status_code=400,
+                content={"success": False, "error": "A user with this email already exists."}
+            )
+
+        pending_signups = get_collection("pending_signups")
+        existing_pending = await pending_signups.find_one({"email": email_clean})
+        if existing_pending:
+            return JSONResponse(
+                status_code=400,
+                content={"success": False, "error": "A pending registration exists for this email."}
+            )
+
+        # Generate temporary password
+        temp_password = secrets.token_urlsafe(16)
+
+        # Insert user
+        user_id = str(uuid4())
+        new_user = {
+            "_id": user_id,
+            "full_name": request.owner_name,
+            "email": email_clean,
+            "password_hash": hash_password(temp_password),
+            "company_name": request.name,
+            "is_verified": False,
+            "is_beta": True,
+            "role": "Viewer",
+            "signup_source": "admin_beta",
+            "is_paused": False,
+            "last_active": _now_utc(),
+            "created_at": _now_utc(),
+            "needs_password_setup": True
+        }
+        await users_collection.insert_one(new_user)
+
+        # Create beta profile
+        beta_profile_data = {
+            "user_id": user_id,
+            "is_beta": True,
+            "beta_cohort": BetaCohort.external_beta,
+            "beta_status": BetaStatus.invited,
+            "beta_notes": "Manually created beta account",
+            "beta_updated_at": _now_utc(),
+            "beta_updated_by": current_admin["id"]
+        }
+        await beta_profiles_collection.update_one(
+            {"user_id": user_id},
+            {"$set": beta_profile_data},
+            upsert=True
+        )
+
+        # Create verification token
+        raw_token = secrets.token_urlsafe(32)
+        token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
+        await tokens_collection.insert_one({
+            "_id": str(uuid4()),
+            "user_id": user_id,
+            "token_hash": token_hash,
+            "used": False,
+            "expires_at": _now_utc() + timedelta(hours=24),  # 24 hours expiry for beta invites
+            "created_at": _now_utc(),
+        })
+
+        # Send verification email
+        verify_url = f"https://lightsignal.app/auth/verification?token={raw_token}"
+
+        # Load HTML template from file
+        import os
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        template_path = os.path.join(base_dir, "utils", "templates", "beta_invite.html")
+        
+        with open(template_path, "r", encoding="utf-8") as f:
+            html_template = f.read()
+            html_content = html_template.format(
+                first_name=request.owner_name,
+                verify_url=verify_url
+            )
+
+        # Send via email service
+        send_email(
+            to_email=email_clean,
+            subject="Confirm your email to get started",
+            html_content=html_content
+        )
+
+        # Log admin action
+        await admin_logs_service.log_action(
+            AdminLogCreate(
+                admin_user_id=current_admin["id"],
+                admin_email=current_admin["email"],
+                target_user_id=user_id,
+                target_user_email=email_clean,
+                action="Created beta account"
+            )
+        )
+
+        return JSONResponse(
+            status_code=201,
+            content={
+                "success": True,
+                "message": "Beta account created and invitation sent successfully",
+                "data": {
+                    "user_id": user_id,
+                    "email": email_clean
+                }
+            }
+        )
     except Exception as e:
         return JSONResponse(
             status_code=500,

@@ -14,6 +14,8 @@ class UserInDB(BaseModel):
     last_active: Optional[datetime] = None
     role: str = "Viewer"  # Owner | Admin | Viewer
     signup_source: str = "demo"  # demo | invite
+    is_beta: bool = False
+    needs_password_setup: bool = False
     is_admin: bool = False  # Dedicated platform-admin flag; never settable via any API, DB-provisioned only
     totp_enrolled: bool = False
     totp_secret: Optional[str] = None
