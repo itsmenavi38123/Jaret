@@ -1210,6 +1210,58 @@ async def stripe_webhook(request: Request, background_tasks: BackgroundTasks):
                 )
 
                 await pending_signups.delete_one({"_id": pending["_id"]})
+            else:
+                subscription_id = getattr(data_object, "subscription", None)
+                customer_id = getattr(data_object, "customer", None)
+                trial_ends_at = None
+                subscription_status = "active"
+
+                if subscription_id:
+                    try:
+                        import stripe
+                        sub = stripe.Subscription.retrieve(subscription_id)
+                        trial_end = getattr(sub, "trial_end", None)
+                        if trial_end:
+                            trial_ends_at = datetime.fromtimestamp(trial_end, tz=timezone.utc)
+                        sub_status = getattr(sub, "status", None)
+                        if sub_status:
+                            subscription_status = sub_status
+                    except Exception as sub_err:
+                        print(f"Error fetching subscription details: {sub_err}")
+
+                card_details = StripeService.get_card_details(subscription_id, customer_id)
+
+                await users.update_one(
+                    {"_id": existing["_id"]},
+                    {
+                        "$set": {
+                            "stripe_customer_id": customer_id,
+                            "stripe_subscription_id": subscription_id,
+                            "signup_source": "stripe",
+                            "is_paused": False,
+                            "is_beta": False,
+                            "subscription_status": subscription_status,
+                            "trial_ends_at": trial_ends_at,
+                            "card_details": card_details
+                        }
+                    }
+                )
+
+                try:
+                    transactions = get_collection("stripe_transactions")
+                    await transactions.insert_one({
+                        "_id": str(uuid4()),
+                        "user_id": existing["_id"],
+                        "email": existing["email"],
+                        "stripe_customer_id": customer_id,
+                        "stripe_subscription_id": subscription_id,
+                        "event_type": "checkout.session.completed",
+                        "status": subscription_status,
+                        "trial_ends_at": trial_ends_at,
+                        "created_at": _now_utc()
+                    })
+                except Exception as tx_err:
+                    print(f"Error logging transaction: {tx_err}")
 
         elif event_type == "customer.subscription.deleted":
             subscription_id = getattr(data_object, "id", None)

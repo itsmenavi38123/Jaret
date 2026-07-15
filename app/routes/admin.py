@@ -11,7 +11,8 @@ from uuid import uuid4
 from fastapi import Response
 import hashlib
 from app.services.email_service import send_email
-from app.config import _now_utc
+from app.services.stripe_service import StripeService
+from app.config import _now_utc, settings
 from app.routes.admin_auth import require_admin_session
 from app.routes.auth.auth import hash_password
 from app.services.admin_logs_service import admin_logs_service, AdminLogCreate
@@ -842,6 +843,98 @@ async def resend_verification_email(request: UserActionRequest, current_user: di
             status_code=500,
             content={"success": False, "error": str(e)}
         )
+
+
+@router.post("/send-payment-link")
+async def send_user_payment_link(
+    request: UserActionRequest,
+    background_tasks: BackgroundTasks,
+    current_user: dict = Depends(require_admin_role)
+):
+    try:
+        user_id = request.user_id
+        users_collection = get_collection("users")
+
+        # Get user
+        user = await users_collection.find_one({"_id": user_id})
+        if not user:
+            return JSONResponse(
+                status_code=404,
+                content={"success": False, "error": "User not found"}
+            )
+
+        email = user.get("email")
+        if not email:
+            return JSONResponse(
+                status_code=400,
+                content={"success": False, "error": "User has no email registered"}
+            )
+
+        # Generate Stripe payment link (checkout session) with 0 trial days (pay to continue immediately)
+        try:
+            checkout_url = StripeService.create_checkout_session(
+                email=email,
+                success_url=settings.stripe_success_url,
+                cancel_url=settings.stripe_cancel_url,
+                trial_days=0
+            )
+        except Exception as stripe_err:
+            return JSONResponse(
+                status_code=500,
+                content={"success": False, "error": f"Failed to generate payment link: {str(stripe_err)}"}
+            )
+
+        # Load the payment link email template from utils/templates
+        import os
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        template_path = os.path.join(base_dir, "utils", "templates", "payment_link.html")
+        with open(template_path, "r", encoding="utf-8") as f:
+            html_template = f.read()
+
+        # Extract first name from full_name
+        full_name = user.get("full_name", "")
+        first_name = full_name.split()[0] if full_name else "there"
+
+        html_content = html_template.format(
+            first_name=first_name,
+            checkout_url=checkout_url
+        )
+
+        # Send email in background
+        background_tasks.add_task(
+            send_email,
+            to_email=email,
+            subject="Complete your payment for LightSignal",
+            html_content=html_content,
+            from_email="hello@lightsignal.app"
+        )
+
+        # Log the admin action
+        await admin_logs_service.log_action(
+            AdminLogCreate(
+                admin_user_id=current_user["id"],
+                admin_email=current_user["email"],
+                target_user_id=user_id,
+                target_user_email=email,
+                action="Send Payment Link",
+                details="Generated a payment link and sent it to the user via email."
+            )
+        )
+
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": True,
+                "message": "Payment link generated and sent successfully"
+            }
+        )
+
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "error": str(e)}
+        )
+
 
 @router.post("/user/pause")
 async def pause_user_account(request: UserActionRequest, current_user: dict = Depends(require_admin_role)):
