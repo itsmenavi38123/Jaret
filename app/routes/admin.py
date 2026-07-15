@@ -2562,14 +2562,32 @@ async def create_broadcast(
 ):
     try:
         broadcasts_col = get_collection("broadcasts")
+        users_col = get_collection("users")
         now = datetime.utcnow()
         doc_id = str(uuid4())
+        
+        # Determine target user IDs based on the audience selection
+        target_query = {"role": {"$ne": "Admin"}, "is_admin": {"$ne": True}}
+        aud = body.audience.lower()
+        if "paying" in aud:
+            target_query["subscription_status"] = "active"
+            target_query["is_beta"] = {"$ne": True}
+        elif "trial" in aud:
+            target_query["is_beta"] = {"$ne": True}
+            target_query["$or"] = [
+                {"subscription_status": "trialing"},
+                {"subscription_status": {"$exists": False}}
+            ]
+            
+        target_users = await users_col.find(target_query).to_list(length=None)
+        target_user_ids = [u["_id"] for u in target_users]
         
         broadcast_doc = {
             "_id": doc_id,
             "message": body.message,
             "severity": body.severity,
             "audience": body.audience,
+            "target_user_ids": target_user_ids,
             "created_at": now,
             "created_by": current_user["id"],
             "dismissed_by": []
@@ -2637,6 +2655,7 @@ async def get_recent_broadcasts(
         formatted_list = []
         for b in broadcasts:
             dismissed_count = len(b.get("dismissed_by", []))
+            audience_count = len(b.get("target_user_ids", [])) if "target_user_ids" in b else total_matching_all
             formatted_list.append({
                 "id": b["_id"],
                 "message": b["message"],
@@ -2644,7 +2663,7 @@ async def get_recent_broadcasts(
                 "audience": b["audience"],
                 "created_at": b["created_at"].isoformat() if b.get("created_at") else None,
                 "dismissed_count": dismissed_count,
-                "audience_count": total_matching_all
+                "audience_count": audience_count
             })
 
         return JSONResponse(

@@ -77,10 +77,15 @@ async def get_active_broadcast(
         broadcasts_col = get_collection("broadcasts")
         user_id = current_user["id"]
         
-        # Always fetch the absolute latest broadcast only
-        # If user dismissed it — return nothing. Older ones never surface.
+        # Fetch the latest broadcast that targets this specific user
         latest_broadcast = await broadcasts_col.find_one(
-            {},
+            {
+                "$or": [
+                    {"target_user_ids": user_id},
+                    # Fallback for older broadcasts created before target_user_ids was added
+                    {"target_user_ids": {"$exists": False}}
+                ]
+            },
             sort=[("created_at", -1)]
         )
 
