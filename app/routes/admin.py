@@ -348,24 +348,44 @@ async def get_customers(
         user_id_filter = None
         if connection:
             conn_lower = connection.lower()
-            if conn_lower == "quickbooks":
+            
+            # Helper distinct lists for active integrations
+            active_qb = await qb_tokens_collection.distinct("user_id", {"is_active": True})
+            active_xero = await xero_tokens_collection.distinct("user_id", {"is_active": True})
+            
+            pos_access_col = get_collection("user_pos_access")
+            active_square = await pos_access_col.distinct("user_id", {"provider": "square"})
+            active_shopify = await pos_access_col.distinct("user_id", {"provider": "shopify"})
+            
+            total_active_connected = set(active_qb + active_xero + active_square + active_shopify)
+            
+            # Find broken connections based on connector_sync_jobs where status is "failed"
+            sync_jobs_col = get_collection("connector_sync_jobs")
+            failed_jobs = await sync_jobs_col.find({"last_sync_status": "failed"}).to_list(length=None)
+            
+            broken_users = set()
+            for job in failed_jobs:
+                uid = job["user_id"]
+                ctype = job["connector_type"]
+                if ctype == "quickbooks" and uid in active_qb:
+                    broken_users.add(uid)
+                elif ctype == "xero" and uid in active_xero:
+                    broken_users.add(uid)
+                elif ctype == "square" and uid in active_square:
+                    broken_users.add(uid)
+                elif ctype == "shopify" and uid in active_shopify:
+                    broken_users.add(uid)
+                    
+            if conn_lower == "broken":
+                user_id_filter = list(broken_users)
+            elif conn_lower == "healthy":
+                user_id_filter = list(total_active_connected - broken_users)
+            elif conn_lower == "connected":
+                user_id_filter = list(total_active_connected)
+            elif conn_lower == "quickbooks":
                 user_id_filter = await qb_tokens_collection.distinct("user_id")
             elif conn_lower == "xero":
                 user_id_filter = await xero_tokens_collection.distinct("user_id")
-            elif conn_lower == "connected":
-                qb_active = await qb_tokens_collection.distinct("user_id", {"is_active": True})
-                xero_active = await xero_tokens_collection.distinct("user_id", {"is_active": True})
-                user_id_filter = list(set(qb_active + xero_active))
-            elif conn_lower == "broken":
-                qb_all = await qb_tokens_collection.distinct("user_id")
-                qb_active = await qb_tokens_collection.distinct("user_id", {"is_active": True})
-                qb_broken = set(qb_all) - set(qb_active)
-                
-                xero_all = await xero_tokens_collection.distinct("user_id")
-                xero_active = await xero_tokens_collection.distinct("user_id", {"is_active": True})
-                xero_broken = set(xero_all) - set(xero_active)
-                
-                user_id_filter = list(qb_broken.union(xero_broken))
                 
         if user_id_filter is not None:
             query["_id"] = {"$in": user_id_filter}
@@ -423,44 +443,65 @@ async def get_customers(
             qb_list = user_qb_tokens.get(uid, [])
             xero_list = user_xero_tokens.get(uid, [])
             
-            has_qb = len(qb_list) > 0
-            has_xero = len(xero_list) > 0
-            
             qb_active = any(t.get("is_active", False) for t in qb_list)
             xero_active = any(t.get("is_active", False) for t in xero_list)
             
+            # Check POS integrations
+            square_doc = await get_collection("user_pos_access").find_one({"user_id": uid, "provider": "square"})
+            shopify_doc = await get_collection("user_pos_access").find_one({"user_id": uid, "provider": "shopify"})
+            
+            sync_jobs_col = get_collection("connector_sync_jobs")
+            
+            active_providers = []
+            broken_provider_texts = []
+            healthy_provider_texts = []
+            
+            if qb_active:
+                active_providers.append("quickbooks")
+                job = await sync_jobs_col.find_one({"user_id": uid, "connector_type": "quickbooks"})
+                if job and job.get("last_sync_status") == "failed":
+                    last_time = job.get("last_sync_time") or now
+                    broken_days = max(1, (now - last_time.replace(tzinfo=None) if last_time.tzinfo else now - last_time).days)
+                    broken_provider_texts.append(f"QuickBooks sync broken {broken_days} days")
+                else:
+                    healthy_provider_texts.append("QuickBooks healthy")
+            if xero_active:
+                active_providers.append("xero")
+                job = await sync_jobs_col.find_one({"user_id": uid, "connector_type": "xero"})
+                if job and job.get("last_sync_status") == "failed":
+                    last_time = job.get("last_sync_time") or now
+                    broken_days = max(1, (now - last_time.replace(tzinfo=None) if last_time.tzinfo else now - last_time).days)
+                    broken_provider_texts.append(f"Xero sync broken {broken_days} days")
+                else:
+                    healthy_provider_texts.append("Xero healthy")
+            if square_doc:
+                active_providers.append("square")
+                job = await sync_jobs_col.find_one({"user_id": uid, "connector_type": "square"})
+                if job and job.get("last_sync_status") == "failed":
+                    last_time = job.get("last_sync_time") or now
+                    broken_days = max(1, (now - last_time.replace(tzinfo=None) if last_time.tzinfo else now - last_time).days)
+                    broken_provider_texts.append(f"Square sync broken {broken_days} days")
+                else:
+                    healthy_provider_texts.append("Square healthy")
+            if shopify_doc:
+                active_providers.append("shopify")
+                job = await sync_jobs_col.find_one({"user_id": uid, "connector_type": "shopify"})
+                if job and job.get("last_sync_status") == "failed":
+                    last_time = job.get("last_sync_time") or now
+                    broken_days = max(1, (now - last_time.replace(tzinfo=None) if last_time.tzinfo else now - last_time).days)
+                    broken_provider_texts.append(f"Shopify sync broken {broken_days} days")
+                else:
+                    healthy_provider_texts.append("Shopify healthy")
+
             connection_health_text = "No connection"
             connection_details_text = ""
             
-            if has_qb:
-                if qb_active:
-                    connection_health_text = "QuickBooks healthy"
-                else:
-                    # Find days broken
-                    broken_days = 1
-                    for t in qb_list:
-                        if not t.get("is_active", False) and t.get("updated_at"):
-                            upd_at = t["updated_at"]
-                            if upd_at.tzinfo:
-                                upd_at = upd_at.replace(tzinfo=None)
-                            broken_days = max(1, (now - upd_at).days)
-                            break
-                    connection_health_text = f"QuickBooks sync broken {broken_days} days"
+            if len(active_providers) > 0:
+                if len(broken_provider_texts) > 0:
+                    connection_health_text = " & ".join(broken_provider_texts)
                     connection_details_text = "needs attention"
-            elif has_xero:
-                if xero_active:
-                    connection_health_text = "Xero healthy"
                 else:
-                    broken_days = 1
-                    for t in xero_list:
-                        if not t.get("is_active", False) and t.get("updated_at"):
-                            upd_at = t["updated_at"]
-                            if upd_at.tzinfo:
-                                upd_at = upd_at.replace(tzinfo=None)
-                            broken_days = max(1, (now - upd_at).days)
-                            break
-                    connection_health_text = f"Xero sync broken {broken_days} days"
-                    connection_details_text = "needs attention"
+                    connection_health_text = " · ".join(healthy_provider_texts)
                     
             # Creation / trial details
             creation_info_text = ""
@@ -2686,6 +2727,282 @@ async def get_recent_broadcasts(
             status_code=500,
             content={"success": False, "error": str(e)}
         )
+
+
+def format_age(dt: datetime) -> str:
+    if not isinstance(dt, datetime):
+        return "unknown age"
+    from datetime import timezone
+    now = datetime.utcnow()
+    if dt.tzinfo:
+        now = now.replace(tzinfo=timezone.utc)
+    diff = now - dt
+    if diff.days > 0:
+        if diff.days == 1:
+            return "yesterday"
+        return f"{diff.days}d ago"
+    hours = diff.seconds // 3600
+    if hours > 0:
+        return f"{hours}h ago"
+    minutes = diff.seconds // 60
+    if minutes > 0:
+        return f"{minutes} min ago"
+    return "just now"
+
+
+@router.get("/needs-your-eyes")
+async def get_needs_your_eyes(
+    current_user: dict = Depends(require_admin_role)
+):
+    try:
+        users_col = get_collection("users")
+        memory_failures_col = get_collection("memory_failures")
+        docs_coll = get_collection("documents_metadata")
+        customer_memory_col = get_collection("customer_memory")
+        
+        now = datetime.utcnow()
+        seven_days_ago = now - timedelta(days=7)
+        
+        # --- 1. Compute summary stats ---
+        # Open failures = unresolved memory failures + unresolved document failures
+        open_mem_failures = await memory_failures_col.count_documents({"resolved": False})
+        open_doc_failures = await docs_coll.count_documents({
+            "extraction_status": "failed",
+            "deleted_by_owner": {"$ne": True}
+        })
+        open_failures_count = open_mem_failures + open_doc_failures
+        
+        # Corrections to verify = unresolved customer memories under review
+        corrections_to_verify_count = await customer_memory_col.count_documents({"under_review": True})
+        
+        # Resolved this week = count of rows marked resolved in trailing 7 days
+        resolved_mem_failures = await memory_failures_col.count_documents({
+            "resolved": True,
+            "resolved_at": {"$gte": seven_days_ago}
+        })
+        resolved_doc_failures = await docs_coll.count_documents({
+            "extraction_status": "resolved",
+            "resolved_at": {"$gte": seven_days_ago}
+        })
+        resolved_corrections = await customer_memory_col.count_documents({
+            "under_review": False,
+            "reviewed_at": {"$gte": seven_days_ago}
+        })
+        resolved_this_week_count = resolved_mem_failures + resolved_doc_failures + resolved_corrections
+        
+        # Memory storage used = MongoDB memory-collection size across all accounts
+        try:
+            db = memory_failures_col.database
+            stats = await db.command("collStats", "customer_memory")
+            size_bytes = stats.get("size", 0)
+        except Exception:
+            size_bytes = 0
+            
+        if size_bytes <= 0:
+            memory_storage_used_str = "0.0 GB"
+        else:
+            gb = size_bytes / (1024**3)
+            if gb >= 0.1:
+                memory_storage_used_str = f"{gb:.1f} GB"
+            else:
+                mb = size_bytes / (1024**2)
+                if mb >= 0.1:
+                    memory_storage_used_str = f"{mb:.1f} MB" if mb < 10 else f"{int(mb)} MB"
+                else:
+                    kb = size_bytes / 1024
+                    memory_storage_used_str = f"{kb:.1f} KB"
+        
+        # --- 2. Failures list ---
+        failures_list = []
+        
+        # Fetch unresolved memory failures
+        mem_failures_cursor = memory_failures_col.find({"resolved": False}).sort("timestamp", -1)
+        mem_failures = await mem_failures_cursor.to_list(length=None)
+        for f in mem_failures:
+            cust_id = f.get("customer_id")
+            user = await users_col.find_one({"_id": cust_id}) if cust_id else None
+            company_name = user.get("company_name") or user.get("full_name") or "Unknown Business" if user else "Unknown Business"
+            
+            agent_name = f.get("agent_name") or "Financial Analyst"
+            title = f"Memory write failed after retry — {company_name} ({agent_name} learnings)"
+            
+            age_str = format_age(f.get("timestamp"))
+            
+            # detail logic
+            op = f.get("operation") or ""
+            detail = "profile + outputs writes succeeded, learnings write did not" if "learnings" in op.lower() else (f.get("error") or "write failed")
+            
+            failures_list.append({
+                "id": str(f["_id"]),
+                "type": "memory",
+                "severity_dot": "red",
+                "title": title,
+                "description": f"M&D pipeline · {age_str} · {detail}",
+                "actions": ["View payload", "Mark resolved"],
+                "payload": {
+                    "operation": f.get("operation"),
+                    "error": f.get("error"),
+                    "timestamp": f.get("timestamp").isoformat() if isinstance(f.get("timestamp"), datetime) else f.get("timestamp"),
+                    "agent_name": f.get("agent_name")
+                }
+            })
+            
+        # Fetch unresolved document failures
+        doc_failures_cursor = docs_coll.find({
+            "extraction_status": "failed",
+            "deleted_by_owner": {"$ne": True}
+        }).sort("upload_timestamp", -1)
+        doc_failures = await doc_failures_cursor.to_list(length=None)
+        for d in doc_failures:
+            cust_id = d.get("customer_id")
+            user = await users_col.find_one({"_id": cust_id}) if cust_id else None
+            company_name = user.get("company_name") or user.get("full_name") or "Unknown Business" if user else "Unknown Business"
+            
+            title = f"Document extraction failed — \"{d.get('original_filename')}\" ({company_name})"
+            age_str = format_age(d.get("upload_timestamp"))
+            detail = d.get("failure_reason") or "owner shown re-upload + manual entry fallback"
+            
+            failures_list.append({
+                "id": d.get("document_id"),
+                "type": "document",
+                "severity_dot": "red",
+                "title": title,
+                "description": f"DIA · {age_str} · {detail}",
+                "actions": ["View document", "Mark resolved"],
+                "document_id": d.get("document_id")
+            })
+            
+        # --- 3. Corrections list ---
+        corrections_list = []
+        corrections_cursor = customer_memory_col.find({"under_review": True}).sort("created_at", -1)
+        corrections = await corrections_cursor.to_list(length=None)
+        for c in corrections:
+            cust_id = c.get("user_id")
+            user = await users_col.find_one({"_id": cust_id}) if cust_id else None
+            company_name = user.get("company_name") or user.get("full_name") or "Unknown Business" if user else "Unknown Business"
+            
+            obs_type = c.get("observation_type") or "memory"
+            content = c.get("content") or ""
+            age_str = format_age(c.get("created_at"))
+            
+            # Check if it is owner correction or low confidence write
+            is_correction = (obs_type == "correction") or (c.get("authority") == "user")
+            
+            if is_correction:
+                excerpt = content[:60] + "..." if len(content) > 60 else content
+                title = f"Owner corrected seasonality read — \"{excerpt}\" ({company_name})"
+                desc = f"Correction · {age_str} · memory entry updated, original marked outdated"
+                actions = ["Verify capture"]
+                corr_type = "owner_correction"
+            else:
+                excerpt = content[:60] + "..." if len(content) > 60 else content
+                title = f"Low-confidence write — {excerpt} ({company_name})"
+                desc = f"Memory · {age_str} · confidence: low - surfaced for your review per spec"
+                actions = ["Approve", "Mark outdated"]
+                corr_type = "low_confidence"
+                
+            corrections_list.append({
+                "id": str(c["_id"]),
+                "type": corr_type,
+                "status_dot": "yellow",
+                "title": title,
+                "description": desc,
+                "actions": actions
+            })
+            
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": True,
+                "data": {
+                    "summary": {
+                        "open_failures": open_failures_count,
+                        "corrections_to_verify": corrections_to_verify_count,
+                        "resolved_this_week": resolved_this_week_count,
+                        "memory_storage_used": memory_storage_used_str
+                    },
+                    "failures": failures_list,
+                    "corrections": corrections_list
+                }
+            }
+        )
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "error": str(e)}
+        )
+
+
+@router.post("/needs-your-eyes/failures/{failure_id}/resolve")
+async def resolve_needs_your_eyes_failure(
+    failure_id: str,
+    type: str = Query(..., description="Either 'memory' or 'document'"),
+    current_user: dict = Depends(require_admin_role)
+):
+    try:
+        now = datetime.utcnow()
+        if type == "memory":
+            col = get_collection("memory_failures")
+            from bson import ObjectId
+            query = {"$or": [{"_id": failure_id}, {"_id": ObjectId(failure_id)}]} if ObjectId.is_valid(failure_id) else {"_id": failure_id}
+            res = await col.update_one(query, {"$set": {"resolved": True, "resolved_at": now}})
+            if res.matched_count == 0:
+                raise HTTPException(status_code=404, detail="Memory failure not found")
+        elif type == "document":
+            docs_coll = get_collection("documents_metadata")
+            doc = await docs_coll.find_one({"document_id": failure_id})
+            if not doc:
+                raise HTTPException(status_code=404, detail="Document not found")
+            await docs_coll.update_one(
+                {"document_id": failure_id},
+                {"$set": {"extraction_status": "resolved", "resolved_at": now}}
+            )
+        else:
+            raise HTTPException(status_code=400, detail="Invalid failure type")
+        
+        return JSONResponse(status_code=200, content={"success": True, "message": "Failure resolved"})
+    except HTTPException as http_err:
+        raise http_err
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
+
+
+@router.post("/needs-your-eyes/corrections/{memory_id}/approve")
+async def approve_needs_your_eyes_correction(
+    memory_id: str,
+    current_user: dict = Depends(require_admin_role)
+):
+    try:
+        col = get_collection("customer_memory")
+        from bson import ObjectId
+        query = {"$or": [{"_id": memory_id}, {"_id": ObjectId(memory_id)}]} if ObjectId.is_valid(memory_id) else {"_id": memory_id}
+        res = await col.update_one(query, {"$set": {"under_review": False, "reviewed_at": datetime.utcnow()}})
+        if res.matched_count == 0:
+            raise HTTPException(status_code=404, detail="Correction not found")
+        return JSONResponse(status_code=200, content={"success": True, "message": "Correction approved"})
+    except HTTPException as http_err:
+        raise http_err
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
+
+
+@router.post("/needs-your-eyes/corrections/{memory_id}/reject")
+async def reject_needs_your_eyes_correction(
+    memory_id: str,
+    current_user: dict = Depends(require_admin_role)
+):
+    try:
+        col = get_collection("customer_memory")
+        from bson import ObjectId
+        query = {"$or": [{"_id": memory_id}, {"_id": ObjectId(memory_id)}]} if ObjectId.is_valid(memory_id) else {"_id": memory_id}
+        res = await col.update_one(query, {"$set": {"outdated": True, "under_review": False, "reviewed_at": datetime.utcnow()}})
+        if res.matched_count == 0:
+            raise HTTPException(status_code=404, detail="Correction not found")
+        return JSONResponse(status_code=200, content={"success": True, "message": "Correction marked outdated"})
+    except HTTPException as http_err:
+        raise http_err
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
 
 
 @router.get("/shape-gaps")

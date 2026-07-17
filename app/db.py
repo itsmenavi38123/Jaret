@@ -184,6 +184,12 @@ async def create_indexes() -> None:
     await stripe_transactions.create_index("stripe_subscription_id")
     await stripe_transactions.create_index("created_at")
 
+    connector_sync_jobs = get_collection("connector_sync_jobs")
+    await connector_sync_jobs.create_index("user_id")
+    await connector_sync_jobs.create_index("connector_type")
+    await connector_sync_jobs.create_index([("user_id", 1), ("connector_type", 1)], unique=True)
+    await connector_sync_jobs.create_index("last_sync_time")
+
     # Initialize site settings
     settings_col = get_collection("settings")
     existing_config = await settings_col.find_one({"_id": "site_config"})
