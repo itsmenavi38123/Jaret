@@ -17,6 +17,7 @@ from app.routes.auth.auth import router as auth_router, api_router as auth_api_r
 from app.routes.quickbooks.auth import router as quickbooks_router
 from app.routes.xero.auth import router as xero_auth_router
 from app.routes.xero.accounts import router as xero_accounts_router
+from app.routes.facebook import router as facebook_router
 from app.routes.financial_overview import router as financial_overview_router
 from app.routes.dashboard import router as dashboard_router
 from app.routes.tax_calendar import router as tax_calendar_router
@@ -28,7 +29,6 @@ from app.routes.ai_scenarios import router as ai_scenarios_router
 from app.routes.ai_health import router as ai_health_router
 from app.services.new_demand_forecast import router as demand_forecast_router
 from app.routes.asset_management import router as asset_management_router
-from app.routes.preparation import router as preparation_router
 from app.routes.admin import router as admin_router
 from app.routes.admin_auth import router as admin_auth_router
 from app.routes.integrations import router as integrations_router
@@ -47,12 +47,17 @@ app = FastAPI(
     version=os.getenv("APP_VERSION", "1.0.0"),
 )
 
-# CORS
-allowed_origins = os.getenv("ALLOWED_ORIGINS", "*")
-if allowed_origins == "*":
-    cors_origins = ["*"]
+# CORS lockdown
+allowed_origins_env = os.getenv("ALLOWED_ORIGINS")
+if allowed_origins_env:
+    cors_origins = [o.strip() for o in allowed_origins_env.split(",") if o.strip()]
 else:
-    cors_origins = [o.strip() for o in allowed_origins.split(",")]
+    cors_origins = [
+        "https://lightsignal.app",
+        "https://app.lightsignal.app",
+        "http://localhost:3000",
+        "http://localhost:3001",
+    ]
 
 app.add_middleware(
     CORSMiddleware,
@@ -100,6 +105,7 @@ app.include_router(auth_api_router, prefix="/api")
 app.include_router(quickbooks_router, prefix="/quickbooks")
 app.include_router(xero_auth_router, prefix="/xero/auth")
 app.include_router(xero_accounts_router, prefix="/xero")
+app.include_router(facebook_router, prefix="/facebook")
 app.include_router(financial_overview_router, prefix="/api")
 app.include_router(dashboard_router, prefix="/api")
 app.include_router(tax_calendar_router, prefix="/api")
@@ -111,7 +117,6 @@ app.include_router(ai_scenarios_router, prefix="/api/ai/scenarios")
 app.include_router(ai_health_router, prefix="/api/ai/health")
 app.include_router(demand_forecast_router, prefix="/api")
 app.include_router(asset_management_router, prefix="/api")
-app.include_router(preparation_router, prefix="/api")
 app.include_router(integrations_router, prefix="/api")
 app.include_router(admin_router)
 app.include_router(admin_auth_router)
@@ -127,7 +132,6 @@ async def on_startup():
     try:
         from app.services.dia_orchestrator import DIAOrchestrator
         migrated = await DIAOrchestrator.migrate_profiles()
-        print(f"Startup: Migrated {migrated} business profiles to the new DIA persistence schema.")
     except Exception as e:
         print(f"Startup: Error running business profile migration: {e}")
     async def scheduler_loop():

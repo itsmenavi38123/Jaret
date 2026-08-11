@@ -1,10 +1,8 @@
-from openai import OpenAI
 import json
 import os
 from pydantic import BaseModel, Field
 from typing import List, Optional
-
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+from app.services.claude_service import claude_service
 
 
 class Opportunity(BaseModel):
@@ -134,7 +132,7 @@ DASHBOARD_SYSTEM_PROMPT = """
 
 
 
-def research_scout_opportunities(business_profile: dict=None, query:str=None) -> dict:
+async def research_scout_opportunities(business_profile: dict=None, query:str=None) -> dict:
     """
     business_profile example:
     {
@@ -154,19 +152,10 @@ def research_scout_opportunities(business_profile: dict=None, query:str=None) ->
         "instruction": "Search the web and return dashboard metrics and scored opportunities."
     }
 
-
-    response = client.responses.parse(
-        model="gpt-4o-2024-08-06",
-        input=[
-            {
-                "role": "system",
-                "content": DASHBOARD_SYSTEM_PROMPT
-            },
-            {
-                "role": "user",
-                "content": json.dumps(user_prompt, indent=2)
-            }
-        ],
-        text_format=OpportunityDashboard,
+    result = await claude_service.json_completion(
+        system_prompt=DASHBOARD_SYSTEM_PROMPT,
+        user_content=json.dumps(user_prompt, indent=2),
+        temperature=0.2,
+        max_tokens=4000,
     )
-    return response.output_parsed
+    return result

@@ -1,5 +1,6 @@
 from datetime import datetime
 from typing import Dict, Any
+from pymongo import UpdateOne
 from app.db import get_collection
 from app.services.scoring_service import scoring_service
 from app.services.internal_event_bus import internal_event_bus
@@ -299,7 +300,6 @@ class OpportunityRescoreService:
         active_opportunities = await self.opportunities.find(
             {
                 "user_id": business_id,
-
                 "$or": [
                     {
                         "deadline": {
@@ -312,7 +312,6 @@ class OpportunityRescoreService:
                         }
                     },
                 ],
-
                 "status_user": {
                     "$nin": [
                         "selected",
@@ -321,15 +320,14 @@ class OpportunityRescoreService:
             }
         ).to_list(length=None)
 
-        rescore_count = 0
+        if not active_opportunities:
+            print(f"[OPPORTUNITY RESCORE BATCH] No active opportunities found for user_id={business_id}")
+            return {"rescored": 0}
 
+        bulk_operations = []
         for opportunity in active_opportunities:
-
             business_context = {
-                "business_classifications": opportunity.get(
-                    "business_classifications",
-                    [],
-                ),
+                "business_classifications": opportunity.get("business_classifications", []),
                 "cash_balance": opportunity.get("cash_balance", 0),
                 "outstanding_ar": opportunity.get("outstanding_ar", []),
                 "runway_trend": opportunity.get("runway_trend", "stable"),
@@ -340,16 +338,47 @@ class OpportunityRescoreService:
                 "permits_and_licenses": opportunity.get("permits_and_licenses", []),
             }
 
-            await self.rescore_opportunity(
+            scoring_result = await scoring_service.rescore_opportunity(
                 opportunity=opportunity,
                 business_context=business_context,
                 trigger="demand_update",
             )
 
-            rescore_count += 1
+            updated_scoring_data = {
+                **opportunity.get("scoring_data", {}),
+                "score_history": scoring_result["score_history"],
+                "original_preliminary_fit_score": opportunity.get("scoring_data", {}).get(
+                    "original_preliminary_fit_score",
+                    opportunity.get("fit_score", 0),
+                ),
+            }
+
+            update_data = {
+                "match_score": scoring_result["match_score"],
+                "readiness_score": scoring_result["readiness_score"],
+                "portfolio_adjusted_readiness": scoring_result.get("portfolio_adjusted_readiness"),
+                "event_readiness_score": scoring_result["event_readiness_score"],
+                "last_scored_at": scoring_result["last_scored_at"],
+                "event_readiness_label": scoring_result.get("event_readiness_label"),
+                "expected_roi_mult": scoring_result.get("expected_roi_mult"),
+                "expected_roi_display": scoring_result.get("expected_roi_display"),
+                "why_reason_codes": scoring_result.get("why_reason_codes", []),
+                "scoring_data": updated_scoring_data,
+                "verification_data": {
+                    **opportunity.get("verification_data", {}),
+                    "data_trust_indicator": scoring_result["data_trust_indicator"],
+                },
+                "updated_at": datetime.utcnow(),
+            }
+
+            bulk_operations.append(UpdateOne({"_id": opportunity["_id"]}, {"$set": update_data}))
+
+        if bulk_operations:
+            await self.opportunities.bulk_write(bulk_operations)
+            print(f"[OPPORTUNITY RESCORE BATCH] Success: Rescored {len(bulk_operations)} active opportunities for user_id={business_id} in 1 SINGLE BATCH OPERATION.")
 
         return {
-            "rescored": rescore_count,
+            "rescored": len(bulk_operations),
         }
 
     async def rescore_by_portfolio_change(

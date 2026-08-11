@@ -427,6 +427,7 @@ RESPONSE FORMAT (ONLY JSON, no other text):
                 user_content=prompt,
                 temperature=0.2,
                 max_tokens=4000,
+                model_override=claude_service.utility_model,
             )
 
             # Normalize expected metrics

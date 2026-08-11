@@ -1,8 +1,6 @@
 import json
 
-from app.services.openai_service import (
-    OpenAIService,
-)
+from app.services.kpi_ai_service import kpi_ai_service
 from app.services.claude_service import (
     claude_service,
 )
@@ -14,7 +12,7 @@ from app.services.financial_overview_drawer_prompt import (
 class FinancialOverviewDrawerService:
 
     def __init__(self):
-        self.ai_service = OpenAIService()
+        pass
 
     async def explain(
         self,
@@ -62,7 +60,7 @@ Already Displayed Insights:
         self,
         payload: dict,
     ):
-        return await self.ai_service.ask_kpi_ai(
+        return await kpi_ai_service.ask_kpi_ai(
             payload=payload,
         )
 

@@ -15,8 +15,9 @@ class FirecrawlService:
         self.api_key = os.getenv("FIRECRAWL_API_KEY")
 
         if not self.api_key:
-            raise ValueError(
-                "FIRECRAWL_API_KEY not found in environment"
+            print(
+                "[Firecrawl] FIRECRAWL_API_KEY not found in environment - "
+                "search()/scrape() will degrade gracefully and return empty results."
             )
 
     async def search(
@@ -27,7 +28,7 @@ class FirecrawlService:
         max_results: int = 5,
     ) -> List[Dict[str, Any]]:
 
-        if not query:
+        if not query or not self.api_key:
             return []
 
         combined_query = query
@@ -93,7 +94,7 @@ class FirecrawlService:
         url: str,
     ) -> Dict[str, Any]:
 
-        if not url:
+        if not url or not self.api_key:
             return self._empty_scrape_response()
 
         headers = {

@@ -1767,7 +1767,129 @@ async def get_usage_signals(current_user: dict = Depends(require_admin_role)):
                 "median_session_length": None
             }
         )
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "error": str(e)}
+        )
 
+@router.get("/spend")
+async def get_admin_spend_view(
+    date: Optional[str] = Query(None, description="Target date YYYY-MM-DD (defaults to today)"),
+    start_date: Optional[str] = Query(None, description="Start date YYYY-MM-DD for range search"),
+    end_date: Optional[str] = Query(None, description="End date YYYY-MM-DD for range search"),
+    current_user: dict = Depends(require_admin_role)
+):
+    """
+    Admin Console Spend View endpoint (Task F1)
+    Returns per-account daily spend, caps hit, and overall totals from account_usage_daily collection.
+    """
+    try:
+        usage_col = get_collection("account_usage_daily")
+        users_col = get_collection("users")
+        business_col = get_collection("business_profiles")
+
+        today_str = datetime.utcnow().strftime("%Y-%m-%d")
+        
+        query = {}
+        if start_date and end_date:
+            query["date"] = {"$gte": start_date, "$lte": end_date}
+        elif date:
+            query["date"] = date
+        else:
+            query["date"] = today_str
+
+        cursor = usage_col.find(query).sort("cost_cents_total", -1)
+        usage_records = [doc async for doc in cursor]
+
+        account_ids = list({doc.get("account_id") for doc in usage_records if doc.get("account_id")})
+        
+        user_map = {}
+        if account_ids:
+            users_cursor = users_col.find({"_id": {"$in": account_ids}}, {"_id": 1, "email": 1, "company_name": 1})
+            async for u in users_cursor:
+                user_map[str(u["_id"])] = {
+                    "email": u.get("email"),
+                    "company_name": u.get("company_name")
+                }
+
+            b_cursor = business_col.find({"user_id": {"$in": account_ids}}, {"user_id": 1, "business_name": 1})
+            async for b in b_cursor:
+                uid = str(b.get("user_id"))
+                if uid in user_map and not user_map[uid].get("company_name"):
+                    user_map[uid]["company_name"] = b.get("business_name")
+
+        accounts_usage = []
+        total_cents = 0
+        total_manual_refresh = 0
+        total_demand_forecast = 0
+        total_scenario_run = 0
+        total_dia_upload = 0
+        total_caps_hit = 0
+
+        for doc in usage_records:
+            acc_id = str(doc.get("account_id"))
+            cost_cents = doc.get("cost_cents_total", 0)
+            m_count = doc.get("manual_refresh_count", 0)
+            df_count = doc.get("demand_forecast_count", 0)
+            s_count = doc.get("scenario_run_count", 0)
+            dia_count = doc.get("dia_upload_count", 0)
+            soft_alert = doc.get("soft_alert_fired", False)
+
+            total_cents += cost_cents
+            total_manual_refresh += m_count
+            total_demand_forecast += df_count
+            total_scenario_run += s_count
+            total_dia_upload += dia_count
+
+            is_cap_hit = soft_alert or m_count >= 3 or df_count >= 3 or s_count >= 15 or dia_count >= 50
+            if is_cap_hit:
+                total_caps_hit += 1
+
+            u_info = user_map.get(acc_id, {})
+            last_call = doc.get("last_call_at")
+            last_call_iso = last_call.isoformat() if isinstance(last_call, datetime) else (str(last_call) if last_call else None)
+
+            accounts_usage.append({
+                "account_id": acc_id,
+                "email": u_info.get("email", "Unknown"),
+                "company_name": u_info.get("company_name", "N/A"),
+                "date": doc.get("date"),
+                "cost_cents_total": cost_cents,
+                "cost_dollars_total": round(cost_cents / 100.0, 2),
+                "manual_refresh_count": m_count,
+                "demand_forecast_count": df_count,
+                "scenario_run_count": s_count,
+                "dia_upload_count": dia_count,
+                "soft_alert_fired": soft_alert,
+                "cap_hit": is_cap_hit,
+                "last_call_at": last_call_iso,
+            })
+
+        summary = {
+            "query_filter": query,
+            "total_spend_cents": total_cents,
+            "total_spend_dollars": round(total_cents / 100.0, 2),
+            "active_accounts_count": len(accounts_usage),
+            "total_caps_hit": total_caps_hit,
+            "surface_breakdown": {
+                "manual_refresh": {"count": total_manual_refresh, "est_cost_cents": total_manual_refresh * 150},
+                "demand_forecast": {"count": total_demand_forecast, "est_cost_cents": total_demand_forecast * 150},
+                "scenario_run": {"count": total_scenario_run, "est_cost_cents": total_scenario_run * 60},
+                "dia_upload": {"count": total_dia_upload, "est_cost_cents": total_dia_upload * 20},
+            }
+        }
+
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": True,
+                "data": {
+                    "summary": summary,
+                    "accounts_usage": accounts_usage
+                }
+            }
+        )
     except Exception as e:
         return JSONResponse(
             status_code=500,

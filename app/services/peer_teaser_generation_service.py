@@ -76,7 +76,8 @@ Return STRICT JSON ONLY matching this format:
                     system_prompt=system_prompt,
                     user_content={"playbook_insight": playbook.get("content")},
                     temperature=0.2,
-                    max_tokens=500
+                    max_tokens=500,
+                    model_override=claude_service.utility_model
                 )
                 
                 teaser_text = result.get("teaser_text")

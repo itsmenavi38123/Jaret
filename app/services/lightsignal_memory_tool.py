@@ -431,9 +431,16 @@ class LightSignalAsyncMemoryTool(BetaAsyncAbstractMemoryTool):
         )
 
         if existing:
-            raise ValueError(
-                f"Memory already exists: {command.path}"
+            sync_memory_service.update_memory(
+                {"_id": existing["_id"]},
+                {
+                    "$set": {
+                        "content": command.file_text,
+                        "updated_at": datetime.utcnow()
+                    }
+                }
             )
+            return f"Updated existing memory: {command.path}"
 
         sync_memory_service.create_memory(
             {

@@ -98,6 +98,7 @@ Rules:
                 },
                 temperature=0.2,
                 max_tokens=3000,
+                model_override=claude_service.utility_model,
             )
 
         except Exception as e:

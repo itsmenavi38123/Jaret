@@ -25,6 +25,7 @@ from app.services.mapbox_service import MapboxService
 from app.services.portfolio_recalculation_service import portfolio_recalculation_service
 from app.services.prep_agent_service import prep_agent_service
 from app.services.lightsignal_memory_tool import LightSignalMemoryTool
+from app.services.claude_service import claude_service
 import os
 from pydantic import BaseModel
 from dotenv import load_dotenv
@@ -180,7 +181,7 @@ async def get_research_scout_opportunities(
     }
 
         # Call the research scout agent
-        scout_result = research_scout_opportunities(agent_profile)
+        scout_result = await research_scout_opportunities(agent_profile)
 
         return scout_result
 
@@ -1292,11 +1293,8 @@ question:
         # was cutting off mid-JSON, causing json.loads() to fail, which
         # triggered the clarification fallback on every single request.
         # =========================
-        runner = client.beta.messages.tool_runner(
-            model="claude-sonnet-4-20250514",
-            max_tokens=8000,
-            temperature=0.2,
-            system=SYSTEM_PROMPT,
+        response = await claude_service.tool_runner(
+            system_prompt=SYSTEM_PROMPT,
             messages=messages,
             tools=[
                 memory_tool,
@@ -1304,10 +1302,11 @@ question:
                     "type": "web_search_20250305",
                     "name": "web_search"
                 }
-            ]
+            ],
+            temperature=0.2,
+            max_tokens=8000,
+            model_override="claude-sonnet-4-20250514",
         )
-
-        response = runner.until_done()
         print(type(response))
         print(response) 
         print("STOP REASON:", response.stop_reason)

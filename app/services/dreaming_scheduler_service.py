@@ -7,6 +7,7 @@ from app.services.dreaming_service import DreamingService
 from app.services.org_playbook_generation_service import OrgPlaybookGenerationService
 from app.services.peer_teaser_generation_service import PeerTeaserGenerationService
 from datetime import datetime
+from app.services.forecast_accuracy_service import forecast_accuracy_service
 
 
 class DreamingSchedulerService:
@@ -43,93 +44,141 @@ class DreamingSchedulerService:
             f"[Dreaming] Found {len(users)} users"
         )
 
+        from app.services.scheduler_budget_service import check_user_activity_and_connection
+
         for user in users:
 
             user_id = str(user["_id"])
+
+            should_process, skip_reason = await check_user_activity_and_connection(user_id)
+            if not should_process:
+                print(f"[Dreaming Scheduler] Skipping user {user_id}: {skip_reason}")
+                continue
 
             print(
                 f"\n[Dreaming] Processing User: {user_id}"
             )
 
+            claude_calls_count = 0
+            max_dreaming_claude_calls = 3
+
+            # Step 1: Pattern Extraction
+            if claude_calls_count < max_dreaming_claude_calls:
+                try:
+                    pattern_count = await self.pattern_service.extract_patterns(
+                        user_id=user_id
+                    )
+                    claude_calls_count += 1
+                    print(
+                        f"[Dreaming] Pattern Extraction Complete | Created={pattern_count} | Calls={claude_calls_count}"
+                    )
+                except Exception as e:
+                    print(
+                        f"[Dreaming] Pattern Extraction Failed | User={user_id} | Error={e}"
+                    )
+            else:
+                print(f"[Dreaming Scheduler] Hard cap of {max_dreaming_claude_calls} Claude calls reached for user {user_id}. Skipping further AI steps.")
+
+            # Step 2: Consolidation
+            if claude_calls_count < max_dreaming_claude_calls:
+                try:
+                    consolidated_count = await self.consolidation_service.consolidate_patterns(
+                        user_id=user_id
+                    )
+                    claude_calls_count += 1
+                    print(
+                        f"[Dreaming] Consolidation Complete | Consolidated={consolidated_count} | Calls={claude_calls_count}"
+                    )
+                except Exception as e:
+                    print(
+                        f"[Dreaming] Consolidation Failed | User={user_id} | Error={e}"
+                    )
+            else:
+                print(f"[Dreaming Scheduler] Hard cap of {max_dreaming_claude_calls} Claude calls reached for user {user_id}. Skipping further AI steps.")
+
+            # Step 3: Learning Extraction
+            if claude_calls_count < max_dreaming_claude_calls:
+                try:
+                    learning_count = await self.learning_service.extract_learnings(
+                        user_id=user_id
+                    )
+                    claude_calls_count += 1
+                    print(
+                        f"[Dreaming] Learning Extraction Complete | Created={learning_count} | Calls={claude_calls_count}"
+                    )
+                except Exception as e:
+                    print(
+                        f"[Dreaming] Learning Extraction Failed | User={user_id} | Error={e}"
+                    )
+            else:
+                print(f"[Dreaming Scheduler] Hard cap of {max_dreaming_claude_calls} Claude calls reached for user {user_id}. Skipping further AI steps.")
+
+            # Step 4: Behavioral Patterns (Non-AI / Math or checked against cap)
             try:
-
-                pattern_count = await self.pattern_service.extract_patterns(
-                    user_id=user_id
-                )
-
-                print(
-                    f"[Dreaming] Pattern Extraction Complete | Created={pattern_count}"
-                )
-
-            except Exception as e:
-
-                print(
-                    f"[Dreaming] Pattern Extraction Failed | User={user_id} | Error={e}"
-                )
-
-            try:
-
-                consolidated_count = await self.consolidation_service.consolidate_patterns(
-                    user_id=user_id
-                )
-
-                print(
-                    f"[Dreaming] Consolidation Complete | Consolidated={consolidated_count}"
-                )
-
-            except Exception as e:
-
-                print(
-                    f"[Dreaming] Consolidation Failed | User={user_id} | Error={e}"
-                )
-
-            try:
-
-                learning_count = await self.learning_service.extract_learnings(
-                    user_id=user_id
-                )
-
-                print(
-                    f"[Dreaming] Learning Extraction Complete | Created={learning_count}"
-                )
-
-            except Exception as e:
-
-                print(
-                    f"[Dreaming] Learning Extraction Failed | User={user_id} | Error={e}"
-                )
-
-            try:
-
                 behavior_count = await self.behavior_service.extract_behavior_patterns(
                     user_id=user_id
                 )
-
                 print(
                     f"[Dreaming] Behavior Extraction Complete | Created={behavior_count}"
                 )
-
             except Exception as e:
-
                 print(
                     f"[Dreaming] Behavior Extraction Failed | User={user_id} | Error={e}"
                 )
 
+            # Step 5: Forecast Accuracy Evaluation (Pure Math)
             try:
-
-                summary = await self.dreaming_service.run_customer_dreaming(
-                    user_id=user_id
-                )
-
-                print(
-                    f"[Dreaming] Summary Generation Complete | Length={len(summary) if summary else 0}"
-                )
-
+                accuracy_count = await forecast_accuracy_service.evaluate_forecasts(user_id=user_id)
+                print(f"[Dreaming] Forecast Accuracy Evaluation Complete | Evaluated={accuracy_count}")
             except Exception as e:
+                print(f"[Dreaming] Forecast Accuracy Evaluation Failed | User={user_id} | Error={e}")
 
-                print(
-                    f"[Dreaming] Summary Generation Failed | User={user_id} | Error={e}"
-                )
+            # Step 6: Customer Dreaming Summary (Runs if cap not exceeded)
+            if claude_calls_count < max_dreaming_claude_calls:
+                try:
+                    summary = await self.dreaming_service.run_customer_dreaming(
+                        user_id=user_id
+                    )
+                    claude_calls_count += 1
+                    print(
+                        f"[Dreaming] Summary Generation Complete | Length={len(summary) if summary else 0} | Calls={claude_calls_count}"
+                    )
+                except Exception as e:
+                    print(
+                        f"[Dreaming] Summary Generation Failed | User={user_id} | Error={e}"
+                    )
+
+            # Storefront Agent Monthly Refresh Check (one job per active location)
+            try:
+                from app.services.storefront_orchestrator import storefront_orchestrator, get_active_locations
+                from app.services.customer_memory_service import CustomerMemoryService
+
+                profile = await get_collection("business_profiles").find_one({"user_id": user_id})
+                if profile:
+                    for location in get_active_locations(profile):
+                        location_id = location["location_id"]
+                        path_prefix = f"/memories/customer_{user_id}/storefront_location_learnings/{location_id}"
+                        existing_learnings = await CustomerMemoryService().get_memories_by_path_prefix(path_prefix)
+
+                        should_run = False
+                        if not existing_learnings:
+                            should_run = True
+                        else:
+                            latest = existing_learnings[0]
+                            # Run if last analysis is older than 30 days
+                            if (datetime.utcnow() - latest["created_at"]).days >= 30:
+                                should_run = True
+
+                        if should_run:
+                            print(f"[Dreaming] Triggering storefront monthly refresh for User: {user_id}, Location: {location_id}")
+                            await storefront_orchestrator.run_for_location(
+                                user_id=user_id,
+                                business_name=location["business_name"],
+                                address=location["address"],
+                                location_id=location_id
+                            )
+            except Exception as e:
+                print(f"[Dreaming] Storefront monthly refresh failed | User={user_id} | Error={e}")
 
         try:
 
@@ -239,9 +288,16 @@ class DreamingSchedulerService:
         except Exception as e:
             print(f"[Dreaming] On-Demand Behavior Extraction Failed | User={user_id} | Error={e}")
             
-        # 5. Summary generation
+        # 5. Forecast Accuracy Evaluation
+        try:
+            accuracy_count = await forecast_accuracy_service.evaluate_forecasts(user_id=user_id)
+            print(f"[Dreaming] On-Demand Forecast Accuracy Evaluation Complete | Evaluated={accuracy_count}")
+        except Exception as e:
+            print(f"[Dreaming] On-Demand Forecast Accuracy Evaluation Failed | User={user_id} | Error={e}")
+
+        # 6. Summary generation
         try:
             summary = await self.dreaming_service.run_customer_dreaming(user_id=user_id)
             print(f"[Dreaming] On-Demand Summary Generation Complete | Length={len(summary) if summary else 0}")
         except Exception as e:
-            print(f"[Dreaming] On-Demand Summary Generation Failed | User={user_id} | Error={e}")
+            print(f"[Dreaming] On-Demand Summary Generation Failed | User={user_id} | Error={e}")

@@ -10,7 +10,6 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from app.db import get_collection
 from app.services.ai_insights_service import ai_insights_service
-from app.services.gemini_service import GeminiService
 from app.services.quickbooks_financial_service import QuickBooksFinancialService
 from app.services.finance_analyst_service import finance_analyst_service
 
@@ -24,7 +23,6 @@ class DashboardService:
     def __init__(self):
         self.qb_financial_service = QuickBooksFinancialService()
         self.manual_entries = get_collection("manual_entries")
-        self.gemini_service = GeminiService()
         # Cache for dashboard insights: {user_id: {"data": insights, "timestamp": epoch_ms}}
         self._insights_cache: Dict[str, Dict[str, Any]] = {}
         self._cache_ttl_seconds = 5 * 60  # 5 minutes
@@ -718,33 +716,6 @@ class DashboardService:
             "overdue_invoices_amount": float(overdue_invoices) if overdue_invoices else 0,
         }
 
-    async def explain_dashboard_with_gemini(
-        self,
-        user_id: str,
-        persona: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        summary = await self.get_dashboard_summary(user_id=user_id)
-        payload = {
-            "company_profile": {"id": user_id},
-            "kpis": summary.get("kpis"),
-            "alerts": summary.get("alerts"),
-            "persona": persona,
-        }
-        return await self.gemini_service.explain_dashboard(payload)
-
-    async def explain_ai_health_with_gemini(
-        self,
-        user_id: str,
-    ) -> Dict[str, Any]:
-        financial_overview = await self.qb_financial_service.get_financial_overview(user_id)
-        score = self._calculate_ai_health_score(financial_overview)
-        components = self._build_ai_health_components(financial_overview, score)
-        payload = {
-            "score": components.get("score"),
-            "components": components.get("components"),
-        }
-        return await self.gemini_service.explain_ai_health(payload)
-    
     async def _get_prior_period_kpis(self, user_id: str) -> Dict[str, Any]:
         """
         Get prior period KPIs for delta calculation.

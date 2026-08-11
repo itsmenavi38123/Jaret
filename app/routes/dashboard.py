@@ -12,7 +12,7 @@ from app.services.reminders_service import reminders_service
 from app.services.benchmark_service import benchmark_service
 from app.db import get_collection
 from typing import Optional, Literal, Any, Dict, List
-from app.services.openai_service import OpenAIService
+from app.services.kpi_ai_service import kpi_ai_service
 import logging
 from app.services.redis_client import get_redis_client
 import json
@@ -217,57 +217,10 @@ async def post_ai_dashboard_insights(
     )
 
 
-@router.post("/gemini/dashboard-explain")
-async def post_gemini_dashboard_explain(
-    body: GeminiExplainRequest,
-    current_user: dict = Depends(get_current_user),
-):
-    try:
-        explanation = await dashboard_service.explain_dashboard_with_gemini(
-            user_id=current_user["id"],
-            persona=body.persona,
-        )
-    except HTTPException as exc:
-        raise exc
-    except Exception as exc:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to generate Gemini dashboard explanation: {exc}",
-        ) from exc
-
-    return JSONResponse(
-        status_code=status.HTTP_200_OK,
-        content=jsonable_encoder({"success": True, "data": explanation}),
-    )
-
-
-@router.post("/gemini/ai-health-explain")
-async def post_gemini_ai_health_explain(
-    current_user: dict = Depends(get_current_user),
-):
-    try:
-        explanation = await dashboard_service.explain_ai_health_with_gemini(
-            user_id=current_user["id"],
-        )
-    except HTTPException as exc:
-        raise exc
-    except Exception as exc:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to generate AI health explanation: {exc}",
-        ) from exc
-
-    return JSONResponse(
-        status_code=status.HTTP_200_OK,
-        content=jsonable_encoder({"success": True, "data": explanation}),
-    )
-
-
 @router.post("/dashboard/kpi-explain")
 async def explain_kpi_drawer(
     body: KPIDrawerExplainRequest,
     current_user: dict = Depends(get_current_user),
-    openai_service: OpenAIService = Depends(),
 ):
     user_id = current_user["id"]
     from app.services.cost_guardrail_service import cost_guardrail_service
@@ -356,7 +309,7 @@ async def explain_kpi_drawer(
         payload["optional_context"] = enriched_context
 
         try:
-            result = await openai_service.explain_kpi_drawer(payload=payload)
+            result = await kpi_ai_service.explain_kpi_drawer(payload=payload)
         except Exception as e:
             await cost_guardrail_service.refund_reserve(user_id, "drawer_ask")
             raise e
@@ -382,7 +335,6 @@ async def explain_kpi_drawer(
 async def ask_kpi_ai(
     body: KPIChatRequest,
     current_user: dict = Depends(get_current_user),
-    openai_service: OpenAIService = Depends(),
 ):
     user_id = current_user["id"]
     from app.services.cost_guardrail_service import cost_guardrail_service
@@ -397,7 +349,7 @@ async def ask_kpi_ai(
 
     try:
         try:
-            result = await openai_service.ask_kpi_ai(
+            result = await kpi_ai_service.ask_kpi_ai(
                 payload=body.model_dump()
             )
         except Exception as e:

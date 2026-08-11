@@ -74,6 +74,13 @@ async def create_indexes() -> None:
     await xero_tokens.create_index([("user_id", 1), ("is_active", 1)])
     await xero_tokens.create_index("created_at")
 
+    facebook_tokens = get_collection("facebook_tokens")
+    await facebook_tokens.create_index("user_id")
+    await facebook_tokens.create_index("page_id")
+    await facebook_tokens.create_index([("user_id", 1), ("page_id", 1)])
+    await facebook_tokens.create_index([("user_id", 1), ("is_active", 1)])
+    await facebook_tokens.create_index("created_at")
+
     assets = get_collection("assets")
     await assets.create_index("user_id")
     await assets.create_index("asset_id")

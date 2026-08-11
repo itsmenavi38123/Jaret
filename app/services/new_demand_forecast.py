@@ -2,13 +2,14 @@ from __future__ import annotations
 
 from datetime import date, datetime
 import calendar
+import asyncio
 from typing import List, Dict, Any
 
 import numpy as np
 from statsmodels.tsa.seasonal import STL
 from sklearn.metrics import r2_score
 
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import jwt, JWTError
 import os
@@ -617,6 +618,7 @@ One honest flag: the $68k upside depends on the city confirming the parade route
 
 Want me to set the prep timeline against your supplier lead times?
 
+# CACHE BUST 1
 """
 
 def get_current_user(
@@ -853,13 +855,23 @@ async def _call_ai_agent(payload: Dict[str, Any], user_id: str) -> Dict[str, Any
     # Check mode
     is_handoff = (payload.get("mode") == "demand_handoff")
 
+    user_content = json.dumps(payload, default=str)
+    if not is_handoff and "requested_window" in payload:
+        user_content += f"\n\nIMPORTANT: Generate the forecast ONLY for the requested window: '{payload['requested_window']}'. Do NOT generate any other windows in the 'windows' array. The 'windows' array must contain exactly this one window object."
+
     # Run agent with tool_runner to allow dynamic web search and memory actions
     response = await claude_service.tool_runner(
         system_prompt=FULL_SYSTEM_PROMPT,
         messages=[
             {
                 "role": "user",
-                "content": json.dumps(payload, default=str),
+                "content": [
+                    {
+                        "type": "text",
+                        "text": user_content,
+                        "cache_control": {"type": "ephemeral"}
+                    }
+                ],
             }
         ],
         tools=tools,
@@ -892,7 +904,7 @@ async def _call_ai_agent(payload: Dict[str, Any], user_id: str) -> Dict[str, Any
         # Fallback to direct json_completion if tool_runner returned non-JSON text
         parsed = await claude_service.json_completion(
             system_prompt=FULL_SYSTEM_PROMPT,
-            user_content=payload,
+            user_content=user_content if not is_handoff and "requested_window" in payload else payload,
             temperature=0.2,
             max_tokens=4000,
         )
@@ -962,10 +974,113 @@ async def _call_ai_agent(payload: Dict[str, Any], user_id: str) -> Dict[str, Any
                     raise Exception("Invalid section severity")
 
     return parsed
-   
+
+async def _run_downstream_tasks(serialized_ai_input: Dict[str, Any], user_id: str, agent_output: Dict[str, Any]):
+    try:
+        # Programmatically construct handoff_output from agent_output (FORECAST mode)
+        # to match the HANDOFF schema expected by downstream agents
+        first_window = agent_output.get("windows", [{}])[0] if agent_output.get("windows") else {}
+        
+        severity_map = {
+            "red": "elevated",
+            "amber": "soft",
+            "white": "steady",
+            "green": "good"
+        }
+        
+        overall_severity = first_window.get("severity", "white")
+        overall_level = severity_map.get(overall_severity, "steady")
+        
+        handoff_windows = []
+        for w in agent_output.get("windows", []):
+            w_sev = w.get("severity", "white")
+            w_level = severity_map.get(w_sev, "steady")
+            handoff_windows.append({
+                "window": w.get("window"),
+                "level": w_level,
+                "confidence": w.get("forecast", {}).get("expected", {}).get("confidence", 70)
+            })
+            
+        handoff_drivers = []
+        for w in agent_output.get("windows", []):
+            for d in w.get("drivers", []):
+                d_sev = d.get("severity", "white")
+                direction = "down" if d_sev == "red" else "up"
+                handoff_drivers.append({
+                    "name": d.get("name"),
+                    "window": d.get("window"),
+                    "direction": direction,
+                    "magnitude_text": d.get("impact_text", "no lift")
+                })
+                
+        means_for_downstream = first_window.get("verdict", {}).get("headline", "Demand steady.")
+        if first_window.get("missing_data_notice"):
+            means_for_downstream += f" NOTE: {first_window['missing_data_notice']}"
+            
+        handoff_output = {
+            "level": overall_level,
+            "windows": handoff_windows,
+            "drivers": handoff_drivers,
+            "means_for_downstream": means_for_downstream,
+            "confidence_overall": first_window.get("forecast", {}).get("expected", {}).get("confidence", 70),
+            "missing_data_notice": first_window.get("missing_data_notice")
+        }
+
+        # Save to opportunities_profiles collection
+        opportunities_profiles_col = get_collection("opportunities_profiles")
+        await opportunities_profiles_col.update_one(
+            {"user_id": user_id},
+            {"$set": {
+                "latest_demand_forecast": handoff_output,
+                "demand_strain_next_30d": None,
+                "demand_strain_next_60d": None,
+                "demand_strain_next_90d": None,
+                "updated_at": datetime.utcnow()
+            }}
+        )
+
+        # Update active opportunities with the handoff object
+        opportunities_col = get_collection("opportunities")
+        await opportunities_col.update_many(
+            {
+                "user_id": user_id,
+                "status_user": {"$nin": ["selected"]}
+            },
+            {"$set": {
+                "latest_demand_forecast": handoff_output,
+                "demand_strain_next_30d": None,
+                "demand_strain_next_60d": None,
+                "demand_strain_next_90d": None,
+                "updated_at": datetime.utcnow()
+            }}
+        )
+
+        # Trigger downstream rescoring
+        from app.services.opportunity_rescore_service import opportunity_rescore_service
+        await opportunity_rescore_service.rescore_by_demand_update(user_id)
+    except Exception as handoff_ex:
+        print(f"Failed to generate or save HANDOFF forecast: {handoff_ex}")
+
 
 @router.get("/demand-forecast")
-async def demand_forecast_route(user_id: str = Depends(get_current_user)):
+async def demand_forecast_route(
+    background_tasks: BackgroundTasks,
+    window: str = "this weekend",
+    user_id: str = Depends(get_current_user)
+):
+    from app.services.cost_guardrail_service import cost_guardrail_service
+    allowed, reason = await cost_guardrail_service.check_and_reserve(user_id, "demand_forecast")
+    if not allowed:
+        detail_msg = (
+            "You've reached today's limit for this action. It resets at midnight."
+            if reason == "surface_cap" else
+            "You've reached today's usage limit for your account. It resets at midnight. Contact support if you need more."
+        )
+        raise HTTPException(status_code=429, detail=detail_msg)
+
+    # We now request both weekly and monthly windows simultaneously to fulfill the UI spec
+    # which requires emitting ALL relevant windows in one pass for instant client-side switching.
+    requested_windows = ["this week", "this month"]
 
     business_profiles = get_collection("business_profiles")
     business_profile = await business_profiles.find_one({"user_id": user_id})
@@ -979,40 +1094,7 @@ async def demand_forecast_route(user_id: str = Depends(get_current_user)):
     # Business onboarding data
     onboarding_data = business_profile.get("onboarding_data", {})
 
-    # Owner observations
-    owner_observations = await customer_memory_service.get_memory_by_user(
-        user_id=user_id,
-        limit=50
-    )
-
-    # Business classifier output
-    classifier_output = business_profile_classifier_service.classify_business(
-        onboarding=onboarding_data
-    )
-
-    # Opportunities profile
-    opportunities_profiles_col = get_collection("opportunities_profiles")
-    opportunities_profile = await opportunities_profiles_col.find_one(
-        {"user_id": user_id}
-    )
-
-    # Committed opportunities
-    opportunities_col = get_collection("opportunities")
-    committed_cursor = opportunities_col.find(
-        {
-            "user_id": user_id,
-            "status": {"$in": ["saved", "attending"]}
-        }
-    )
-    committed_opportunities = await committed_cursor.to_list(length=50)
-
-    # Previous Demand Forecast memories
-    previous_df_memories = await customer_memory_service.get_memories_by_path_prefix(
-        path_prefix=f"/memories/customer_{user_id}/demand_forecast/",
-        limit=10
-    )
-
-    # Peer benchmarks
+    # Compute annual revenue early for benchmark lookup
     annual_revenue = None
     if onboarding_data.get("annual_revenue"):
         try:
@@ -1020,27 +1102,67 @@ async def demand_forecast_route(user_id: str = Depends(get_current_user)):
         except (TypeError, ValueError):
             annual_revenue = None
 
-    peer_benchmarks = await benchmark_service.get_or_fetch_benchmarks(
+    opportunities_profiles_col = get_collection("opportunities_profiles")
+    opportunities_col = get_collection("opportunities")
+
+    # Start independent async fetches in parallel to reduce endpoint latency
+    owner_observations_task = asyncio.ensure_future(
+      customer_memory_service.get_memory_by_user(user_id=user_id, limit=50)
+    )
+    opportunities_profile_task = asyncio.ensure_future(
+      opportunities_profiles_col.find_one({"user_id": user_id})
+    )
+    committed_opportunities_task = asyncio.ensure_future(
+      opportunities_col.find(
+        {
+          "user_id": user_id,
+          "status": {"$in": ["Tracked", "Selected", "Applied"]}
+        }
+      ).to_list(length=50)
+    )
+    previous_df_memories_task = asyncio.ensure_future(
+      customer_memory_service.get_memories_by_path_prefix(
+        path_prefix=f"/memories/customer_{user_id}/demand_forecast/",
+        limit=10
+      )
+    )
+    peer_benchmarks_task = asyncio.ensure_future(
+      benchmark_service.get_or_fetch_benchmarks(
         business_type=onboarding_data.get("industry_description", "general"),
         country=onboarding_data.get("country", "US"),
         annual_revenue_dollars=annual_revenue,
+      )
+    )
+    historical_revenue_task = asyncio.ensure_future(_fetch_last_year_revenue(user_id))
+    living_summary_task = asyncio.ensure_future(customer_summary_service.get_summary(user_id))
+    accuracy_memories_task = asyncio.ensure_future(
+      customer_memory_service.collection.find(
+        {
+          "user_id": user_id,
+          "tags": {"$in": ["accuracy", "forecast_accuracy"]},
+          "outdated": False
+        }
+      ).sort("created_at", -1).to_list(length=10)
     )
 
     try:
-        historical_revenue = await _fetch_last_year_revenue(user_id)
+        owner_observations, opportunities_profile, committed_opportunities, previous_df_memories, peer_benchmarks, historical_revenue, living_summary, accuracy_memories = await asyncio.gather(
+            owner_observations_task,
+            opportunities_profile_task,
+            committed_opportunities_task,
+            previous_df_memories_task,
+            peer_benchmarks_task,
+            historical_revenue_task,
+            living_summary_task,
+            accuracy_memories_task,
+        )
 
-        # Fetch dreaming living summary
-        living_summary = await customer_summary_service.get_summary(user_id)
+        # Business classifier output
+        classifier_output = business_profile_classifier_service.classify_business(
+            onboarding=onboarding_data
+        )
+
         living_summary_content = living_summary.get("content") if living_summary else None
-
-        # Fetch accuracy/evaluation memories
-        accuracy_memories = await customer_memory_service.collection.find(
-            {
-                "user_id": user_id,
-                "tags": {"$in": ["accuracy", "forecast_accuracy"]},
-                "outdated": False
-            }
-        ).sort("created_at", -1).to_list(length=10)
 
         # Tiered forecasting handled inside this function
         metrics = _calculate_forecast_metrics(historical_revenue)
@@ -1048,23 +1170,67 @@ async def demand_forecast_route(user_id: str = Depends(get_current_user)):
         weather_applicable = True
         item_tracking_enabled = True
 
+        # Trim MongoDB payload data to avoid token bloat
+        trimmed_observations = []
+        for obs in (owner_observations or []):
+            trimmed_observations.append({
+                "content": obs.get("content"),
+                "observation_type": obs.get("observation_type"),
+                "created_at": obs.get("created_at"),
+                "pinned": obs.get("pinned"),
+                "tags": obs.get("tags")
+            })
+
+        trimmed_opportunities = []
+        for opp in (committed_opportunities or []):
+            trimmed_opportunities.append({
+                "opportunity_name": opp.get("opportunity_name"),
+                "category": opp.get("category"),
+                "status": opp.get("status"),
+                "deadline": opp.get("deadline"),
+                "expected_roi": opp.get("expected_roi"),
+            })
+
+        trimmed_previous_forecasts = []
+        for mem in (previous_df_memories or [])[:3]:
+            trimmed_previous_forecasts.append({
+                "created_at": mem.get("created_at"),
+                "headline": mem.get("content"),
+                "supporting_data": {
+                    "forecast_produced": mem.get("supporting_data", {}).get("forecast_produced"),
+                    "assumptions": mem.get("supporting_data", {}).get("assumptions"),
+                    "confidence": mem.get("supporting_data", {}).get("confidence"),
+                    "deviation_from_previous_forecast": mem.get("supporting_data", {}).get("deviation_from_previous_forecast"),
+                } if mem.get("supporting_data") else None
+            })
+
+        trimmed_opportunities_profile = dict(opportunities_profile) if opportunities_profile else {}
+        trimmed_opportunities_profile.pop("latest_demand_forecast", None)
+
         flags = {
             "weather_applicable": weather_applicable,
             "item_tracking_enabled": item_tracking_enabled,
         }
 
+        trimmed_business_profile = {
+            "user_id": business_profile.get("user_id"),
+            "business_type": business_profile.get("business_type"),
+            "onboarding_data": business_profile.get("onboarding_data", {})
+        }
+
         ai_input = {
-            "business_profile": business_profile,
-            "owner_observations": owner_observations,
+            "requested_windows": requested_windows,
+            "business_profile": trimmed_business_profile,
+            "owner_observations": trimmed_observations,
             "classifier_output": classifier_output,
             "historical_actuals": {
                 "monthly_revenue": historical_revenue,
             },
             "forecast_metrics": metrics,
-            "opportunities_profile": opportunities_profile,
-            "committed_opportunities": committed_opportunities,
+            "opportunities_profile": trimmed_opportunities_profile,
+            "committed_opportunities": trimmed_opportunities,
             "memory": {
-                "previous_forecasts": previous_df_memories,
+                "previous_forecasts": trimmed_previous_forecasts,
                 "dreaming_summary": living_summary_content,
                 "accuracy_history": accuracy_memories,
             },
@@ -1084,48 +1250,21 @@ async def demand_forecast_route(user_id: str = Depends(get_current_user)):
         # Serialize MongoDB BSON types (ObjectId, datetime, etc.)
         serialized_ai_input = json.loads(json_util.dumps(ai_input))
 
+        # DEBUG PRINTS TO FIND THE LEAK
+        print(f"[DEBUG PAYLOAD SIZE] business_profile: {len(json.dumps(trimmed_business_profile, default=str))} chars")
+        print(f"[DEBUG PAYLOAD SIZE] owner_observations: {len(json.dumps(trimmed_observations, default=str))} chars")
+        print(f"[DEBUG PAYLOAD SIZE] classifier_output: {len(json.dumps(classifier_output, default=str))} chars")
+        print(f"[DEBUG PAYLOAD SIZE] opportunities_profile: {len(json.dumps(trimmed_opportunities_profile, default=str))} chars")
+        print(f"[DEBUG PAYLOAD SIZE] memory: {len(json.dumps(ai_input['memory'], default=str))} chars")
+        print(f"[DEBUG PAYLOAD SIZE] peer_benchmarks: {len(json.dumps(peer_benchmarks, default=str))} chars")
+        print(f"[DEBUG PAYLOAD SIZE] historical_actuals: {len(json.dumps(historical_revenue, default=str))} chars")
+        print(f"[DEBUG PAYLOAD SIZE] committed_opportunities: {len(json.dumps(trimmed_opportunities, default=str))} chars")
+        
         # 1. Primary FORECAST mode (returns to UI)
-        agent_output = await _call_ai_agent(serialized_ai_input, user_id)
+        # agent_output = await _call_ai_agent(serialized_ai_input, user_id)
 
-        # 2. HANDOFF mode (for downstream agents)
-        try:
-            handoff_input = {**serialized_ai_input, "mode": "demand_handoff"}
-            handoff_output = await _call_ai_agent(handoff_input, user_id)
-
-            # Save to opportunities_profiles collection
-            opportunities_profiles_col = get_collection("opportunities_profiles")
-            await opportunities_profiles_col.update_one(
-                {"user_id": user_id},
-                {"$set": {
-                    "latest_demand_forecast": handoff_output,
-                    "demand_strain_next_30d": None,
-                    "demand_strain_next_60d": None,
-                    "demand_strain_next_90d": None,
-                    "updated_at": datetime.utcnow()
-                }}
-            )
-
-            # Update active opportunities with the handoff object
-            opportunities_col = get_collection("opportunities")
-            await opportunities_col.update_many(
-                {
-                    "user_id": user_id,
-                    "status_user": {"$nin": ["selected"]}
-                },
-                {"$set": {
-                    "latest_demand_forecast": handoff_output,
-                    "demand_strain_next_30d": None,
-                    "demand_strain_next_60d": None,
-                    "demand_strain_next_90d": None,
-                    "updated_at": datetime.utcnow()
-                }}
-            )
-
-            # Trigger downstream rescoring
-            from app.services.opportunity_rescore_service import opportunity_rescore_service
-            await opportunity_rescore_service.rescore_by_demand_update(user_id)
-        except Exception as handoff_ex:
-            print(f"Failed to generate or save HANDOFF forecast: {handoff_ex}")
+        # 2. Schedule HANDOFF and downstream rescoring in background task
+        # background_tasks.add_task(_run_downstream_tasks, serialized_ai_input, user_id, agent_output)
 
         # Calculate deviation from previous forecast
         deviation_text = "No previous forecast memory found for comparison."
@@ -1180,4 +1319,8 @@ async def demand_forecast_route(user_id: str = Depends(get_current_user)):
         }
 
     except Exception as e:
+        from app.services.cost_guardrail_service import cost_guardrail_service
+        await cost_guardrail_service.refund_reserve(user_id, "demand_forecast")
+        if isinstance(e, HTTPException):
+            raise e
         raise HTTPException(status_code=500, detail=str(e))

@@ -35,6 +35,12 @@ class Settings(BaseSettings):
     xero_client_secret: Optional[str] = None
     xero_redirect_uri: Optional[str] = None
 
+    # Facebook
+    facebook_client_id: Optional[str] = None
+    facebook_client_secret: Optional[str] = None
+    facebook_redirect_uri: Optional[str] = None
+    facebook_config_id: Optional[str] = None
+
     #POS
     shopify_client_id: Optional[str] = None
     shopify_client_secret: Optional[str] = None
@@ -52,6 +58,10 @@ class Settings(BaseSettings):
     serper_api_key: Optional[str] = None
     # Mapbox
     mapbox_api_key: Optional[str] = None
+
+    # Storefront & Location Agent
+    google_places_api_key: Optional[str] = None
+    firecrawl_api_key: Optional[str] = None
 
     # Redis
     redis_url: Optional[str] = "redis://localhost:6379"

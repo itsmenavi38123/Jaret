@@ -25,6 +25,7 @@ class CostGuardrailService:
         soft_alert = config.get("account_daily_soft_alert", 600)      # cents ($6.00)
         
         cap_manual_refresh = config.get("cap_manual_refresh", 3)
+        cap_demand_forecast = config.get("cap_demand_forecast", 3)
         cap_scenario_runs = config.get("cap_scenario_runs", 15)
         cap_dia_uploads = config.get("cap_dia_uploads", 50)
         
@@ -33,6 +34,7 @@ class CostGuardrailService:
             "dashboard_ask": 20,
             "drawer_ask": 10,
             "manual_refresh": 150,
+            "demand_forecast": 150,
             "scenario_run": 60,
             "dia_upload": 20
         })
@@ -47,6 +49,7 @@ class CostGuardrailService:
                 "date": today_str,
                 "cost_cents_total": 0,
                 "manual_refresh_count": 0,
+                "demand_forecast_count": 0,
                 "scenario_run_count": 0,
                 "dia_upload_count": 0,
                 "soft_alert_fired": False,
@@ -56,6 +59,8 @@ class CostGuardrailService:
 
         # 1. Per-surface cap validations
         if surface == "manual_refresh" and row.get("manual_refresh_count", 0) >= cap_manual_refresh:
+            return False, "surface_cap"
+        if surface == "demand_forecast" and row.get("demand_forecast_count", 0) >= cap_demand_forecast:
             return False, "surface_cap"
         if surface == "scenario_run" and row.get("scenario_run_count", 0) >= cap_scenario_runs:
             return False, "surface_cap"
@@ -72,6 +77,8 @@ class CostGuardrailService:
         }
         if surface == "manual_refresh":
             updates["manual_refresh_count"] = 1
+        elif surface == "demand_forecast":
+            updates["demand_forecast_count"] = 1
         elif surface == "scenario_run":
             updates["scenario_run_count"] = 1
         elif surface == "dia_upload":
@@ -111,6 +118,7 @@ class CostGuardrailService:
             "dashboard_ask": 20,
             "drawer_ask": 10,
             "manual_refresh": 150,
+            "demand_forecast": 150,
             "scenario_run": 60,
             "dia_upload": 20
         })
@@ -121,6 +129,8 @@ class CostGuardrailService:
         }
         if surface == "manual_refresh":
             decrements["manual_refresh_count"] = -1
+        elif surface == "demand_forecast":
+            decrements["demand_forecast_count"] = -1
         elif surface == "scenario_run":
             decrements["scenario_run_count"] = -1
         elif surface == "dia_upload":

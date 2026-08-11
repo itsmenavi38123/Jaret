@@ -22,9 +22,18 @@ class ScoutSchedulerService:
 
         businesses = await business_profiles.find({}).to_list(length=None)
 
+        from app.services.scheduler_budget_service import check_user_activity_and_connection
+
         for business_profile in businesses:
 
             user_id = business_profile.get("user_id")
+            if not user_id:
+                continue
+
+            should_process, skip_reason = await check_user_activity_and_connection(user_id)
+            if not should_process:
+                print(f"[Scout Scheduler] Skipping user {user_id}: {skip_reason}")
+                continue
 
             onboarding = business_profile.get(
                 "onboarding_data",
@@ -37,23 +46,6 @@ class ScoutSchedulerService:
             state = geo.get("state")
 
             if not city or not state:
-                continue
-
-            user = await users.find_one(
-                {"_id": user_id}
-            )
-
-            if user and user.get("is_deactivated"):
-                continue
-
-            qb_connected = await quickbooks_tokens.find_one(
-                {
-                    "user_id": user_id,
-                    "is_active": True,
-                }
-            )
-
-            if not qb_connected:
                 continue
 
             today_start = datetime.utcnow().replace(

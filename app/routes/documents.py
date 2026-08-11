@@ -22,6 +22,27 @@ class ReviewRequest(BaseModel):
 
 router = APIRouter(tags=["Documents"])
 
+MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024  # 10MB
+
+def validate_file_size_and_signature(file_content: bytes, filename: str):
+    # 1. File Size validation (10MB Max)
+    if len(file_content) > MAX_FILE_SIZE_BYTES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"File '{filename}' exceeds maximum allowed size limit of 10MB."
+        )
+
+    # 2. File Signature / Magic Bytes validation (PDF, PNG, JPG/JPEG)
+    is_pdf = file_content.startswith(b"%PDF")
+    is_png = file_content.startswith(b"\x89PNG\r\n\x1a\n")
+    is_jpg = file_content.startswith(b"\xff\xd8\xff")
+
+    if not (is_pdf or is_png or is_jpg):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid file format for '{filename}'. Only PDF, PNG, and JPG files are accepted."
+        )
+
 def get_dia_pipeline(current_user: dict = Depends(get_current_user)):
     store = DocumentStoreService()
     claude = ClaudeService()
@@ -43,6 +64,9 @@ async def upload_document(
     results = []
 
     for file in files:
+        content = await file.read()
+        validate_file_size_and_signature(content, file.filename or "uploaded_file")
+
         from app.services.cost_guardrail_service import cost_guardrail_service
         allowed, reason = await cost_guardrail_service.check_and_reserve(user_id, "dia_upload")
         if not allowed:
@@ -54,7 +78,6 @@ async def upload_document(
             raise HTTPException(status_code=429, detail=detail_msg)
 
         try:
-            content = await file.read()
             doc_id = await store.save_uploaded_file(
                 customer_id=user_id,
                 file_content=content,

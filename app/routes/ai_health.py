@@ -311,6 +311,44 @@ async def get_business_health_full(
                 "Revenue trend has weakened over recent months, which may impact near-term growth momentum."
             )
 
+        # 4.5 Ingest Storefront & Location learnings
+        # Read-precedence rule (storefront/08 - Rule - Which Location Read Wins.md): a measured
+        # storefront vitality read must win over the Classifier's geographic_context guess when
+        # they conflict. Audited: this codebase's Classifier never emits a geographic_context /
+        # foot-traffic prose field, and no other consumer (generate_watch_area_explanation below
+        # only summarizes this already-built priority_watch_areas list) asserts a competing
+        # location claim - so there is nothing here for the storefront read to be overridden by.
+        # The rule is satisfied by construction; re-check this comment if a future Classifier
+        # revision starts emitting a geographic_context claim into priority_watch_areas.
+        try:
+            from app.services.customer_memory_service import CustomerMemoryService
+            memory_service = CustomerMemoryService()
+            memories = await memory_service.get_memory_by_user(user_id=user_id, limit=100)
+            
+            for memory in memories:
+                if memory.get("observation_type") == "pattern" and "storefront" in memory.get("tags", []):
+                    supp_data = memory.get("supporting_data", {})
+                    # Look at presentation flags
+                    m1 = supp_data.get("module_1_presentation", {})
+                    if isinstance(m1, dict):
+                        fit_flags = m1.get("pass2_fit_flags", [])
+                        for flag_obj in fit_flags:
+                            if isinstance(flag_obj, dict):
+                                title = flag_obj.get("flag", "Presentation mismatch detected")
+                                basis = flag_obj.get("basis", "")
+                                priority_watch_areas.append(f"{title}: {basis} (Ref: {memory['_id']})")
+                                
+                    # Look at location vitality
+                    m2 = supp_data.get("module_2_vitality", {})
+                    if isinstance(m2, dict):
+                        overall = m2.get("overall", "moderate")
+                        if overall in ["quiet", "quiet_for_context", "declining"]:
+                            context_note = m2.get("context_note", "")
+                            signals_summary = "; ".join([s.get("value", "") for s in m2.get("signals", []) if isinstance(s, dict)])
+                            priority_watch_areas.append(f"Location Vitality is {overall.replace('_', ' ')}: {context_note}. Signals: {signals_summary} (Ref: {memory['_id']})")
+        except Exception as e:
+            print(f"[DEBUG] Error loading storefront learnings: {e}")
+
         # Soft English explanation for watch areas
         watch_area_explanation = await generate_watch_area_explanation(priority_watch_areas)
 

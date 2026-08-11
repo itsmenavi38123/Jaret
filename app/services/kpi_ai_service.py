@@ -1,3 +1,4 @@
+# backend/app/services/kpi_ai_service.py
 import json
 import re
 from typing import Dict, Any
@@ -5,23 +6,21 @@ from typing import Dict, Any
 from app.services.claude_service import claude_service
 
 
-class OpenAIService:
+class KpiAIService:
 
     async def explain_kpi_drawer(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         """
         Returns structured KPI explanation JSON using Claude.
         """
-
         prompt = self._build_prompt(payload)
-
         try:
             return await claude_service.json_completion(
                 system_prompt="You are the LightSignal Financial Analyst. Follow instructions strictly.",
                 user_content=prompt,
                 temperature=0.2,
                 max_tokens=4000,
+                model_override=claude_service.utility_model,
             )
-
         except Exception as exc:
             raise Exception(f"Claude KPI explanation failed: {exc}")
 
@@ -139,26 +138,7 @@ OUTPUT FORMAT:
 }}
 """
 
-    def _safe_parse_json(self, content: str) -> Dict[str, Any]:
-
-        try:
-            return json.loads(content)
-
-        except json.JSONDecodeError:
-            try:
-                content = content.strip()
-                content = re.sub(r"^```json", "", content)
-                content = re.sub(r"^```", "", content)
-                content = re.sub(r"^json", "", content)
-                content = content.replace("```", "")
-                content = content.strip()
-                return json.loads(content)
-
-            except Exception:
-                raise ValueError(f"Invalid JSON from Claude: {content}")
-
     async def ask_kpi_ai(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-
         system_prompt = """
 You are the LightSignal Financial Analyst.
 
@@ -168,12 +148,10 @@ Be conversational and natural.
 """
 
         messages = []
-
         history = payload.get("chat_history", [])[-5:]
 
         for item in history:
             role = item.get("role")
-
             if role in ["user", "assistant"]:
                 messages.append(
                     {
@@ -198,7 +176,6 @@ Already Displayed Insights:
 User Question:
 {payload.get("question")}
 """
-
         messages.append(
             {
                 "role": "user",
@@ -212,11 +189,12 @@ User Question:
                 messages=messages,
                 temperature=0.4,
                 max_tokens=4000,
+                model_override=claude_service.utility_model,
             )
-
             return {
                 "answer": answer
             }
-
         except Exception as exc:
             raise Exception(f"KPI chat failed: {exc}")
+
+kpi_ai_service = KpiAIService()
