@@ -55,6 +55,20 @@ class ScoutSchedulerService:
                 microsecond=0,
             )
 
+            runs_today = await scout_runs.count_documents(
+                {
+                    "business_id": user_id,
+                    "started_at": {
+                        "$gte": today_start,
+                    },
+                }
+            )
+
+            max_scout_ai_calls = 5
+            if runs_today >= max_scout_ai_calls:
+                print(f"[Scout Scheduler] Hard cap of {max_scout_ai_calls} Scout AI runs/calls reached for user {user_id}. Skipping.")
+                continue
+
             existing_run = await scout_runs.find_one(
                 {
                     "business_id": user_id,

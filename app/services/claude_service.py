@@ -287,20 +287,33 @@ class ClaudeService:
         tool_map = {}
         formatted_tools = []
         for t in tools:
-            if hasattr(t, "name"):
-                tool_map[t.name] = t
-                if hasattr(t, "to_param"):
-                    formatted_tools.append(t.to_param())
-                else:
-                    formatted_tools.append(t)
-            elif isinstance(t, dict) and "name" in t:
-                tool_map[t["name"]] = t
-                formatted_tools.append(t)
-            elif hasattr(t, "__name__"):
-                tool_map[t.__name__] = t
-                formatted_tools.append(t)
+            # Step 1: Extract API-compatible dictionary parameter for tool registration
+            if isinstance(t, dict):
+                param = t
+            elif hasattr(t, "to_param") and callable(getattr(t, "to_param")):
+                param = t.to_param()
+            elif hasattr(t, "to_dict") and callable(getattr(t, "to_dict")):
+                param = t.to_dict()
+            elif hasattr(t, "dict") and callable(getattr(t, "dict")):
+                param = t.dict()
+            elif hasattr(t, "model_dump") and callable(getattr(t, "model_dump")):
+                param = t.model_dump()
             else:
-                formatted_tools.append(t)
+                param = t
+
+            formatted_tools.append(param)
+
+            # Step 2: Index executable tool object in tool_map by name
+            tool_name = None
+            if hasattr(t, "name") and isinstance(getattr(t, "name"), str):
+                tool_name = getattr(t, "name")
+            elif isinstance(param, dict) and "name" in param and isinstance(param["name"], str):
+                tool_name = param["name"]
+            elif hasattr(t, "__name__") and isinstance(getattr(t, "__name__"), str):
+                tool_name = getattr(t, "__name__")
+
+            if tool_name:
+                tool_map[tool_name] = t
 
         working_messages = copy.deepcopy(messages)
         step = 0
@@ -367,9 +380,25 @@ class ClaudeService:
                     tool_output_str = ""
                     try:
                         tool_obj = tool_map.get(t_name)
+                        if not tool_obj:
+                            for k, v in tool_map.items():
+                                if k == t_name or k in t_name or t_name in k:
+                                    tool_obj = v
+                                    break
+
                         if tool_obj:
-                            if hasattr(tool_obj, "run") and callable(tool_obj.run):
+                            if hasattr(tool_obj, "execute") and callable(getattr(tool_obj, "execute")):
+                                res = tool_obj.execute(**t_input)
+                                if inspect.isawaitable(res):
+                                    res = await res
+                                tool_output_str = str(res)
+                            elif hasattr(tool_obj, "run") and callable(getattr(tool_obj, "run")):
                                 res = tool_obj.run(**t_input)
+                                if inspect.isawaitable(res):
+                                    res = await res
+                                tool_output_str = str(res)
+                            elif hasattr(tool_obj, "call") and callable(getattr(tool_obj, "call")):
+                                res = tool_obj.call(**t_input)
                                 if inspect.isawaitable(res):
                                     res = await res
                                 tool_output_str = str(res)

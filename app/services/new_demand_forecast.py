@@ -1261,10 +1261,10 @@ async def demand_forecast_route(
         print(f"[DEBUG PAYLOAD SIZE] committed_opportunities: {len(json.dumps(trimmed_opportunities, default=str))} chars")
         
         # 1. Primary FORECAST mode (returns to UI)
-        # agent_output = await _call_ai_agent(serialized_ai_input, user_id)
+        agent_output = await _call_ai_agent(serialized_ai_input, user_id)
 
         # 2. Schedule HANDOFF and downstream rescoring in background task
-        # background_tasks.add_task(_run_downstream_tasks, serialized_ai_input, user_id, agent_output)
+        background_tasks.add_task(_run_downstream_tasks, serialized_ai_input, user_id, agent_output)
 
         # Calculate deviation from previous forecast
         deviation_text = "No previous forecast memory found for comparison."
@@ -1307,6 +1307,10 @@ async def demand_forecast_route(
         )
 
         await customer_memory_service.create_memory(memory)
+
+        print("\n" + "=" * 60)
+        print(f"[DF ENDPOINT LIVE TEST LOG] Demand Forecast generation complete for user={user_id}.")
+        print("=" * 60 + "\n")
 
         return {
             "metrics": metrics,
