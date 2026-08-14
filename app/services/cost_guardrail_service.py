@@ -25,7 +25,7 @@ class CostGuardrailService:
         soft_alert = config.get("account_daily_soft_alert", 600)      # cents ($6.00)
         
         cap_manual_refresh = config.get("cap_manual_refresh", 3)
-        cap_demand_forecast = config.get("cap_demand_forecast", 3)
+        cap_demand_forecast = config.get("cap_demand_forecast", 5)
         cap_scenario_runs = config.get("cap_scenario_runs", 15)
         cap_dia_uploads = config.get("cap_dia_uploads", 50)
         

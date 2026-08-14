@@ -1842,7 +1842,7 @@ async def get_admin_spend_view(
             total_scenario_run += s_count
             total_dia_upload += dia_count
 
-            is_cap_hit = soft_alert or m_count >= 3 or df_count >= 3 or s_count >= 15 or dia_count >= 50
+            is_cap_hit = soft_alert or m_count >= 3 or df_count >= 5 or s_count >= 15 or dia_count >= 50
             if is_cap_hit:
                 total_caps_hit += 1
 
