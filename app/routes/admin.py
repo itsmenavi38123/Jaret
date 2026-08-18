@@ -1842,7 +1842,7 @@ async def get_admin_spend_view(
             total_scenario_run += s_count
             total_dia_upload += dia_count
 
-            is_cap_hit = soft_alert or m_count >= 3 or df_count >= 7 or s_count >= 15 or dia_count >= 50
+            is_cap_hit = soft_alert or m_count >= 3 or df_count >= 3 or s_count >= 15 or dia_count >= 50
             if is_cap_hit:
                 total_caps_hit += 1
 
@@ -3754,6 +3754,88 @@ async def get_admin_document_download(
         raise http_err
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Download error: {str(e)}")
+
+
+# ═════════════════════════════════════════════════════════════════
+# DEMO ACCOUNT SYSTEM MANAGEMENT ENDPOINTS (§5 of Naveen Spec v1)
+# ═════════════════════════════════════════════════════════════════
+
+@router.get("/demo/health", dependencies=[Depends(require_admin_role)])
+async def get_demo_health():
+    """Returns Demo Health panel metrics for all 7 demo vertical accounts."""
+    from app.services.demo_account_service import demo_account_service
+    try:
+        health_list = await demo_account_service.get_demo_health_status()
+        return {"status": "success", "demo_accounts": health_list}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch demo health: {str(e)}")
+
+
+@router.post("/demo/provision", dependencies=[Depends(require_admin_role)])
+async def provision_demo_accounts(background_tasks: BackgroundTasks, months: int = Query(24, ge=1, le=24)):
+    """Provisions all 7 vertical demo accounts and runs history backfill."""
+    from app.services.demo_account_service import demo_account_service
+    try:
+        background_tasks.add_task(demo_account_service.provision_all_demo_accounts, months)
+        return {"status": "success", "message": f"Provisioning job started for all 7 demo accounts ({months} months backfill)."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Provisioning error: {str(e)}")
+
+
+@router.post("/demo/reset/{biz_id}", dependencies=[Depends(require_admin_role)])
+async def reset_demo_account(biz_id: str):
+    """Resets and re-provisions a single demo account cleanly from config."""
+    from app.services.demo_account_service import demo_account_service
+    try:
+        res = await demo_account_service.reset_demo_account(biz_id)
+        return res
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Reset error: {str(e)}")
+
+
+@router.get("/demo/credentials", dependencies=[Depends(require_admin_role)])
+async def get_demo_credentials():
+    """Returns admin-revealed login credentials for the 7 demo accounts (for review forms & canvassing)."""
+    from app.services.demo_account_service import DEMO_ACCOUNTS_MAP
+    return {
+        "status": "success",
+        "credentials": [
+            {
+                "biz_id": d["biz_id"],
+                "name": d["name"],
+                "email": d["email"],
+                "password": d["default_pass"],
+                "vertical": d["vertical"]
+            } for d in DEMO_ACCOUNTS_MAP
+        ]
+    }
+
+
+@router.post("/demo/impersonate/{biz_id}", dependencies=[Depends(require_admin_role)])
+async def impersonate_demo_account(biz_id: str):
+    """Generates a 1-click admin impersonation JWT access token into the target demo account."""
+    from app.services.demo_account_service import DEMO_ACCOUNTS_MAP
+    from app.config import create_access_token
+    target = next((d for d in DEMO_ACCOUNTS_MAP if d["biz_id"] == biz_id), None)
+    if not target:
+        raise HTTPException(status_code=404, detail=f"Demo account '{biz_id}' not found.")
+
+    users_col = get_collection("users")
+    user = await users_col.find_one({"email": target["email"]})
+    if not user:
+        raise HTTPException(status_code=404, detail=f"Demo account user for '{biz_id}' not provisioned yet. Run provision first.")
+
+    user_id = user.get("id", str(user.get("_id")))
+    token = create_access_token(data={"sub": user_id, "email": target["email"], "is_demo": True})
+    return {
+        "status": "success",
+        "access_token": token,
+        "token_type": "bearer",
+        "user_id": user_id,
+        "email": target["email"],
+        "name": target["name"]
+    }
+
 
 
 

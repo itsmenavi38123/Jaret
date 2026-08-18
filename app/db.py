@@ -206,6 +206,7 @@ async def create_indexes() -> None:
         "account_daily_hard_ceiling": 1000,
         "account_daily_soft_alert": 600,
         "cap_manual_refresh": 3,
+        "cap_demand_forecast": 3,
         "cap_scenario_runs": 15,
         "cap_dia_uploads": 50,
         "cost_estimates": {

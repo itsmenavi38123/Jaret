@@ -19,6 +19,9 @@ class OrgPlaybookGenerationService:
         self
     ):
 
+        demo_users = await get_collection("users").distinct("id", {"is_demo": True})
+        demo_user_ids = [u for u in demo_users if u]
+
         memories = await self.customer_memory.find(
             {
                 "observation_type": {
@@ -28,7 +31,8 @@ class OrgPlaybookGenerationService:
                         "behavior_pattern"
                     ]
                 },
-                "outdated": False
+                "outdated": False,
+                "user_id": {"$nin": demo_user_ids}
             }
         ).to_list(
             length=1000

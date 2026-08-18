@@ -22,14 +22,14 @@ class ReviewRequest(BaseModel):
 
 router = APIRouter(tags=["Documents"])
 
-MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024  # 10MB
+MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024  # 25MB
 
 def validate_file_size_and_signature(file_content: bytes, filename: str):
-    # 1. File Size validation (10MB Max)
+    # 1. File Size validation (25MB Max)
     if len(file_content) > MAX_FILE_SIZE_BYTES:
         raise HTTPException(
             status_code=400,
-            detail=f"File '{filename}' exceeds maximum allowed size limit of 10MB."
+            detail=f"File '{filename}' exceeds maximum allowed size limit of 25MB."
         )
 
     # 2. File Signature / Magic Bytes validation (PDF, PNG, JPG/JPEG)
