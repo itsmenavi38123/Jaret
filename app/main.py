@@ -121,7 +121,8 @@ app.include_router(integrations_router, prefix="/api")
 app.include_router(admin_router)
 app.include_router(admin_auth_router)
 app.include_router(documents_router, prefix="/documents")
-app.include_router(notification_settings_router, prefix="/api/notification-settings")
+app.include_router(notification_settings_router, prefix="/api")
+
 app.include_router(waitlist_router, prefix="/api")
 app.include_router(settings_router, prefix="/api")
 

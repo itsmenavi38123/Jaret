@@ -54,19 +54,16 @@ class DashboardService:
             current_kpis,
             prior_kpis,
             financial_overview,
-            manual_adjustments,
         ) = await asyncio.gather(
             self.qb_financial_service.get_dashboard_kpis(user_id),
             self._get_prior_period_kpis(user_id),
             self.qb_financial_service.get_financial_overview(user_id),
-            self._get_manual_entry_adjustments(user_id),
         )
 
-        adjusted_kpis = self._apply_manual_adjustments(current_kpis, manual_adjustments)
         ai_health_score = self._calculate_ai_health_score(financial_overview)
         prior_ai_health = self._calculate_ai_health_score_from_prior(prior_kpis, financial_overview)
         kpi_cards = self._build_kpi_cards(
-            adjusted_kpis,
+            current_kpis,
             prior_kpis,
             ai_health_score,
             prior_ai_health,
@@ -74,9 +71,9 @@ class DashboardService:
 
         alerts_payload = await self.get_contextual_alerts(user_id=user_id)
         ai_components = self._build_ai_health_components(financial_overview, ai_health_score)
-        trend_summaries = self._build_trend_summaries(adjusted_kpis, prior_kpis, financial_overview)
+        trend_summaries = self._build_trend_summaries(current_kpis, prior_kpis, financial_overview)
         badges = self._build_mini_badges(
-            adjusted_kpis,
+            current_kpis,
             prior_kpis,
             financial_overview,
             alerts_payload.get("alerts", []),
@@ -296,50 +293,8 @@ class DashboardService:
             summaries.append(f"{insight.get('title')}: {insight.get('description')}")
         return summaries[:3]
 
-    async def _get_manual_entry_adjustments(self, user_id: str) -> Dict[str, float]:
-        """Aggregate manual entries for current month to adjust KPIs."""
-        start_of_month = datetime.now(timezone.utc).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-        next_month = (start_of_month + timedelta(days=32)).replace(day=1)
-
-        cursor = self.manual_entries.find(
-            {
-                "user_id": user_id,
-                "occurred_on": {"$gte": start_of_month, "$lt": next_month},
-            }
-        )
-        entries = await cursor.to_list(length=None)
-
-        revenue_delta = 0.0
-        cash_delta = 0.0
-        for entry in entries:
-            amount = float(entry.get("amount", 0) or 0)
-            if entry.get("entry_type") == "income":
-                revenue_delta += amount
-                cash_delta += amount
-            else:
-                revenue_delta -= amount  # treat expenses as drag on revenue KPI
-                cash_delta -= amount
-
-        return {
-            "revenue_delta": revenue_delta,
-            "cash_delta": cash_delta,
-        }
-
-    def _apply_manual_adjustments(
-        self,
-        kpis: Dict[str, Any],
-        adjustments: Dict[str, float],
-    ) -> Dict[str, Any]:
-        """Apply manual entry adjustments to KPI snapshot."""
-        adjusted = dict(kpis)
-        adjusted["revenue_mtd"] = (adjusted.get("revenue_mtd") or 0) + adjustments.get("revenue_delta", 0)
-        adjusted["cash"] = (adjusted.get("cash") or 0) + adjustments.get("cash_delta", 0)
-        return adjusted
-
     def _default_quick_actions(self) -> List[Dict[str, str]]:
         return [
-            {"label": "Quick Forecast", "route": "/dashboard/forecast"},
-            {"label": "Add Revenue/Expense", "route": "/transactions/manual"},
             {"label": "Ask AI Advisor", "route": "/ai/advisor"},
             {"label": "Financial Overview", "route": "/overview"},
         ]
@@ -500,69 +455,6 @@ class DashboardService:
         }
 
 
-
-    async def record_manual_entry(
-        self,
-        user_id: str,
-        *,
-        entry_type: str,
-        amount: float,
-        category: str,
-        label: str,
-        occurred_on: datetime,
-        notes: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        """Persist manual revenue or expense rows for dashboard adjustments."""
-        document = {
-            "user_id": user_id,
-            "entry_type": entry_type,
-            "amount": amount,
-            "category": category,
-            "label": label or category,
-            "occurred_on": occurred_on,
-            "notes": notes,
-            "created_at": datetime.now(timezone.utc),
-        }
-        result = await self.manual_entries.insert_one(document)
-        document["id"] = str(result.inserted_id)
-        document.pop("_id", None)
-        return document
-
-    async def run_quick_forecast(
-        self,
-        user_id: str,
-        horizon_days: int,
-    ) -> Dict[str, Any]:
-        """Simple revenue & cash projection for the requested horizon."""
-        summary = await self.get_dashboard_summary(user_id=user_id)
-        today = datetime.now(timezone.utc).date()
-        days_elapsed = max(today.day, 1)
-
-        revenue_card = summary["kpis"]["revenue_mtd"]
-        margin_card = summary["kpis"]["net_margin_pct"]
-        cash_card = summary["kpis"]["cash"]
-
-        revenue_mtd = revenue_card.get("value") or 0.0
-        net_margin_pct = margin_card.get("value") or 0.1
-        cash_balance = cash_card.get("value") or 0.0
-
-        daily_revenue = revenue_mtd / days_elapsed
-        daily_profit = daily_revenue * net_margin_pct
-        projected_revenue = daily_revenue * horizon_days
-        projected_cash = cash_balance + (daily_profit * horizon_days)
-
-        return {
-            "horizon_days": horizon_days,
-            "generated_at": datetime.now(timezone.utc).isoformat(),
-            "forecast": {
-                "revenue": self._forecast_band(projected_revenue),
-                "cash": self._forecast_band(projected_cash),
-                "assumptions": {
-                    "daily_revenue": daily_revenue,
-                    "net_margin_pct": net_margin_pct,
-                },
-            },
-        }
 
     async def get_ai_dashboard_insights(
         self,

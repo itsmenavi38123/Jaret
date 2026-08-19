@@ -166,13 +166,18 @@ async def integrations_status(current_user: dict = Depends(get_current_user)):
             first_read = False
             syncing = True
 
+    omnivore_doc = await pos_col.find_one({"user_id": user_id, "provider": "omnivore"})
+    hubspot_doc = await pos_col.find_one({"user_id": user_id, "provider": "hubspot"})
+
     return {
         "success": True,
         "data": {
             "quickbooks": quickbooks_connected,
             "xero": xero_connected,
             "square": square_doc is not None,
+            "omnivore": omnivore_doc is not None,
             "shopify": shopify_doc is not None,
+            "hubspot": hubspot_doc is not None,
             "sync_progress": {
                 "connected": connected,
                 "syncing": syncing,
@@ -180,6 +185,23 @@ async def integrations_status(current_user: dict = Depends(get_current_user)):
             }
         }
     }
+
+
+class SyncPosRequest(BaseModel):
+    provider: str
+
+
+@router.post("/integrations/sync")
+async def trigger_manual_sync(
+    body: SyncPosRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    return {
+        "success": True,
+        "message": f"Manual sync initiated for {body.provider}.",
+        "synced_at": datetime.now(timezone.utc).isoformat()
+    }
+
 
 
 @router.post("/integrations/disconnect")

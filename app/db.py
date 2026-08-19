@@ -197,6 +197,12 @@ async def create_indexes() -> None:
     await connector_sync_jobs.create_index([("user_id", 1), ("connector_type", 1)], unique=True)
     await connector_sync_jobs.create_index("last_sync_time")
 
+    dashboard_ask_chats = get_collection("dashboard_ask_chats")
+    await dashboard_ask_chats.create_index("user_id")
+    await dashboard_ask_chats.create_index("updated_at")
+    await dashboard_ask_chats.create_index([("user_id", 1), ("updated_at", -1)])
+
+
     # Initialize site settings
     settings_col = get_collection("settings")
     existing_config = await settings_col.find_one({"_id": "site_config"})

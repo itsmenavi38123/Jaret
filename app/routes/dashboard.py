@@ -13,12 +13,18 @@ from app.services.benchmark_service import benchmark_service
 from app.db import get_collection
 from typing import Optional, Literal, Any, Dict, List
 from app.services.kpi_ai_service import kpi_ai_service
+from app.services.dashboard_ask_service import dashboard_ask_service
 import logging
-from app.services.redis_client import get_redis_client
-import json
 
 router = APIRouter(tags=["dashboard"])
 logger = logging.getLogger(__name__)
+
+class DashboardAskRequest(BaseModel):
+    question: str = Field(..., min_length=1)
+    surface: Optional[str] = "dashboard_ask"
+    chat_id: Optional[str] = None
+    chat_history: Optional[List[Dict[str, Any]]] = []
+
 
 class KPIChatRequest(BaseModel):
     kpi_name: Literal[
@@ -49,30 +55,8 @@ class KPIDrawerExplainRequest(BaseModel):
     optional_context: Optional[KPIDrawerContext] = None
 
 
-class ManualEntryRequest(BaseModel):
-    company_id: Optional[str] = None
-    entry_type: Literal["income", "expense"]
-    amount: float = Field(gt=0)
-    category: str
-    label: Optional[str] = None
-    occurred_on: datetime
-    notes: Optional[str] = None
-
 class DashboardSummaryResponse(BaseModel):
     """Placeholder for OpenAPI docs (not enforced at runtime)."""
-
-
-class QuickForecastRequest(BaseModel):
-    company_id: Optional[str] = Field(
-        default=None,
-        description="Optional company identifier (currently inferred from auth).",
-    )
-    horizon_days: int = Field(
-        default=30,
-        ge=30,
-        le=90,
-        description="Forecast horizon in days (30, 60, or 90).",
-    )
 
 class GeminiExplainRequest(BaseModel):
     company_id: Optional[str] = None
@@ -139,62 +123,6 @@ async def get_dashboard_reminders(
         content=jsonable_encoder({"success": True, "data": reminders}),
     )
 
-
-@router.post("/dashboard/quick-forecast")
-async def post_dashboard_quick_forecast(
-    body: QuickForecastRequest,
-    current_user: dict = Depends(get_current_user),
-):
-    try:
-        forecast = await dashboard_service.run_quick_forecast(
-            user_id=current_user["id"],
-            horizon_days=body.horizon_days,
-        )
-    except HTTPException as exc:
-        raise exc
-    except Exception as exc:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to generate quick forecast: {exc}",
-        ) from exc
-
-    return JSONResponse(
-        status_code=status.HTTP_200_OK,
-        content=jsonable_encoder({"success": True, "data": forecast}),
-    )
-
-
-@router.post("/manual-entry")
-async def post_manual_entry(
-    body: ManualEntryRequest,
-    current_user: dict = Depends(get_current_user),
-):
-    occurred_on = body.occurred_on
-    if occurred_on.tzinfo is None:
-        occurred_on = occurred_on.replace(tzinfo=timezone.utc)
-
-    try:
-        entry = await dashboard_service.record_manual_entry(
-            user_id=current_user["id"],
-            entry_type=body.entry_type,
-            amount=body.amount,
-            category=body.category,
-            label=body.label or body.category,
-            occurred_on=occurred_on,
-            notes=body.notes,
-        )
-    except HTTPException as exc:
-        raise exc
-    except Exception as exc:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to record manual entry: {exc}",
-        ) from exc
-
-    return JSONResponse(
-        status_code=status.HTTP_201_CREATED,
-        content=jsonable_encoder({"success": True, "data": entry}),
-    )
 
 
 @router.post("/ai/dashboard-insights")
@@ -369,3 +297,104 @@ async def ask_kpi_ai(
         status_code=status.HTTP_200_OK,
         content=jsonable_encoder({"success": True, "data": result}),
     )
+
+
+@router.post("/dashboard/ask")
+async def ask_dashboard_advisor(
+    body: DashboardAskRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Whole-business Ask AI Advisor chatbot endpoint.
+    Routes query to Claude with business context and persists conversation in MongoDB.
+    """
+    user_id = current_user["id"]
+    from app.services.cost_guardrail_service import cost_guardrail_service
+    allowed, reason = await cost_guardrail_service.check_and_reserve(user_id, "dashboard_ask")
+    if not allowed:
+        detail_msg = (
+            "You've reached today's limit for this action. It resets at midnight."
+            if reason == "surface_cap" else
+            "You've reached today's usage limit for your account. It resets at midnight. Contact support if you need more."
+        )
+        raise HTTPException(status_code=429, detail=detail_msg)
+
+    try:
+        result = await dashboard_ask_service.ask_advisor(
+            user_id=user_id,
+            question=body.question,
+            surface=body.surface or "dashboard_ask",
+            chat_id=body.chat_id,
+            chat_history=body.chat_history,
+        )
+    except Exception as exc:
+        await cost_guardrail_service.refund_reserve(user_id, "dashboard_ask")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate Ask AI Advisor response: {exc}",
+        ) from exc
+
+    return JSONResponse(
+        status_code=status.HTTP_200_OK,
+        content={"success": True, "data": result},
+    )
+
+
+@router.get("/dashboard/chats")
+async def list_dashboard_chats(
+    q: Optional[str] = Query(None, description="Optional keyword search string across title and message content"),
+    limit: int = Query(50, ge=1, le=100),
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    List past Ask AI conversations for sidebar history.
+    Supports content keyword search via query parameter `?q=keyword`.
+    """
+    try:
+        chats = await dashboard_ask_service.list_chats(
+            user_id=current_user["id"],
+            query=q,
+            limit=limit,
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch past chats: {exc}",
+        ) from exc
+
+    return JSONResponse(
+        status_code=status.HTTP_200_OK,
+        content={"success": True, "data": chats},
+    )
+
+
+@router.get("/dashboard/chats/{chat_id}")
+async def get_dashboard_chat_thread(
+    chat_id: str,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Retrieve full message transcript for a specific past Ask AI chat.
+    """
+    try:
+        chat = await dashboard_ask_service.get_chat_thread(
+            user_id=current_user["id"],
+            chat_id=chat_id,
+        )
+        if not chat:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Chat thread not found",
+            )
+    except HTTPException as exc:
+        raise exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch chat thread: {exc}",
+        ) from exc
+
+    return JSONResponse(
+        status_code=status.HTTP_200_OK,
+        content={"success": True, "data": chat},
+    )
