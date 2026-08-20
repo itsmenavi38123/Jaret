@@ -258,8 +258,116 @@ def _safe_divide(numerator: float, denominator: float) -> Optional[float]:
 
 
 class QuickBooksFinancialService:
+    async def _is_demo_user(self, user_id: str) -> bool:
+        if not user_id:
+            return False
+        if str(user_id).startswith("usr_demo") or str(user_id).startswith("demo-"):
+            return True
+        from app.db import get_collection
+        users_col = get_collection("users")
+        user = await users_col.find_one({"$or": [{"_id": user_id}, {"id": user_id}]})
+        return bool(user and user.get("is_demo"))
+
+    async def _build_demo_financial_overview(self, user_id: str) -> Dict[str, Any]:
+        from app.db import get_collection
+        qbo_col = get_collection("qbo_transactions")
+        fixed_col = get_collection("fixed_expenses")
+        profiles_col = get_collection("business_profiles")
+
+        profile = await profiles_col.find_one({"user_id": user_id}) or {}
+        monthly_base = profile.get("monthly_revenue_base", 50000)
+
+        now = datetime.utcnow()
+        today = now.date()
+        first_of_month = datetime(today.year, today.month, 1)
+
+        mtd_txs = await qbo_col.find({"user_id": user_id, "date": {"$gte": first_of_month}}).to_list(length=None)
+        mtd_fixed = await fixed_col.find({"user_id": user_id, "date": {"$gte": first_of_month}}).to_list(length=None)
+
+        income_mtd = sum(t.get("amount", 0) for t in mtd_txs if t.get("amount", 0) > 0)
+        cogs_mtd = sum(abs(t.get("amount", 0)) for t in mtd_txs if t.get("amount", 0) < 0)
+        fixed_mtd = sum(abs(f.get("amount", 0)) for f in mtd_fixed)
+        operating_expenses_mtd = fixed_mtd
+
+        if income_mtd == 0:
+            income_mtd = float(monthly_base) * (today.day / 30.0)
+
+        gross_profit_mtd = max(0.0, income_mtd - cogs_mtd)
+        net_income_mtd = gross_profit_mtd - operating_expenses_mtd
+
+        cash_balance = round(monthly_base * 1.6 + net_income_mtd, 2)
+        burn_rate = round(monthly_base * 0.2, 2)
+        runway = round(cash_balance / burn_rate, 1) if burn_rate > 0 else 12.0
+
+        monthly_series = []
+        for i in range(11, -1, -1):
+            m_date = today - timedelta(days=i * 30)
+            m_start = datetime(m_date.year, m_date.month, 1)
+            m_next = datetime(m_date.year + (1 if m_date.month == 12 else 0), 1 if m_date.month == 12 else m_date.month + 1, 1)
+            m_txs = await qbo_col.find({"user_id": user_id, "date": {"$gte": m_start, "$lt": m_next}}).to_list(length=None)
+            m_rev = sum(t.get("amount", 0) for t in m_txs if t.get("amount", 0) > 0) or (monthly_base * 0.95)
+            monthly_series.append((m_start.strftime("%Y-%m"), round(m_rev, 2)))
+
+        gross_margin_pct = (gross_profit_mtd / income_mtd) if income_mtd > 0 else 0.45
+        net_margin_pct = (net_income_mtd / income_mtd) if income_mtd > 0 else 0.15
+
+        overview = {
+            "kpis": {
+                "revenue_mtd": round(income_mtd, 2),
+                "expenses_mtd": round(cogs_mtd + operating_expenses_mtd, 2),
+                "gross_margin_pct": round(gross_margin_pct, 4),
+                "net_margin_pct": round(net_margin_pct, 4),
+                "cash": cash_balance,
+                "runway_months": runway,
+                "cash_flow_mtd": round(net_income_mtd, 2),
+                "burn_rate_monthly": burn_rate,
+                "days_sales_outstanding": 28.0,
+                "accounts_receivable": round(monthly_base * 0.3, 2),
+            },
+            "liquidity": {
+                "current_ratio": 1.85,
+                "quick_ratio": 1.42,
+                "cash_ratio": 0.95,
+                "working_capital": round(monthly_base * 0.8, 2),
+            },
+            "cashflow": {
+                "net_cash_operating": round(net_income_mtd, 2),
+                "burn_rate_monthly": burn_rate,
+                "runway_months": runway,
+                "net_trend_3mo": "positive",
+            },
+            "variance": [
+                {"metric": "Revenue", "actual": round(income_mtd, 2), "forecast": round(monthly_base, 2), "variance_pct": round((income_mtd - monthly_base) / max(monthly_base, 1), 4)},
+                {"metric": "Expenses", "actual": round(cogs_mtd + operating_expenses_mtd, 2), "forecast": round(monthly_base * 0.7, 2), "variance_pct": 0.02},
+                {"metric": "Net Profit", "actual": round(net_income_mtd, 2), "forecast": round(monthly_base * 0.3, 2), "variance_pct": 0.05},
+            ],
+            "monthly_series": monthly_series,
+            "forecast_series": self._build_forecast(monthly_series),
+            "insights": [
+                {"category": "Margin", "title": "Strong Core Performance", "description": f"Gross margin holding healthy at {gross_margin_pct*100:.1f}%."},
+                {"category": "Cash", "title": "Solid Cash Runway", "description": f"Current cash reserves provide {runway:.1f} months of operating runway."}
+            ],
+            "risks": [
+                {"category": "Working Capital", "title": "Monitor Receivables", "description": "Keep receivables under 30 days DSO."}
+            ],
+            "meta": {"is_demo": True, "generated_at": datetime.utcnow().isoformat()}
+        }
+        return overview
+
+    async def _build_demo_dashboard_kpis(self, user_id: str) -> Dict[str, Any]:
+        overview = await self._build_demo_financial_overview(user_id)
+        kpis = overview.get("kpis", {})
+        return {
+            "revenue_mtd": kpis.get("revenue_mtd", 50000.0),
+            "net_margin_pct": kpis.get("net_margin_pct", 0.15),
+            "cash": kpis.get("cash", 75000.0),
+            "runway_months": kpis.get("runway_months", 12.0),
+            "ai_health_score": 82,
+        }
 
     async def get_financial_overview(self, user_id: str) -> Dict[str, Any]:
+        if await self._is_demo_user(user_id):
+            return await self._build_demo_financial_overview(user_id)
 
         realm_id = await self.get_realm_id_by_user(user_id)
         token = await quickbooks_token_service.get_token_by_user_and_realm(user_id, realm_id)
@@ -273,7 +381,6 @@ class QuickBooksFinancialService:
 
         today = datetime.now(timezone.utc).date()
         profit_params, detail_params, cashflow_params, meta = self._build_period_params(today)
-        print(profit_params, detail_params, cashflow_params, meta)
 
         profit_snapshots, monthly_series, token = await self._fetch_profit_and_loss_reports(
             token, realm_id, profit_params, detail_params
@@ -289,10 +396,11 @@ class QuickBooksFinancialService:
             balance_sheet_report=balance_sheet_report,
             cashflow_reports=cashflow_reports,
         )
-        print("overview", overview)
         return overview
 
     async def get_realm_id_by_user(self, user_id: str) -> str:
+        if await self._is_demo_user(user_id):
+            return f"demo_realm_{user_id}"
         tokens = await quickbooks_token_service.get_tokens_by_user(user_id)
         active_tokens = [t for t in tokens if t.is_active]
         if not active_tokens:
@@ -303,6 +411,9 @@ class QuickBooksFinancialService:
         return active_tokens[0].realm_id
 
     async def get_dashboard_kpis(self, user_id: str) -> Dict[str, Any]:
+        if await self._is_demo_user(user_id):
+            return await self._build_demo_dashboard_kpis(user_id)
+
         realm_id = await self.get_realm_id_by_user(user_id)
         token = await quickbooks_token_service.get_token_by_user_and_realm(user_id, realm_id)
         if not token:
@@ -373,6 +484,8 @@ class QuickBooksFinancialService:
         }
 
     async def _ensure_valid_token(self, token: QuickBooksToken, *, force_refresh: bool = False) -> QuickBooksToken:
+        if token.realm_id.startswith("demo_realm_") or token.access_token == "demo_access_token":
+            return token
         issued_at = token.updated_at or token.created_at
         if force_refresh or token_has_expired(issued_at, token.expires_in):
             token = await self._refresh_and_update_token(token)
@@ -937,18 +1050,9 @@ class QuickBooksFinancialService:
         end_date: date,
         granularity: str = "daily"
     ) -> List[Dict[str, Any]]:
-        """
-        Get historical sales data for demand forecasting.
+        if await self._is_demo_user(user_id):
+            return await self._get_demo_historical_sales(user_id, start_date, end_date, granularity)
         
-        Args:
-            user_id: User ID
-            start_date: Start date for historical data
-            end_date: End date for historical data
-            granularity: Data granularity (daily, weekly, monthly)
-        
-        Returns:
-            List of sales data points
-        """
         realm_id = await self.get_realm_id_by_user(user_id)
         token = await quickbooks_token_service.get_token_by_user_and_realm(user_id, realm_id)
         if not token:
@@ -959,14 +1063,12 @@ class QuickBooksFinancialService:
         
         token = await self._ensure_valid_token(token)
         
-        # Determine column parameter based on granularity
         column_param = {
             "daily": "day",
             "weekly": "week",
             "monthly": "month"
         }.get(granularity, "day")
         
-        # Fetch P&L report with time columns
         params = {
             "start_date": start_date.isoformat(),
             "end_date": end_date.isoformat(),
@@ -981,17 +1083,35 @@ class QuickBooksFinancialService:
             params=params
         )
         
-        # Parse time-series revenue data
         sales_data = self._parse_revenue_time_series(report, granularity)
-        
         return sales_data
+
+    async def _get_demo_historical_sales(self, user_id: str, start_date: date, end_date: date, granularity: str = "daily") -> List[Dict[str, Any]]:
+        from app.db import get_collection
+        qbo_col = get_collection("qbo_transactions")
+        dt_start = datetime.combine(start_date, datetime.min.time())
+        dt_end = datetime.combine(end_date, datetime.max.time())
+        txs = await qbo_col.find({"user_id": user_id, "date": {"$gte": dt_start, "$lte": dt_end}}).to_list(length=None)
+        
+        grouped = {}
+        for t in txs:
+            amt = t.get("amount", 0)
+            if amt <= 0:
+                continue
+            d_val = t.get("date")
+            d_str = d_val.strftime("%Y-%m-%d") if isinstance(d_val, (date, datetime)) else str(t.get("date_str"))[:10]
+            grouped[d_str] = grouped.get(d_str, 0.0) + amt
+        
+        out = []
+        for d_str, val in sorted(grouped.items()):
+            out.append({"period": d_str, "revenue": round(val, 2), "granularity": granularity})
+        return out or [{"period": start_date.isoformat(), "revenue": 1250.0, "granularity": granularity}]
     
     def _parse_revenue_time_series(
         self,
         report: Dict[str, Any],
         granularity: str
     ) -> List[Dict[str, Any]]:
-        """Parse revenue time-series from P&L report"""
         columns = report.get("Columns", {}).get("Column", [])
         time_labels = [col.get("ColTitle") or col.get("ColType") for col in columns[1:]]
         
@@ -1017,7 +1137,6 @@ class QuickBooksFinancialService:
                 revenue_values = result
                 break
         
-        # Build sales data array
         sales_data: List[Dict[str, Any]] = []
         for idx, label in enumerate(time_labels):
             value = revenue_values[idx] if idx < len(revenue_values) else 0.0
@@ -1035,6 +1154,8 @@ class QuickBooksFinancialService:
         start_date: date,
         end_date: date
     ) -> List[Dict[str, Any]]:
+        if await self._is_demo_user(user_id):
+            return [{"product": "Core Offerings", "revenue": 34000.0, "units": 450}]
         """
         Get product/service-level sales data.
         
@@ -1158,6 +1279,8 @@ class QuickBooksFinancialService:
         self,
         user_id: str,
     ) -> List[Dict[str, Any]]:
+        if await self._is_demo_user(user_id):
+            return await self._get_demo_overdue_invoices(user_id)
 
         realm_id = await self.get_realm_id_by_user(user_id)
 
@@ -1244,6 +1367,33 @@ class QuickBooksFinancialService:
             print(f"Error fetching overdue invoices: {e}")
 
             return []
+
+    async def _get_demo_overdue_invoices(self, user_id: str) -> List[Dict[str, Any]]:
+        from app.db import get_collection
+        qbo_col = get_collection("qbo_transactions")
+        txs = await qbo_col.find({"user_id": user_id, "invoice": True}).to_list(length=None)
+        out = []
+        for i, t in enumerate(txs[:10]):
+            out.append({
+                "invoice_id": f"inv_demo_{i+1}",
+                "invoice_number": f"INV-100{i+1}",
+                "customer_name": "Apex Property Management" if "service" in user_id else f"Client {i+1}",
+                "balance": t.get("amount", 1200.0),
+                "txn_date": t.get("date_str", "2026-06-15"),
+                "due_date": t.get("due_date", "2026-07-15"),
+                "days_overdue": 35
+            })
+        return out or [
+            {
+                "invoice_id": "inv_demo_1",
+                "invoice_number": "INV-1001",
+                "customer_name": "Apex Property Management",
+                "balance": 31000.0,
+                "txn_date": "2026-05-10",
+                "due_date": "2026-06-10",
+                "days_overdue": 68
+            }
+        ]
         
     async def get_expense_by_vendor(
         self,
@@ -1251,6 +1401,42 @@ class QuickBooksFinancialService:
         start_date: date,
         end_date: date,
     ) -> List[Dict[str, Any]]:
+        if await self._is_demo_user(user_id):
+            from app.db import get_collection
+            fixed_col = get_collection("fixed_expenses")
+            qbo_col = get_collection("qbo_transactions")
+            dt_start = datetime.combine(start_date, datetime.min.time())
+            dt_end = datetime.combine(end_date, datetime.max.time())
+            
+            fixed_rows = await fixed_col.aggregate([
+                {"$match": {"user_id": user_id, "date": {"$gte": dt_start, "$lte": dt_end}}},
+                {"$group": {"_id": "$label", "amount": {"$sum": "$amount"}}},
+                {"$sort": {"amount": 1}}
+            ]).to_list(length=100)
+            
+            cogs_rows = await qbo_col.aggregate([
+                {"$match": {"user_id": user_id, "amount": {"$lt": 0}, "date": {"$gte": dt_start, "$lte": dt_end}}},
+                {"$group": {"_id": "$label", "amount": {"$sum": "$amount"}}},
+                {"$sort": {"amount": 1}}
+            ]).to_list(length=100)
+            
+            combined = fixed_rows + cogs_rows
+            total_exp = sum(abs(r.get("amount", 0)) for r in combined) or 1.0
+            
+            out = [
+                {
+                    "vendor_name": str(r["_id"]).replace("_", " ").title() if r.get("_id") else "General Expense",
+                    "amount": round(abs(r.get("amount", 0)), 2),
+                    "pct_of_total": round((abs(r.get("amount", 0)) / total_exp) * 100, 2)
+                }
+                for r in combined
+            ]
+            return out or [
+                {"vendor_name": "Supplier COGS", "amount": 18400.0, "pct_of_total": 48.0},
+                {"vendor_name": "Lease Rent", "amount": 9800.0, "pct_of_total": 25.5},
+                {"vendor_name": "Utilities", "amount": 2300.0, "pct_of_total": 6.0},
+                {"vendor_name": "Payroll", "amount": 7800.0, "pct_of_total": 20.5}
+            ]
 
         realm_id = await self.get_realm_id_by_user(user_id)
 
@@ -1332,6 +1518,11 @@ class QuickBooksFinancialService:
         self,
         user_id: str,
     ) -> List[Dict[str, Any]]:
+        if await self._is_demo_user(user_id):
+            return [
+                {"item_id": "item_1", "item_name": "Primary Product Line", "qty_on_hand": 420, "income_account": "Sales", "expense_account": "COGS", "asset_account": "Inventory"},
+                {"item_id": "item_2", "item_name": "Secondary Supply Line", "qty_on_hand": 180, "income_account": "Sales", "expense_account": "COGS", "asset_account": "Inventory"}
+            ]
 
         realm_id = await self.get_realm_id_by_user(user_id)
 
@@ -1407,6 +1598,29 @@ class QuickBooksFinancialService:
         start_date: date,
         end_date: date,
     ) -> List[Dict[str, Any]]:
+        if await self._is_demo_user(user_id):
+            from app.db import get_collection
+            profiles_col = get_collection("business_profiles")
+            profile = await profiles_col.find_one({"user_id": user_id}) or {}
+            locations = profile.get("locations", [])
+            
+            qbo_col = get_collection("qbo_transactions")
+            dt_start = datetime.combine(start_date, datetime.min.time())
+            dt_end = datetime.combine(end_date, datetime.max.time())
+            total_rev = await qbo_col.aggregate([
+                {"$match": {"user_id": user_id, "amount": {"$gt": 0}, "date": {"$gte": dt_start, "$lte": dt_end}}},
+                {"$group": {"_id": None, "total": {"$sum": "$amount"}}}
+            ]).to_list(length=1)
+            tot_amt = total_rev[0]["total"] if total_rev else 50000.0
+            
+            if len(locations) > 1:
+                return [
+                    {"location_name": locations[0].get("name", "Alberta St Flagship"), "amount": round(tot_amt * 0.58, 2), "pct_of_total": 58.0},
+                    {"location_name": locations[1].get("name", "Division St Satellite"), "amount": round(tot_amt * 0.42, 2), "pct_of_total": 42.0}
+                ]
+            else:
+                loc_name = locations[0].get("name") if locations else "Main Location"
+                return [{"location_name": loc_name, "amount": round(tot_amt, 2), "pct_of_total": 100.0}]
 
         realm_id = await self.get_realm_id_by_user(user_id)
 
@@ -1493,6 +1707,57 @@ class QuickBooksFinancialService:
         start_date: date,
         end_date: date,
     ) -> List[Dict[str, Any]]:
+        if await self._is_demo_user(user_id):
+            from app.db import get_collection
+            qbo_col = get_collection("qbo_transactions")
+            dt_start = datetime.combine(start_date, datetime.min.time())
+            dt_end = datetime.combine(end_date, datetime.max.time())
+            
+            rows = await qbo_col.aggregate([
+                {"$match": {"user_id": user_id, "amount": {"$gt": 0}, "date": {"$gte": dt_start, "$lte": dt_end}}},
+                {"$group": {"_id": "$stream", "amount": {"$sum": "$amount"}}},
+                {"$sort": {"amount": -1}}
+            ]).to_list(length=100)
+            
+            total = sum(r.get("amount", 0) for r in rows)
+            if rows and total > 0:
+                return [
+                    {
+                        "stream_name": str(r["_id"]).replace("_", " ").title() if r.get("_id") else "General Sales",
+                        "amount": round(r.get("amount", 0), 2),
+                        "pct_of_total": round((r.get("amount", 0) / total) * 100, 2)
+                    }
+                    for r in rows
+                ]
+            
+            # Aggregate total revenue from DB to split into stream breakdown
+            tot_rev_doc = await qbo_col.aggregate([
+                {"$match": {"user_id": user_id, "amount": {"$gt": 0}, "date": {"$gte": dt_start, "$lte": dt_end}}},
+                {"$group": {"_id": None, "total": {"$sum": "$amount"}}}
+            ]).to_list(length=1)
+            tot_rev = tot_rev_doc[0]["total"] if tot_rev_doc else 80000.0
+            
+            if "restaurant" in user_id:
+                return [
+                    {"stream_name": "Dine-in", "amount": round(tot_rev * 0.62, 2), "pct_of_total": 62.0},
+                    {"stream_name": "Delivery", "amount": round(tot_rev * 0.23, 2), "pct_of_total": 23.0},
+                    {"stream_name": "Counter / Slices", "amount": round(tot_rev * 0.15, 2), "pct_of_total": 15.0}
+                ]
+            elif "multi" in user_id:
+                return [
+                    {"stream_name": "Cafe Sales", "amount": round(tot_rev * 0.78, 2), "pct_of_total": 78.0},
+                    {"stream_name": "Wholesale Accounts", "amount": round(tot_rev * 0.22, 2), "pct_of_total": 22.0}
+                ]
+            elif "salon" in user_id:
+                return [
+                    {"stream_name": "Hair & Color Services", "amount": round(tot_rev * 0.88, 2), "pct_of_total": 88.0},
+                    {"stream_name": "Retail Products", "amount": round(tot_rev * 0.08, 2), "pct_of_total": 8.0},
+                    {"stream_name": "Booth Rent", "amount": round(tot_rev * 0.04, 2), "pct_of_total": 4.0}
+                ]
+            return [
+                {"stream_name": "Primary Sales Stream", "amount": round(tot_rev * 0.85, 2), "pct_of_total": 85.0},
+                {"stream_name": "Secondary Stream", "amount": round(tot_rev * 0.15, 2), "pct_of_total": 15.0}
+            ]
 
         realm_id = await self.get_realm_id_by_user(user_id)
 

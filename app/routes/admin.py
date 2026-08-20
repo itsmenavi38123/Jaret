@@ -3837,6 +3837,47 @@ async def impersonate_demo_account(biz_id: str):
     }
 
 
+@router.get("/waitlist")
+async def get_admin_waitlist(
+    page: int = Query(1, ge=1),
+    limit: int = Query(10, ge=1, le=100),
+    search: Optional[str] = None
+):
+    waitlist_col = get_collection("waitlist")
+    
+    query = {}
+    if search and search.strip():
+        query["email"] = {"$regex": search.strip(), "$options": "i"}
+        
+    total = await waitlist_col.count_documents(query)
+    skip = (page - 1) * limit
+    
+    cursor = waitlist_col.find(query).sort("created_at", -1).skip(skip).limit(limit)
+    raw_docs = await cursor.to_list(length=limit)
+    
+    items = []
+    for d in raw_docs:
+        created = d.get("created_at")
+        created_str = created.isoformat() if hasattr(created, "isoformat") else str(created) if created else None
+        items.append({
+            "id": str(d.get("_id")),
+            "email": d.get("email"),
+            "created_at": created_str
+        })
+        
+    import math
+    total_pages = math.ceil(total / limit) if total > 0 else 0
+    
+    return {
+        "status": "success",
+        "total": total,
+        "page": page,
+        "limit": limit,
+        "total_pages": total_pages,
+        "items": items
+    }
+
+
 
 
 
