@@ -1305,7 +1305,6 @@ question:
             ],
             temperature=0.2,
             max_tokens=8000,
-            model_override="claude-sonnet-4-20250514",
         )
         print(type(response))
         print(response) 
