@@ -31,43 +31,59 @@ class FinancialOverviewService:
             )
         )
 
-        business_health = (
-            await business_health_engine_service.generate_business_health(
-                user_id=user_id,
-                financial_overview=financial_overview,
-                classifier_output=classifier_output or {},
+        try:
+            business_health = (
+                await business_health_engine_service.generate_business_health(
+                    user_id=user_id,
+                    financial_overview=financial_overview,
+                    classifier_output=classifier_output or {},
+                )
             )
-        )
+        except Exception as e:
+            print(f"[WARN] Failed to generate business_health: {e}")
+            business_health = {}
 
         financial_signals = business_health.get(
             "financial_signals",
             {},
         )
 
-        financial_overview_insights = (
-            await financial_overview_insights_service.generate_insights(
-                user_id=user_id,
-                financial_overview=financial_overview,
-                business_health=business_health,
-                classifier_output=classifier_output or {},
+        try:
+            financial_overview_insights = (
+                await financial_overview_insights_service.generate_insights(
+                    user_id=user_id,
+                    financial_overview=financial_overview,
+                    business_health=business_health,
+                    classifier_output=classifier_output or {},
+                )
             )
-        )
+        except Exception as e:
+            print(f"[WARN] Failed to generate financial_overview_insights: {e}")
+            financial_overview_insights = None
 
-        kpi_tiles = (
-            await financial_overview_kpi_tiles_service.generate_kpi_tiles(
-                user_id=user_id,
-                financial_overview=financial_overview,
-                classifier_output=classifier_output or {},
+        try:
+            kpi_tiles = (
+                await financial_overview_kpi_tiles_service.generate_kpi_tiles(
+                    user_id=user_id,
+                    financial_overview=financial_overview,
+                    classifier_output=classifier_output or {},
+                )
             )
-        )
+        except Exception as e:
+            print(f"[WARN] Failed to generate kpi_tiles: {e}")
+            kpi_tiles = []
 
-        expense_breakdown = (
-            await financial_overview_expense_breakdown_service.generate_expense_breakdown(
-                user_id=user_id,
-                financial_overview=financial_overview,
-                classifier_output=classifier_output or {},
+        try:
+            expense_breakdown = (
+                await financial_overview_expense_breakdown_service.generate_expense_breakdown(
+                    user_id=user_id,
+                    financial_overview=financial_overview,
+                    classifier_output=classifier_output or {},
+                )
             )
-        )
+        except Exception as e:
+            print(f"[WARN] Failed to generate expense_breakdown: {e}")
+            expense_breakdown = []
 
         return {
             "financial_overview": financial_overview,
