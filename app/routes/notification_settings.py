@@ -40,10 +40,10 @@ async def get_notification_settings(current_user: dict = Depends(get_current_use
             doc["_id"] = str(doc["_id"])
         return JSONResponse(
             status_code=status.HTTP_200_OK,
-            content={
+            content=jsonable_encoder({
                 "success": True,
                 "data": doc,
-            },
+            }),
         )
 
     result = await notification_settings_service.get_settings(user_id=user_id)
