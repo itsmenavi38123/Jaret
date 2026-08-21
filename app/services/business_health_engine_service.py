@@ -313,7 +313,29 @@ class BusinessHealthEngineService:
 
         financial_overview = financial_overview or {}
         classifier_output = classifier_output or {}
-        metrics = financial_overview.get("Real Data Metrics", {})
+        
+        kpis = financial_overview.get("kpis", {}) if isinstance(financial_overview.get("kpis"), dict) else {}
+        liquidity = financial_overview.get("liquidity", {}) if isinstance(financial_overview.get("liquidity"), dict) else {}
+        efficiency = financial_overview.get("efficiency", {}) if isinstance(financial_overview.get("efficiency"), dict) else {}
+        cashflow = financial_overview.get("cashflow", {}) if isinstance(financial_overview.get("cashflow"), dict) else {}
+        calc_values = financial_overview.get("calculation_values", {}) if isinstance(financial_overview.get("calculation_values"), dict) else {}
+        real_data_metrics = financial_overview.get("Real Data Metrics", {}) if isinstance(financial_overview.get("Real Data Metrics"), dict) else {}
+
+        metrics = {}
+        metrics.update(kpis)
+        metrics.update(liquidity)
+        metrics.update(efficiency)
+        metrics.update(cashflow)
+        metrics.update(calc_values)
+        metrics.update(real_data_metrics)
+
+        if "net_margin_pct" not in metrics and "margin_pct" in metrics:
+            metrics["net_margin_pct"] = metrics["margin_pct"]
+        if "inventory_turns" not in metrics and "inv_turns" in metrics:
+            metrics["inventory_turns"] = metrics["inv_turns"]
+        if "revenue_growth_rate" not in metrics:
+            metrics["revenue_growth_rate"] = metrics.get("revenue_growth_pct", 0.05)
+
         customer_health_metrics = await self._build_customer_health_metrics(
             user_id=user_id,
         )

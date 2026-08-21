@@ -119,18 +119,18 @@ async def get_business_health_full(
         cash = calc_values.get("cash", 0.0)
         
         # 2. Calculate Category Scores based on REAL data
+        if isinstance(financial_overview, dict):
+            financial_overview.setdefault("Real Data Metrics", {
+                "net_margin_pct": margin_pct,
+                "runway_months": runway_months,
+                "quick_ratio": quick_ratio,
+                "inventory_turns": inventory_turns,
+                "ccc_days": ccc_days,
+                "trend_3mo": net_trend_3mo,
+            })
         engine_result = await business_health_engine_service.generate_business_health(
             user_id=user_id,
-            financial_overview={
-                "Real Data Metrics": {
-                    "net_margin_pct": margin_pct,
-                    "runway_months": runway_months,
-                    "quick_ratio": quick_ratio,
-                    "inventory_turns": inventory_turns,
-                    "ccc_days": ccc_days,
-                    "trend_3mo": net_trend_3mo,
-                }
-            }
+            financial_overview=financial_overview or {}
         )
 
         engine_result = engine_result or {}
@@ -786,7 +786,33 @@ async def get_business_health_full(
             "peer_avg": canonical_overall.get("peer_avg"),
         }
 
-        canonical_data_coverage_note = "QuickBooks synced 2h ago" if confidence_pct >= 80 else "Connect POS & Review data to sharpen Operational & Customer reads"
+        # Calculate dynamic QuickBooks sync age from MongoDB
+        from app.db import get_collection
+        sync_time_str = "just now"
+        try:
+            qb_doc = await get_collection("quickbooks_tokens").find_one({"user_id": user_id})
+            last_ts = (qb_doc.get("updated_at") or qb_doc.get("created_at")) if qb_doc else None
+            if not last_ts:
+                snap_doc = await get_collection("financial_overview_snapshots").find_one({"user_id": user_id})
+                last_ts = snap_doc.get("created_at") if snap_doc else None
+                
+            if last_ts:
+                if isinstance(last_ts, str):
+                    last_ts = datetime.fromisoformat(last_ts.replace("Z", "+00:00"))
+                now = datetime.utcnow()
+                diff_sec = (now - last_ts.replace(tzinfo=None)).total_seconds()
+                if diff_sec < 60:
+                    sync_time_str = "just now"
+                elif diff_sec < 3600:
+                    sync_time_str = f"{int(diff_sec // 60)}m ago"
+                elif diff_sec < 86400:
+                    sync_time_str = f"{int(diff_sec // 3600)}h ago"
+                else:
+                    sync_time_str = f"{int(diff_sec // 86400)}d ago"
+        except Exception:
+            sync_time_str = "recently"
+
+        canonical_data_coverage_note = f"QuickBooks synced {sync_time_str}" if confidence_pct >= 80 else "Connect POS & Review data to sharpen Operational & Customer reads"
 
         canonical_watch_areas = []
         raw_watch_areas = business_health_ai.get("watch_areas", priority_watch_areas)

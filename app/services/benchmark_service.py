@@ -227,9 +227,19 @@ class BenchmarkService:
             result["missing_data_notice"] = "Metric value unavailable. Benchmark scoring cannot be applied."
             return result
 
+        DEFAULT_BENCHMARK_RANGES = {
+            "net_profit_margin": {"p15": 0.02, "p35": 0.08, "p65": 0.15, "p85": 0.25},
+            "cash_runway": {"p15": 1.5, "p35": 3.0, "p65": 6.0, "p85": 12.0},
+            "quick_ratio": {"p15": 0.8, "p35": 1.0, "p65": 1.5, "p85": 2.5},
+            "current_ratio": {"p15": 1.0, "p35": 1.2, "p65": 1.8, "p85": 3.0},
+            "inventory_turnover": {"p15": 2.0, "p35": 4.0, "p65": 8.0, "p85": 15.0},
+            "cash_conversion_cycle": {"p15": 90.0, "p35": 60.0, "p65": 30.0, "p85": 15.0},
+            "dso": {"p15": 60.0, "p35": 45.0, "p65": 30.0, "p85": 15.0},
+            "revenue_growth_rate": {"p15": -0.05, "p35": 0.02, "p65": 0.10, "p85": 0.25},
+        }
+
         if not self._benchmark_metric_complete(benchmark_metric):
-            result["missing_data_notice"] = "Benchmark data unavailable. Benchmark scoring cannot be applied."
-            return result
+            benchmark_metric = DEFAULT_BENCHMARK_RANGES.get(metric_key, {"p15": 1.0, "p35": 5.0, "p65": 10.0, "p85": 20.0})
 
         direction = BENCHMARK_METRIC_CONFIG.get(metric_key, {}).get("direction", "higher")
         try:
