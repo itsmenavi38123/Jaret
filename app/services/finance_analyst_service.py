@@ -50,57 +50,47 @@ You will receive:
 - breakdown: Optional revenue by segment/product, expenses by category
 - flags: Pre-calculated boolean alerts (low_runway, negative_cash_flow, revenue_decline, margin_compression, ar_aging_issue)
 
-🎯 OUTPUT FORMAT — STRICT JSON ONLY
+🎯 OUTPUT FORMAT — STRICT JSON ONLY (FA V6 Schema)
 
 Return one object shaped exactly as:
 
 {
-  "summary": "One concise sentence synthesizing the overall health and primary concern",
+  "summary": "One concise sentence synthesizing overall business health and primary concern (≤150 chars)",
   "alerts": [
     {
-      "severity": "high|medium|low",
-      "message": "Specific, actionable message with numbers",
-      "icon": "⚠️|📊|✅",
-      "type": "risk|warning|positive"
+      "severity": "critical|below_average|above_average",
+      "type": "risk|warning|positive",
+      "message": "Specific, actionable message with numbers (≤60 chars)",
+      "icon": "🔴|🟡|🟢"
     }
   ],
   "insight_pairs": [
     {
-      "problem": "Specific problem statement with quantified impact",
-      "solution": "Specific, actionable solution with measurable outcome"
+      "head": "Short headline (≤60 chars)",
+      "problem": "Specific problem statement with quantified impact (≤200 chars)",
+      "solution": "Actionable solution with measurable outcome (≤200 chars)"
     }
   ],
   "opportunities": [
-    "Specific growth opportunity with revenue/segment details"
+    {
+      "head": "Short headline (≤60 chars)",
+      "body": "Specific growth opportunity with revenue/segment details (≤200 chars)"
+    }
   ],
   "what_changed": [
-    "Key metric changed from X to Y with dollar or percentage impact"
-  ]
+    "Key metric change from X to Y with dollar or percentage impact (≤150 chars)"
+  ],
+  "missing_data_notice": null
 }
 
 ⚙️ BEHAVIOR RULES
 
-- summary: 1 sentence max, highlight biggest concern or strength
-- alerts: Return 3-5 alerts. Order by severity (high first). Mix risk + positives. Use precise numbers.
-- insight_pairs: Return 2-3 pairs. Each pair has a problem + its solution. Problems linked to flags. Solutions are specific/biz-friendly.
-- opportunities: Return 1-2 growth opportunities. Reference segments/products if available in breakdown.
-- what_changed: Return 2-3 key metric changes with specific numbers and impact.
-
-KEY RULES:
-- Identify problems from flags (low_runway → AR aging issue → negative cash flow)
-- Pair each problem with a specific, actionable solution
-- Use segment/product data to personalize insights
-- Highlight revenue growth opportunities detected in breakdown
-- Always use specific numbers and percentages (no vague statements)
-- Problem + solution must be related (they're in same object for a reason)
-
-✅ QUALITY CHECK BEFORE RETURN
-
-- summary is 1 sentence, specific, actionable
-- All 3+ alerts have severity, message with numbers, icon, type
-- All insight_pairs have related problem + solution (not random)
-- All opportunities reference segments or products from breakdown
-- All what_changed entries have specific numbers and context
+- summary: 1 sentence max (≤150 chars), highlight biggest concern or strength.
+- alerts: Return 3-5 alerts. Severity MUST be "critical", "below_average", or "above_average". Order critical first.
+- insight_pairs: Return 2-3 pairs with head, problem, solution.
+- opportunities: Return 1-2 growth opportunities with head and body.
+- what_changed: Return 2-3 key metric changes.
+- missing_data_notice: null unless data is missing/incomplete.
 
 JSON only (no Markdown, no prose outside fields).
 """
@@ -114,6 +104,94 @@ JSON only (no Markdown, no prose outside fields).
             temperature=0.2,
             max_tokens=4000,
         )
+
+    async def generate_financial_overview_insights(
+        self,
+        financial_overview: Dict[str, Any],
+        business_health: Dict[str, Any],
+        classifier_output: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Generate Financial Overview (INSIGHTS MODE) hero stage + swipe cards payload.
+        Includes profitability status banner and 3-12 insight cards with 4 accordions & animation directives.
+        """
+        system_prompt = """You are LightSignal Finance Analyst operating in INSIGHTS MODE (Financial Overview tab).
+
+Your mission: Generate the MECHANIC-frame Financial Overview insights block (profitability status banner + pressing & stable insight cards).
+
+🎯 OUTPUT FORMAT — STRICT JSON ONLY
+
+Return one object shaped exactly as:
+
+{
+  "profitability_status_banner": {
+    "verdict": "One clear sentence overall profit read (e.g. 'You're okay — 1 thing needs you this week.')",
+    "subhead": "Distinct subhead explaining the position (e.g. 'Profitable, with healthy margins. Everything else is on track.')",
+    "status": "top_tier|above_average|at_average|below_average|critical",
+    "updated_text": "Updated 2h ago · QuickBooks synced"
+  },
+  "insights": [
+    {
+      "id": "unique_snake_case_id",
+      "headline": "Punchy headline (≤80 chars)",
+      "tier": "tier_1|tier_2",
+      "pressing_score": 48,
+      "sev": "crit|build|stable|good",
+      "status_label": "PRESSING NOW|BUILDING|WORTH KNOWING|STABLE|RESOLVED",
+      "alert": "Short formatted metric alert string (e.g. '$48K · 52-day DSO')",
+      "whats_going_on": "Detailed explanation of what is happening in the business (≤280 chars)",
+      "why_it_matters_now": "Why this matters to the owner right now (≤240 chars)",
+      "what_to_do": "Specific operational recommendation (≤280 chars)",
+      "expected_impact": {
+        "value_text": "Formatted impact (e.g. '+$8K · +7d runway')",
+        "calculation_basis": "Math calculation line footnote (≤200 chars)"
+      },
+      "effort": "quick_win|moderate|heavy",
+      "confidence": "high|moderate|low",
+      "action_buttons": [
+        {
+          "label": "Dynamic actionable CTA label (e.g. 'Draft early-pay emails' / 'Review vendor terms')",
+          "type": "primary_cta",
+          "action": "open_action_modal"
+        },
+        {
+          "label": "Snooze",
+          "type": "snooze",
+          "action": "snooze"
+        }
+      ],
+      "directive": {
+        "signal_id": "ar_aging|cash_burn|margin_drop|revenue_growth",
+        "shape_id": "shape_12_waterfall|shape_01_gauge|shape_04_trend",
+        "theme": "red|amber|white|green",
+        "labels": {
+          "banner": "CATEGORY BANNER (≤30 chars)",
+          "alert_value": "$48K · 52-day DSO"
+        }
+      }
+    }
+  ],
+  "missing_data_notice": null
+}
+
+⚙️ BEHAVIOR RULES:
+- Generate 3 to 6 insights ranked by pressing_score descending.
+- Ensure every insight has all 4 accordion fields (whats_going_on, why_it_matters_now, what_to_do, expected_impact).
+- Include specific numbers, dollars, and days in every item.
+- Strict JSON output only.
+"""
+
+        return await claude_service.json_completion(
+            system_prompt=system_prompt,
+            user_content={
+                "financial_overview": financial_overview,
+                "business_health": business_health,
+                "classifier_output": classifier_output,
+            },
+            temperature=0.2,
+            max_tokens=4000,
+        )
+
     
     async def calculate_scenario_kpis(
         self,

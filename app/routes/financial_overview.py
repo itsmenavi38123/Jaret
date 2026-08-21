@@ -17,7 +17,14 @@ from app.models.financial_overview_drawer import (
 
 from app.services.financial_overview_drawer_service import financial_overview_drawer_service
 from app.services.financial_overview_kpi_preferences_service import financial_overview_kpi_preferences_service
+from app.services.financial_overview_actions_service import financial_overview_actions_service
+from app.services.financial_overview_expense_breakdown_service import financial_overview_expense_breakdown_service
 from app.models.financial_overview_kpi_preferences_request import FinancialOverviewKPIPreferencesRequest
+from pydantic import BaseModel, Field
+from typing import Optional
+
+class FinancialOverviewSnoozeRequest(BaseModel):
+    snooze_days: Optional[int] = 7
 
 from fastapi.encoders import jsonable_encoder
 
@@ -202,12 +209,39 @@ async def get_financial_overview_v2(
     return JSONResponse(
         status_code=status.HTTP_200_OK,
         content=jsonable_encoder(
-            {
+            {   
                 "success": True,
                 "data": data,
             }
         ),
     )
+
+
+@router.get("/financial-overview/expense-breakdown")
+async def get_financial_overview_expense_breakdown(
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Get standalone expense breakdown data for the Expense Breakdown tab.
+    """
+    user_id = current_user["id"]
+    financial_overview = await quickbooks_financial_service.get_financial_overview(
+        user_id=user_id
+    )
+    expense_breakdown = await financial_overview_expense_breakdown_service.generate_expense_breakdown(
+        user_id=user_id,
+        financial_overview=financial_overview,
+    )
+    return JSONResponse(
+        status_code=status.HTTP_200_OK,
+        content=jsonable_encoder(
+            {
+                "success": True,
+                "data": expense_breakdown,
+            }
+        ),
+    )
+
 
 
 @router.post("/financial-overview/drawer")
@@ -334,5 +368,68 @@ async def save_financial_overview_kpi_preferences(
                 "success": True,
                 "data": result,
             }
+        ),
+    )
+
+
+@router.post("/financial-overview/insights/{insight_id}/acknowledge")
+async def acknowledge_financial_overview_insight(
+    insight_id: str,
+    current_user: dict = Depends(get_current_user),
+):
+    result = await financial_overview_actions_service.acknowledge_insight(
+        user_id=current_user["id"],
+        insight_id=insight_id,
+    )
+    return JSONResponse(
+        status_code=status.HTTP_200_OK,
+        content={"success": True, "data": result},
+    )
+
+
+@router.post("/financial-overview/insights/{insight_id}/snooze")
+async def snooze_financial_overview_insight(
+    insight_id: str,
+    body: Optional[FinancialOverviewSnoozeRequest] = None,
+    current_user: dict = Depends(get_current_user),
+):
+    snooze_days = body.snooze_days if body and body.snooze_days else 7
+    result = await financial_overview_actions_service.snooze_insight(
+        user_id=current_user["id"],
+        insight_id=insight_id,
+        snooze_days=snooze_days,
+    )
+    return JSONResponse(
+        status_code=status.HTTP_200_OK,
+        content={"success": True, "data": result},
+    )
+
+
+@router.post("/financial-overview/insights/{insight_id}/resolve")
+async def resolve_financial_overview_insight(
+    insight_id: str,
+    current_user: dict = Depends(get_current_user),
+):
+    result = await financial_overview_actions_service.resolve_insight(
+        user_id=current_user["id"],
+        insight_id=insight_id,
+    )
+    return JSONResponse(
+        status_code=status.HTTP_200_OK,
+        content={"success": True, "data": result},
+    )
+
+
+@router.post("/financial-overview/refresh")
+async def refresh_financial_overview(
+    current_user: dict = Depends(get_current_user),
+):
+    data = await financial_overview_service.get_financial_overview_v2(
+        user_id=current_user["id"],
+    )
+    return JSONResponse(
+        status_code=status.HTTP_200_OK,
+        content=jsonable_encoder(
+            {"success": True, "message": "Financial overview refreshed", "data": data}
         ),
     )

@@ -9,4 +9,5 @@ class ExpenseCategory(BaseModel):
 
 
 class FinancialOverviewExpenseBreakdown(BaseModel):
+    total_amount: float = 0.0
     categories: List[ExpenseCategory]

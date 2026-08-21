@@ -1,20 +1,21 @@
 from datetime import datetime, timezone
-from typing import Literal, Optional
+from typing import Literal, Optional, Any, Dict, List
+import logging
+import re
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
-import re
-from app.routes.auth.auth import get_current_user
-from app.services.dashboard_service import dashboard_service
-from app.services.reminders_service import reminders_service
-from app.services.benchmark_service import benchmark_service
+
 from app.db import get_collection
-from typing import Optional, Literal, Any, Dict, List
-from app.services.kpi_ai_service import kpi_ai_service
+from app.routes.auth.auth import get_current_user
+from app.services.benchmark_service import benchmark_service
 from app.services.dashboard_ask_service import dashboard_ask_service
-import logging
+from app.services.dashboard_service import dashboard_service
+from app.services.kpi_ai_service import kpi_ai_service
+from app.services.redis_client import get_redis_client
+from app.services.reminders_service import reminders_service
 
 router = APIRouter(tags=["dashboard"])
 logger = logging.getLogger(__name__)

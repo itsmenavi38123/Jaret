@@ -60,7 +60,10 @@ class FinancialOverviewExpenseBreakdownService:
                 )
             )
 
+        total_amt = sum(c.amount for c in categories)
+
         return FinancialOverviewExpenseBreakdown(
+            total_amount=total_amt,
             categories=categories,
         )
 

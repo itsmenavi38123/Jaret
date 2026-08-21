@@ -85,6 +85,12 @@ class FinancialOverviewService:
             print(f"[WARN] Failed to generate expense_breakdown: {e}")
             expense_breakdown = []
 
+        kpi_tiles_list = (
+            [t.model_dump() if hasattr(t, "model_dump") else (t.dict() if hasattr(t, "dict") else t) for t in kpi_tiles.items]
+            if hasattr(kpi_tiles, "items")
+            else (kpi_tiles if isinstance(kpi_tiles, list) else [])
+        )
+
         return {
             "financial_overview": financial_overview,
             "financial_signals": financial_signals,
@@ -93,7 +99,7 @@ class FinancialOverviewService:
                 if financial_overview_insights
                 else None
             ),
-            "kpi_tiles": kpi_tiles,
+            "kpi_tiles": kpi_tiles_list,
             "expense_breakdown": expense_breakdown,
             "business_health": business_health,
         }
