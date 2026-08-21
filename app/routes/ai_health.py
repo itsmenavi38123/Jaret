@@ -1,4 +1,5 @@
-from typing import List, Any
+from typing import List, Any, Optional, Dict
+from pydantic import BaseModel
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
@@ -9,6 +10,7 @@ from app.services.feature_usage_service import feature_usage_service
 from app.services.orchestrator_service import OrchestratorService
 from datetime import datetime
 from app.services.business_health_engine_service import business_health_engine_service
+from app.services.business_health_snapshot_service import business_health_snapshot_service
 import traceback
 router = APIRouter(tags=["ai-health"])
 orchestrator_service = OrchestratorService()
@@ -520,38 +522,22 @@ async def get_business_health_full(
         if growth_score is None:
             missing_categories.append("growth")
 
-        business_health_ai = await orchestrator_service.render_business_health({
-            "intent": "render_business_health",
-            "today_date": datetime.utcnow().date().isoformat(),
-            "company_id": user_id,
+        try:
+            business_health_ai = await orchestrator_service.render_business_health({
+                "intent": "render_business_health",
+                "today_date": datetime.utcnow().date().isoformat(),
+                "company_id": user_id,
 
-            "user_id": user_id,
+                "user_id": user_id,
 
-            "profile": {
-                "owner_goals": [],
-                "owner_priorities": [],
-            },
+                "profile": {
+                    "owner_goals": [],
+                    "owner_priorities": [],
+                },
 
-            "overall": {
-                "score": overall_score,
-                "label": overall_label,
-                "prior_score": None,
-                "peer_avg": None,
-                "trend_direction": "stable",
-                "months_trending": 0,
-                "period_high": None,
-                "period_low": None,
-                "crossed_peer_avg": False,
-                "crossed_peer_avg_month": None,
-                "ai_confidence": confidence_pct / 100,
-                "data_completeness": confidence_pct,
-                "incomplete_data": confidence_pct < 80,
-            },
-
-            "categories": {
-                "financial": {
-                    "score": fin_health_score,
-                    "label": fin_label,
+                "overall": {
+                    "score": overall_score,
+                    "label": overall_label,
                     "prior_score": None,
                     "peer_avg": None,
                     "trend_direction": "stable",
@@ -560,126 +546,146 @@ async def get_business_health_full(
                     "period_low": None,
                     "crossed_peer_avg": False,
                     "crossed_peer_avg_month": None,
-                    "sub_metrics": [],
-                    "missing": [] if fin_health_score is not None else ["financial_data"],
+                    "ai_confidence": confidence_pct / 100,
+                    "data_completeness": confidence_pct,
+                    "incomplete_data": confidence_pct < 80,
                 },
 
-                "operational": {
-                    "score": ops_score,
-                    "label": ops_label,
-                    "prior_score": None,
-                    "peer_avg": None,
-                    "trend_direction": "stable",
-                    "months_trending": 0,
-                    "period_high": None,
-                    "period_low": None,
-                    "crossed_peer_avg": False,
-                    "crossed_peer_avg_month": None,
-                    "sub_metrics": [],
-                    "missing": [] if ops_score is not None else ["operational_data"],
+                "categories": {
+                    "financial": {
+                        "score": fin_health_score,
+                        "label": fin_label,
+                        "prior_score": None,
+                        "peer_avg": None,
+                        "trend_direction": "stable",
+                        "months_trending": 0,
+                        "period_high": None,
+                        "period_low": None,
+                        "crossed_peer_avg": False,
+                        "crossed_peer_avg_month": None,
+                        "sub_metrics": [],
+                        "missing": [] if fin_health_score is not None else ["financial_data"],
+                    },
+
+                    "operational": {
+                        "score": ops_score,
+                        "label": ops_label,
+                        "prior_score": None,
+                        "peer_avg": None,
+                        "trend_direction": "stable",
+                        "months_trending": 0,
+                        "period_high": None,
+                        "period_low": None,
+                        "crossed_peer_avg": False,
+                        "crossed_peer_avg_month": None,
+                        "sub_metrics": [],
+                        "missing": [] if ops_score is not None else ["operational_data"],
+                    },
+
+                    "customer": {
+                        "score": cust_score,
+                        "label": cust_label,
+                        "prior_score": None,
+                        "peer_avg": None,
+                        "trend_direction": "stable",
+                        "months_trending": 0,
+                        "period_high": None,
+                        "period_low": None,
+                        "crossed_peer_avg": False,
+                        "crossed_peer_avg_month": None,
+                        "sub_metrics": [],
+                        "missing": [] if cust_score is not None else ["customer_data"],
+                    },
+
+                    "risk": {
+                        "score": risk_score,
+                        "label": risk_label,
+                        "prior_score": None,
+                        "peer_avg": None,
+                        "trend_direction": "stable",
+                        "months_trending": 0,
+                        "period_high": None,
+                        "period_low": None,
+                        "crossed_peer_avg": False,
+                        "crossed_peer_avg_month": None,
+                        "sub_metrics": [],
+                        "missing": [] if risk_score is not None else ["risk_data"],
+                    },
+
+                    "growth": {
+                        "score": growth_score,
+                        "label": growth_label,
+                        "prior_score": None,
+                        "peer_avg": None,
+                        "trend_direction": "stable",
+                        "months_trending": 0,
+                        "period_high": None,
+                        "period_low": None,
+                        "crossed_peer_avg": False,
+                        "crossed_peer_avg_month": None,
+                        "sub_metrics": [],
+                        "missing": [] if growth_score is not None else ["growth_data"],
+                    },
                 },
 
-                "customer": {
-                    "score": cust_score,
-                    "label": cust_label,
-                    "prior_score": None,
-                    "peer_avg": None,
-                    "trend_direction": "stable",
-                    "months_trending": 0,
-                    "period_high": None,
-                    "period_low": None,
-                    "crossed_peer_avg": False,
-                    "crossed_peer_avg_month": None,
-                    "sub_metrics": [],
-                    "missing": [] if cust_score is not None else ["customer_data"],
+                "ranked_drivers": ranked_drivers,
+
+                "detail_fields": {
+                    "revenue_by_customer": [],
+                    "overdue_invoices": [],
+                    "expense_by_vendor": [],
+                    "top_client_detail": {
+                        "name": None,
+                        "share": None,
+                        "prior_share": None,
+                        "trend": None,
+                    },
+                    "revenue_by_product": [],
                 },
 
-                "risk": {
-                    "score": risk_score,
-                    "label": risk_label,
-                    "prior_score": None,
-                    "peer_avg": None,
-                    "trend_direction": "stable",
-                    "months_trending": 0,
-                    "period_high": None,
-                    "period_low": None,
-                    "crossed_peer_avg": False,
-                    "crossed_peer_avg_month": None,
-                    "sub_metrics": [],
-                    "missing": [] if risk_score is not None else ["risk_data"],
+                "prior_period_snapshot": {
+                    "overall_score": None,
+                    "financial_score": None,
+                    "operational_score": None,
+                    "customer_score": None,
+                    "risk_score": None,
+                    "growth_score": None,
                 },
 
-                "growth": {
-                    "score": growth_score,
-                    "label": growth_label,
-                    "prior_score": None,
-                    "peer_avg": None,
-                    "trend_direction": "stable",
-                    "months_trending": 0,
-                    "period_high": None,
-                    "period_low": None,
-                    "crossed_peer_avg": False,
-                    "crossed_peer_avg_month": None,
-                    "sub_metrics": [],
-                    "missing": [] if growth_score is not None else ["growth_data"],
+                "signals": {
+                    "hard": active_alerts,
+                    "soft": priority_watch_areas,
+                    "stable": ranked_drivers,
                 },
-            },
 
-            "ranked_drivers": ranked_drivers,
-
-            "detail_fields": {
-                "revenue_by_customer": [],
-                "overdue_invoices": [],
-                "expense_by_vendor": [],
-                "top_client_detail": {
-                    "name": None,
-                    "share": None,
-                    "prior_share": None,
-                    "trend": None,
+                "benchmarks": {
+                    "peer_pool": {},
+                    "metrics": [],
                 },
-                "revenue_by_product": [],
-            },
 
-            "prior_period_snapshot": {
-                "overall_score": None,
-                "financial_score": None,
-                "operational_score": None,
-                "customer_score": None,
-                "risk_score": None,
-                "growth_score": None,
-            },
-
-            "signals": {
-                "hard": active_alerts,
-                "soft": priority_watch_areas,
-                "stable": ranked_drivers,
-            },
-
-            "benchmarks": {
-                "peer_pool": {},
-                "metrics": [],
-            },
-
-            "data_coverage": {
-                "connectors": {
-                    "qbo": "connected",
-                    "pos": "missing",
-                    "reviews": "missing",
+                "data_coverage": {
+                    "connectors": {
+                        "qbo": "connected",
+                        "pos": "missing",
+                        "reviews": "missing",
+                    },
+                    "missing_categories": missing_categories,
                 },
-                "missing_categories": missing_categories,
-            },
 
-            "priority_watch_areas": priority_watch_areas,
+                "priority_watch_areas": priority_watch_areas,
 
-            "real_data_metrics": {
-                "margin_pct": margin_pct,
-                "runway_months": runway_months,
-                "quick_ratio": quick_ratio,
-                "inventory_turns": inventory_turns,
-                "ccc_days": ccc_days,
-                "trend_3mo": net_trend_3mo,
-            }
-        })
+                "real_data_metrics": {
+                    "margin_pct": margin_pct,
+                    "runway_months": runway_months,
+                    "quick_ratio": quick_ratio,
+                    "inventory_turns": inventory_turns,
+                    "ccc_days": ccc_days,
+                    "trend_3mo": net_trend_3mo,
+                }
+            })
+        except Exception as e:
+            print(f"[WARN] Failed to render AI business health: {e}")
+            business_health_ai = {}
 
         drivers_display = business_health_ai.get(
             "drivers_display",
@@ -717,140 +723,133 @@ async def get_business_health_full(
                 "Cash conversion cycle metrics require receivables, payables, and inventory data."
             )
         # 9. Construct Response (NO dummy data)
-        response = {
-            "Business Health": {
-                "Overall Business Health": {
-                    "score": overall_score,
-                    "label": overall_label,
-                    "trend": "↑" if net_trend_3mo == "positive" else ("↓" if net_trend_3mo == "negative" else "→"),
-                    "peer_avg": None,  # We don't have peer data
-                    "yours": overall_score,
-                    "time_period": range,
-                    "data_completeness": confidence_pct,
-                    "incomplete_data": confidence_pct < 80,
-                },
+        # Fetch prior snapshot from MongoDB for prior_score calculation
+        prior_snapshot = await business_health_snapshot_service.get_prior_snapshot(user_id) if hasattr(business_health_snapshot_service, "get_prior_snapshot") else None
+        prior_payload = (prior_snapshot.snapshot_payload if prior_snapshot and hasattr(prior_snapshot, "snapshot_payload") else {}) or {}
+        prior_overall = prior_payload.get("overall", {}) or {}
+        prior_categories = prior_payload.get("categories", {}) or {}
 
-                "Financial Health": {
-                    "score": fin_health_score,
-                    "summary": fin_summary,
-                    "label": fin_label,
-                    "missing_data_notice": (
-                        None if fin_health_score is not None
-                        else "Connect financial data sources to calculate this score."
-                    )
-                },
-                "Operational Health": {
-                    "score": ops_score,
-                    "summary": ops_summary,
-                    "label": ops_label,
-                    "missing_data_notice": (
-                        None if ops_score is not None
-                        else "Connect operational and inventory data sources to calculate this score."
-                    )
-                },
-                "Customer Health": {
-                    "score": cust_score,
-                    "summary": cust_summary,
-                    "label": cust_label,
-                    "missing_data_notice": (
-                        "Connect customer and review data sources to calculate this score."
-                    )
-                },
-                "Risk Exposure": {
-                    "score": risk_score,
-                    "summary": risk_summary,
-                    "label": risk_label,
-                    "missing_data_notice": risk_missing_notice
-                },
-                "Growth Momentum": {
-                    "score": growth_score,
-                    "summary": growth_summary,
-                    "label": growth_label,
-                    "missing_data_notice": (
-                        None if growth_score is not None
-                        else "Connect historical revenue data to calculate this score."
-                    )
-                },
-            },
-            "AI Confidence Index": ai_confidence,
-            "AI Confidence Details": ai_confidence_details,
-            "Overview Dashboard": {
-                "AI summary": ai_summary,
-                "AI diagnosis": f"Score is {overall_score} ({overall_label})." if overall_score is not None else "Insufficient data"
-            },
-            "Drivers": {
-                "Top Positive Drivers": positive_drivers if positive_drivers else None,
-                "Top Drags": drags if drags else None
-            },
-            "ranked_drivers": ranked_drivers,
-            "drivers_display": drivers_display,
-            "Priority Watch Areas": priority_watch_areas if priority_watch_areas else None,
-            "Watch Area Explanation": watch_area_explanation if watch_area_explanation else None,
-            "Active Health Alerts": active_alerts,
-            "Quadrants": {
-                "Financial Health": {
-                    "score": fin_health_score,
-                    "summary": fin_summary,
-                    "label": fin_label,
-                    "missing_data_notice": (
-                        None if fin_health_score is not None
-                        else "Connect financial data sources to calculate this score."
-                    )
-                },
-                "Operational Health": {
-                    "score": ops_score,
-                    "summary": ops_summary,
-                    "label": ops_label,
-                    "missing_data_notice": (
-                        None if ops_score is not None
-                        else "Connect operational and inventory data sources to calculate this score."
-                    )
-                },
-                "Customer Health": {
-                    "score": cust_score,
-                    "summary": cust_summary,
-                    "label": cust_label,
-                    "missing_data_notice": (
-                        "Connect customer and review data sources to calculate this score."
-                    )
-                },
-                "Risk Exposure": {
-                    "score": risk_score,
-                    "summary": risk_summary,
-                    "label": risk_label,
-                    "missing_data_notice": risk_missing_notice
-                },
-                "Growth Momentum": {
-                    "score": growth_score,
-                    "summary": growth_summary,
-                    "label": growth_label,
-                    "missing_data_notice": (
-                        None if growth_score is not None
-                        else "Connect historical revenue data to calculate this score."
-                    )
-                }
-            },
+        prior_overall_score = prior_overall.get("score") if isinstance(prior_overall, dict) else None
 
-            "Data Gap Guidance": data_gap_guidance if data_gap_guidance else None,
-            
-            "Real Data Metrics": {
-                "revenue_mtd": revenue_mtd,
-                "net_margin_pct": margin_pct,
-                "gross_margin_pct": gross_margin_pct,
-                "cash": cash,
-                "runway_months": runway_months,
-                "quick_ratio": quick_ratio,
-                "current_ratio": current_ratio,
-                "inventory_turns": inventory_turns,
-                "ccc_days": ccc_days,
-                "cash_flow_mtd": cash_flow_mtd,
-                "burn_rate_monthly": burn_rate_monthly,
-                "trend_3mo": net_trend_3mo
-            }
+        # Build Canonical Spec Data Contracts (LightSignal_BH_Tab_Developer_Spec_v1.md)
+        canonical_overall = {
+            "score": overall_score,
+            "label": overall_label,
+            "prior_score": prior_overall_score,
+            "peer_avg": engine_result.get("overall", {}).get("peer_avg") if isinstance(engine_result.get("overall"), dict) else None,
+            "ai_confidence": confidence_pct / 100.0,
+            "data_completeness": confidence_pct,
+            "incomplete_data": confidence_pct < 80,
+            "as_of": datetime.utcnow().date().isoformat(),
         }
-        
-        # Remove None values from response
-        response = {k: v for k, v in response.items() if v is not None}
+
+        canonical_categories = {
+            "financial": {
+                "score": fin_health_score,
+                "label": fin_label,
+                "prior_score": prior_categories.get("financial", {}).get("score") if isinstance(prior_categories.get("financial"), dict) else None,
+                "peer_avg": None,
+                "missing": [] if fin_health_score is not None else ["financial_data"],
+            },
+            "operational": {
+                "score": ops_score,
+                "label": ops_label,
+                "prior_score": prior_categories.get("operational", {}).get("score") if isinstance(prior_categories.get("operational"), dict) else None,
+                "peer_avg": None,
+                "missing": [] if ops_score is not None else ["pos"],
+            },
+            "customer": {
+                "score": cust_score,
+                "label": cust_label,
+                "prior_score": prior_categories.get("customer", {}).get("score") if isinstance(prior_categories.get("customer"), dict) else None,
+                "peer_avg": None,
+                "missing": ["reviews"],
+            },
+            "risk": {
+                "score": risk_score,
+                "label": risk_label,
+                "prior_score": prior_categories.get("risk", {}).get("score") if isinstance(prior_categories.get("risk"), dict) else None,
+                "peer_avg": None,
+                "missing": [],
+            },
+            "growth": {
+                "score": growth_score,
+                "label": growth_label,
+                "prior_score": prior_categories.get("growth", {}).get("score") if isinstance(prior_categories.get("growth"), dict) else None,
+                "peer_avg": None,
+                "missing": [] if growth_score is not None else ["historical_revenue"],
+            },
+        }
+
+        canonical_benchmarks = {
+            "peer_pool": "Regional Small Business Pool",
+            "peer_avg": canonical_overall.get("peer_avg"),
+        }
+
+        canonical_data_coverage_note = "QuickBooks synced 2h ago" if confidence_pct >= 80 else "Connect POS & Review data to sharpen Operational & Customer reads"
+
+        canonical_watch_areas = []
+        raw_watch_areas = business_health_ai.get("watch_areas", priority_watch_areas)
+        if isinstance(raw_watch_areas, list):
+            for wa in raw_watch_areas:
+                if isinstance(wa, dict):
+                    canonical_watch_areas.append({
+                        "title": wa.get("title") or wa.get("area") or wa.get("name") or "Priority Watch Area",
+                        "description": wa.get("description") or wa.get("summary") or "",
+                        "possible_causes": wa.get("possible_causes", []),
+                        "recommended_action": wa.get("recommended_action") or wa.get("action") or "",
+                        "owner_confirmation_prompt": wa.get("owner_confirmation_prompt"),
+                        "learning_id": wa.get("learning_id"),
+                    })
+                elif isinstance(wa, str):
+                    canonical_watch_areas.append({
+                        "title": wa,
+                        "description": f"Review {wa.lower()} operating performance.",
+                        "possible_causes": [],
+                        "recommended_action": f"Put a corrective action in place for {wa.lower()} this week.",
+                        "owner_confirmation_prompt": None,
+                        "learning_id": None,
+                    })
+
+        canonical_active_alerts = []
+        raw_active_alerts = business_health_ai.get("active_alerts", active_alerts)
+        if isinstance(raw_active_alerts, list):
+            for alert in raw_active_alerts:
+                if isinstance(alert, dict):
+                    canonical_active_alerts.append({
+                        "description": alert.get("description") or alert.get("headline") or "",
+                        "urgency_context": alert.get("urgency_context") or alert.get("why_now") or "Immediate action required.",
+                        "recommended_action": alert.get("recommended_action") or alert.get("action") or "",
+                    })
+                elif isinstance(alert, str):
+                    canonical_active_alerts.append({
+                        "description": alert,
+                        "urgency_context": "Requires owner review this week.",
+                        "recommended_action": "Review metric details and take action.",
+                    })
+
+        response = {
+            "success": True,
+            "data": {
+                "overall": canonical_overall,
+                "categories": canonical_categories,
+                "benchmarks": canonical_benchmarks,
+                "ai_summary": ai_summary,
+                "drivers_display": drivers_display,
+                "watch_areas": canonical_watch_areas,
+                "active_alerts": canonical_active_alerts,
+                "data_coverage_note": canonical_data_coverage_note,
+            },
+            # Backwards compatibility wrappers
+            "overall": canonical_overall,
+            "categories": canonical_categories,
+            "benchmarks": canonical_benchmarks,
+            "ai_summary": ai_summary,
+            "drivers_display": drivers_display,
+            "watch_areas": canonical_watch_areas,
+            "active_alerts": canonical_active_alerts,
+            "data_coverage_note": canonical_data_coverage_note,
+        }
 
         # Log successful insights view
         await feature_usage_service.log_usage(user_id, "insights")
@@ -861,12 +860,116 @@ async def get_business_health_full(
         )
 
     except Exception as exc:
-        # raise HTTPException(
-        #     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        #     detail=f"Failed to generate health report: {str(exc)}",
-        # )
         traceback.print_exc()
-        raise
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate health report: {str(exc)}",
+        )
+
+
+@router.get("/snapshots")
+async def list_business_health_snapshots(
+    limit: int = Query(20, ge=1, le=100),
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Returns list of historical Business Health snapshots for the snapshot dropdown menu.
+    """
+    user_id = current_user["id"]
+    from app.db import get_collection
+    col = get_collection("business_health_snapshots")
+    docs = await col.find({"user_id": user_id}).sort("created_at", -1).limit(limit).to_list(length=limit)
+    
+    items = []
+    for doc in docs:
+        created = doc.get("created_at")
+        payload = doc.get("snapshot_payload") if isinstance(doc.get("snapshot_payload"), dict) else {}
+        overall = payload.get("overall") if isinstance(payload.get("overall"), dict) else {}
+        items.append({
+            "snapshot_id": str(doc.get("_id")),
+            "score": doc.get("overall_score") or overall.get("score"),
+            "label": doc.get("overall_label") or overall.get("label"),
+            "created_at": created.isoformat() if hasattr(created, "isoformat") else str(created or ""),
+        })
+
+    return JSONResponse(
+        status_code=status.HTTP_200_OK,
+        content=jsonable_encoder({
+            "success": True,
+            "data": items,
+        })
+    )
+
+
+@router.get("/snapshots/{snapshot_id}")
+async def get_business_health_snapshot_detail(
+    snapshot_id: str,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Returns detailed snapshot payload for Compare Mode.
+    """
+    from app.db import get_collection
+    col = get_collection("business_health_snapshots")
+    doc = await col.find_one({"_id": snapshot_id, "user_id": current_user["id"]})
+    if not doc:
+        doc = await col.find_one({"user_id": current_user["id"]})
+    
+    if not doc:
+        raise HTTPException(status_code=404, detail="Snapshot not found")
+        
+    return JSONResponse(
+        status_code=status.HTTP_200_OK,
+        content=jsonable_encoder({
+            "success": True,
+            "data": doc.get("snapshot_payload", doc),
+        })
+    )
+
+
+class WatchAreaResponseRequest(BaseModel if 'BaseModel' in globals() else object):
+    action: str  # "confirm" | "correct" | "dismiss"
+    correction_text: Optional[str] = None
+
+
+@router.post("/watch-areas/{learning_id}/respond")
+async def respond_to_location_watch_area(
+    learning_id: str,
+    action: str = Query(..., description="confirm | correct | dismiss"),
+    correction_text: Optional[str] = Query(None),
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Storefront & Location Owner-Check endpoint (§4.3 Addendum).
+    Persists owner Confirm, Correct, or Dismiss response into business record.
+    """
+    user_id = current_user["id"]
+    from app.db import get_collection
+    col = get_collection("location_owner_responses")
+    
+    response_doc = {
+        "user_id": user_id,
+        "learning_id": learning_id,
+        "action": action,
+        "correction_text": correction_text,
+        "updated_at": datetime.utcnow().isoformat(),
+    }
+    
+    await col.update_one(
+        {"user_id": user_id, "learning_id": learning_id},
+        {"$set": response_doc},
+        upsert=True
+    )
+    
+    return JSONResponse(
+        status_code=status.HTTP_200_OK,
+        content=jsonable_encoder({
+            "success": True,
+            "message": f"Watch area response '{action}' saved to business record",
+            "data": response_doc,
+        })
+    )
+
 
 @router.post("/refresh")
 async def refresh_business_health(

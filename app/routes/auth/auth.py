@@ -138,7 +138,13 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
     return {"id": user_doc["_id"], "email": user_doc["email"]}
 
 
-async def _connection_statuses(user_id: str) -> Dict[str, bool]:
+async def _connection_statuses(user_doc: Dict[str, Any]) -> Dict[str, bool]:
+    if user_doc.get("is_demo"):
+        return {
+            "quickbooks_connected": True,
+            "xero_connected": False,
+        }
+    user_id = user_doc["_id"]
     quickbooks_tokens = await quickbooks_token_service.get_tokens_by_user(user_id)
     xero_tokens = await xero_token_service.get_tokens_by_user(user_id)
     return {
@@ -154,10 +160,11 @@ async def _build_user_payload(user_doc: Dict[str, Any]) -> Dict[str, Any]:
         "email": user_doc["email"],
         "name": user_doc.get("full_name"),
         "role": user_doc.get("role"),
+        "is_demo": bool(user_doc.get("is_demo")),
         "created_at": created_at.isoformat() if created_at else None,
         "needs_password_setup": user_doc.get("needs_password_setup", False),
     }
-    user_info.update(await _connection_statuses(user_doc["_id"]))
+    user_info.update(await _connection_statuses(user_doc))
     return user_info
 
 
@@ -169,7 +176,16 @@ async def get_current_user_details(current_user: dict = Depends(get_current_user
     """
     try:
         users = get_collection("users")
-        user_doc = await users.find_one({"_id": current_user["id"]})
+        user_id = current_user["id"]
+        user_doc = await users.find_one({"_id": user_id})
+        if not user_doc and isinstance(user_id, str):
+            try:
+                from bson import ObjectId
+                user_doc = await users.find_one({"_id": ObjectId(user_id)})
+            except Exception:
+                pass
+        if not user_doc:
+            user_doc = await users.find_one({"id": user_id})
         
         if not user_doc:
             return JSONResponse(

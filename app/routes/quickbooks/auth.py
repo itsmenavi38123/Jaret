@@ -120,6 +120,18 @@ async def get_status(current_user: dict = Depends(get_current_user)):
     Returns whether the authenticated user has an active QuickBooks connection.
     """
     user_id = current_user["id"]
+    if current_user.get("is_demo"):
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content=jsonable_encoder({
+                "success": True,
+                "data": {
+                    "connected": True,
+                    "realm_ids": ["demo_realm"]
+                }
+            })
+        )
+
     tokens = await quickbooks_token_service.get_tokens_by_user(user_id)
     active_tokens = [token for token in tokens if token.is_active]
 

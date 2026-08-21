@@ -134,6 +134,25 @@ async def integrations_status(current_user: dict = Depends(get_current_user)):
     QuickBooks, Xero, Square, and Shopify, along with the data sync progress state.
     """
     user_id = current_user["id"]
+    is_demo = bool(current_user.get("is_demo"))
+
+    if is_demo:
+        return {
+            "success": True,
+            "data": {
+                "quickbooks": True,
+                "xero": False,
+                "square": False,
+                "omnivore": False,
+                "shopify": False,
+                "hubspot": False,
+                "sync_progress": {
+                    "connected": True,
+                    "syncing": False,
+                    "first_read": True
+                }
+            }
+        }
 
     quickbooks_tokens = await quickbooks_token_service.get_tokens_by_user(user_id)
     quickbooks_connected = any(token.is_active for token in quickbooks_tokens)
