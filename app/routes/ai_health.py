@@ -79,6 +79,21 @@ async def get_business_health_full(
     try:
         user_id = current_user["id"]
         
+        # Check if demo user
+        from app.db import get_collection
+        users_col = get_collection("users")
+        user_doc = await users_col.find_one({"id": user_id}) or await users_col.find_one({"_id": user_id}) or {}
+        
+        if user_doc.get("is_demo") or (user_doc.get("email", "").startswith("demo-") and "@lightsignal.app" in user_doc.get("email", "")):
+            login_label = user_doc.get("login_label") or user_doc.get("username")
+            if not login_label and user_doc.get("email"):
+                login_label = user_doc.get("email").split("@")[0]
+            
+            from app.demo_data import get_demo_payload
+            demo_payload = get_demo_payload(login_label or "demo-restaurant")
+            if demo_payload and "business_health" in demo_payload:
+                return demo_payload["business_health"]
+
         # 1. Fetch Real Financial Data from QuickBooks
         qs = quickbooks_financial_service
         

@@ -305,11 +305,32 @@ async def update_onboarding(
 async def get_onboarding(
     current_user: dict = Depends(get_current_user)
 ):
-
     try:
         business_profiles = get_collection("business_profiles")
+        user_id = current_user.get("id") or current_user.get("_id")
+        email = current_user.get("email", "")
+        is_demo_flag = current_user.get("is_demo") or (email.startswith("demo-") and "@lightsignal.app" in email)
+        
+        if not is_demo_flag:
+            users_col = get_collection("users")
+            user_doc = await users_col.find_one({"id": user_id}) or await users_col.find_one({"_id": user_id}) or {}
+            is_demo_flag = user_doc.get("is_demo") or (user_doc.get("email", "").startswith("demo-") and "@lightsignal.app" in user_doc.get("email", ""))
+            login_label = user_doc.get("login_label") or user_doc.get("username") or (user_doc.get("email", "").split("@")[0] if user_doc.get("email") else "demo-restaurant")
+        else:
+            login_label = current_user.get("login_label") or current_user.get("username") or (email.split("@")[0] if email else "demo-restaurant")
 
-        user_id = current_user["id"]
+        if is_demo_flag:
+            from app.demo_data import get_demo_payload
+            demo_payload = get_demo_payload(login_label or "demo-restaurant")
+            if demo_payload and "business_profile" in demo_payload:
+                return JSONResponse(
+                    status_code=status.HTTP_200_OK,
+                    content={
+                        "success": True,
+                        "has_existing_data": True,
+                        "data": demo_payload["business_profile"]
+                    }
+                )
 
         profile = await business_profiles.find_one(
             {"user_id": user_id}
@@ -332,7 +353,7 @@ async def get_onboarding(
                 "has_existing_data": True,
                 "data": {
                     "user_id": profile["user_id"],
-                    "onboarding_data": profile["onboarding_data"],
+                    "onboarding_data": profile.get("onboarding_data", {}),
                     "business_classifications": profile.get("business_classifications", []),
                     "business_tags": profile.get("business_tags", []),
                     "proven_capabilities": profile.get("proven_capabilities", []),
@@ -349,4 +370,172 @@ async def get_onboarding(
                 "success": False,
                 "error": str(e)
             }
+        )
+
+
+@router.get("/richness")
+async def get_profile_richness(
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Get Business Profile Richness Meter score and band.
+    Per BP_Richness_Meter_Teaser_Addendum_v1.md.
+    """
+    try:
+        user_id = current_user["id"]
+        users_col = get_collection("users")
+        user_doc = await users_col.find_one({"id": user_id}) or await users_col.find_one({"_id": user_id}) or {}
+        
+        # Demo users are 100% complete
+        if user_doc.get("is_demo") or (user_doc.get("email", "").startswith("demo-") and "@lightsignal.app" in user_doc.get("email", "")):
+            return JSONResponse(
+                status_code=status.HTTP_200_OK,
+                content={
+                    "success": True,
+                    "data": {
+                        "score": 1.0,
+                        "band": "We know your business",
+                        "ever_reached_sharp": True,
+                        "sections_complete": 16,
+                        "total_sections": 16
+                    }
+                }
+            )
+
+        business_profiles = get_collection("business_profiles")
+        profile = await business_profiles.find_one({"user_id": user_id})
+        
+        onboarding_data = profile.get("onboarding_data", {}) if profile else {}
+        
+        # Calculate filled sections out of 16
+        sections = [
+            "section_1_basics", "section_2_ownership", "section_3_industry", "section_4_operations",
+            "section_5_financial", "section_6_assets", "section_7_customers", "section_8_risk",
+            "section_9_capacity", "section_10_opportunity_readiness", "section_11_goals",
+            "section_12_pricing", "section_13_team", "section_14_marketing", "section_15_owner_prefs", "section_16_docs"
+        ]
+        
+        complete_count = 0
+        for s in sections:
+            if s in onboarding_data and isinstance(onboarding_data[s], dict) and len(onboarding_data[s]) > 0:
+                complete_count += 1
+            elif s in onboarding_data and onboarding_data[s]:
+                complete_count += 1
+        
+        # Fallback to top-level onboarding fields if structured sections not used yet
+        if complete_count == 0 and onboarding_data:
+            complete_count = min(16, len(onboarding_data.keys()))
+            
+        score = round(complete_count / 16.0, 2)
+        
+        if score >= 0.75:
+            band = "We know your business"
+        elif score >= 0.50:
+            band = "Getting sharp"
+        elif score >= 0.25:
+            band = "Building"
+        else:
+            band = "Just getting started"
+
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content={
+                "success": True,
+                "data": {
+                    "score": score,
+                    "band": band,
+                    "ever_reached_sharp": score >= 0.50,
+                    "sections_complete": complete_count,
+                    "total_sections": 16
+                }
+            }
+        )
+    except Exception as e:
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"success": False, "error": str(e)}
+        )
+
+
+@router.get("/teaser")
+async def get_profile_teaser(
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Get Peer Teaser card for Business Profile tab.
+    Hides when score >= 0.50 per spec §2.
+    """
+    try:
+        user_id = current_user["id"]
+        users_col = get_collection("users")
+        user_doc = await users_col.find_one({"id": user_id}) or await users_col.find_one({"_id": user_id}) or {}
+        
+        # Demo users and sharp profiles suppress teasers
+        if user_doc.get("is_demo") or (user_doc.get("email", "").startswith("demo-") and "@lightsignal.app" in user_doc.get("email", "")):
+            return JSONResponse(
+                status_code=status.HTTP_200_OK,
+                content={"success": True, "data": {"show": False, "teaser": None}}
+            )
+
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content={"success": True, "data": {"show": False, "teaser": None}}
+        )
+    except Exception as e:
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"success": False, "error": str(e)}
+        )
+
+
+@router.get("/classification")
+async def get_profile_classification(
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Get Business Profile Classifications & Proven Capabilities.
+    """
+    try:
+        user_id = current_user["id"]
+        users_col = get_collection("users")
+        user_doc = await users_col.find_one({"id": user_id}) or await users_col.find_one({"_id": user_id}) or {}
+        
+        if user_doc.get("is_demo") or (user_doc.get("email", "").startswith("demo-") and "@lightsignal.app" in user_doc.get("email", "")):
+            login_label = user_doc.get("login_label") or user_doc.get("username")
+            if not login_label and user_doc.get("email"):
+                login_label = user_doc.get("email").split("@")[0]
+            
+            from app.demo_data import get_demo_payload
+            demo_payload = get_demo_payload(login_label or "demo-restaurant")
+            bp = demo_payload.get("business_profile", {})
+            return JSONResponse(
+                status_code=status.HTTP_200_OK,
+                content={
+                    "success": True,
+                    "data": {
+                        "business_classifications": [bp.get("section_3_industry", {}).get("primary_industry", "Small Business")],
+                        "business_tags": [bp.get("section_1_basics", {}).get("operating_mode", "General")],
+                        "proven_capabilities": bp.get("section_16_docs", {}).get("connected_systems", ["QuickBooks Connected"])
+                    }
+                }
+            )
+
+        business_profiles = get_collection("business_profiles")
+        profile = await business_profiles.find_one({"user_id": user_id})
+        
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content={
+                "success": True,
+                "data": {
+                    "business_classifications": profile.get("business_classifications", []) if profile else [],
+                    "business_tags": profile.get("business_tags", []) if profile else [],
+                    "proven_capabilities": profile.get("proven_capabilities", []) if profile else []
+                }
+            }
+        )
+    except Exception as e:
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"success": False, "error": str(e)}
         )
