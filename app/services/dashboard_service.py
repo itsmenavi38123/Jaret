@@ -505,66 +505,8 @@ class DashboardService:
             financial_overview,
         )
         
-        # Call Finance Analyst with fallback protection for normal users
-        try:
-            insights = await finance_analyst_service.analyze_dashboard(context)
-        except Exception as exc:
-            print(f"[DashboardService] LLM call failed ({exc}), returning fallback insights for user {user_id}")
-            rev_mtd = current_kpis.get('revenue_mtd', 0)
-            margin_pct = current_kpis.get('net_margin_pct', 0) * 100
-            runway = current_kpis.get('runway_months', 12.0) or 12.0
-            cash_bal = current_kpis.get('cash', 0)
-            
-            insights = {
-                "summary": f"Revenue MTD is ${rev_mtd:,.2f} with a {margin_pct:.1f}% net margin and {runway:.1f} months of operating runway.",
-                "alerts": [
-                    {
-                        "severity": "above_average" if runway >= 6 else "critical",
-                        "type": "positive" if runway >= 6 else "risk",
-                        "message": f"Operating runway estimated at {runway:.1f} months (${cash_bal:,.0f} cash)",
-                        "icon": "🟢" if runway >= 6 else "🔴"
-                    },
-                    {
-                        "severity": "above_average" if margin_pct >= 15 else "below_average",
-                        "type": "positive" if margin_pct >= 15 else "warning",
-                        "message": f"Net profit margin currently tracking at {margin_pct:.1f}% MTD",
-                        "icon": "🟢" if margin_pct >= 15 else "🟡"
-                    },
-                    {
-                        "severity": "above_average",
-                        "type": "positive",
-                        "message": f"Core revenue performance recorded ${rev_mtd:,.0f} in monthly volume",
-                        "icon": "🟢"
-                    }
-                ],
-                "insight_pairs": [
-                    {
-                        "head": "Net Margin & Operating Expense Control",
-                        "problem": f"Current net margin of {margin_pct:.1f}% requires active tracking against operating overhead to prevent margin compression.",
-                        "solution": "Review monthly top vendor line items and maintain strict cost discipline across core operational categories."
-                    },
-                    {
-                        "head": "Working Capital & Cash Flow Management",
-                        "problem": f"Current cash reserves of ${cash_bal:,.0f} support {runway:.1f} months of ongoing operating runway.",
-                        "solution": "Monitor customer payment collection terms and stagger vendor accounts payable to protect liquid cash reserves."
-                    }
-                ],
-                "opportunities": [
-                    {
-                        "head": "Gross Margin Optimization",
-                        "body": "Audit supplier purchasing terms and inventory pricing to reclaim 1.5-2.0 percentage points of gross profit."
-                    },
-                    {
-                        "head": "Core Revenue Expansion",
-                        "body": "Focus sales acquisition on highest-margin product lines to accelerate monthly recurring cash flow."
-                    }
-                ],
-                "what_changed": [
-                    f"Revenue MTD reached ${rev_mtd:,.2f} based on current database transaction logs.",
-                    f"Net profit margin calibrated to {margin_pct:.1f}% MTD."
-                ],
-                "missing_data_notice": "AI LLM synthesis operating in fallback mode."
-            }
+        # Call Finance Analyst directly for normal users
+        insights = await finance_analyst_service.analyze_dashboard(context)
         
         # Cache the result
         self._cache_insights(user_id, insights)

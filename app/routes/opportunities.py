@@ -105,45 +105,21 @@ async def get_opportunities_overview(
             cash = 0
             runway_months = 0
         
-        # Get opportunities from Research Scout
+        # Get opportunities from Research Scout directly for normal users
         scout_query = search_query or "What opportunities are available for my business this month?"
-        try:
-            scout_result = await research_scout.search_opportunities(
-                query=scout_query,
-                user_id=user_id,
-                business_profile=business_profile,
-                opportunities_profile=opportunities_profile,
-                mode="live",
-            )
-            ui_response = _transform_to_ui_format(
-                scout_result, 
-                user_id,
-                cash,
-                runway_months
-            )
-        except Exception as llm_err:
-            # Fallback if Anthropic API credits low or network error
-            ui_response = {
-                "kpis": {
-                    "active_opportunities": {"count": 3, "descriptor": "Browse matches"},
-                    "new_this_week": {"count": 1, "label": "1 new this week"},
-                    "total_potential_value": "$12,500",
-                    "avg_fit_score": 85,
-                    "event_readiness_index": 80,
-                    "historical_roi": {"multiplier": "2.0x", "sample_size": 2}
-                },
-                "recommended": [
-                    {
-                        "id": "opp_fallback_1",
-                        "title": "Local Business Growth Opportunity",
-                        "impact": "+$4,500/mo net revenue",
-                        "strategic_fit": "Fits current operational model",
-                        "execution_steps": ["Review business profile details to refine opportunity matching"],
-                        "risk_rating": "Low"
-                    }
-                ],
-                "search_results": []
-            }
+        scout_result = await research_scout.search_opportunities(
+            query=scout_query,
+            user_id=user_id,
+            business_profile=business_profile,
+            opportunities_profile=opportunities_profile,
+            mode="live",
+        )
+        ui_response = _transform_to_ui_format(
+            scout_result, 
+            user_id,
+            cash,
+            runway_months
+        )
         
         # Add tracked/selected opportunities from database
         opportunities_collection = get_collection("opportunities")
