@@ -18,27 +18,25 @@ class FinancialOverviewKPIPreferencesService:
         user_id: str,
     ) -> FinancialOverviewKPIPreferences:
 
-        document = await self.collection.find_one(
-            {
-                "user_id": user_id,
-            }
-        )
-
-        if not document:
-
-            now = datetime.now(timezone.utc)
-
-            return FinancialOverviewKPIPreferences(
-                user_id=user_id,
-                hidden_metric_ids=[],
-                pinned_metric_ids=[],
-                tile_order=[],
-                created_at=now,
-                updated_at=now,
+        try:
+            document = await self.collection.find_one(
+                {
+                    "user_id": user_id,
+                }
             )
+            if document:
+                return FinancialOverviewKPIPreferences(**document)
+        except Exception as e:
+            print(f"[WARN] Failed to fetch KPI preferences from DB: {e}")
 
+        now = datetime.now(timezone.utc)
         return FinancialOverviewKPIPreferences(
-            **document,
+            user_id=user_id,
+            hidden_metric_ids=[],
+            pinned_metric_ids=[],
+            tile_order=[],
+            created_at=now,
+            updated_at=now,
         )
     
     async def save_preferences(

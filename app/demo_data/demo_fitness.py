@@ -149,6 +149,75 @@ SOUTHPOINT_FITNESS_PAYLOADS = {
             "demand_unit": "revenue",
             "windows": [
                 {
+                    "window": "This Weekend",
+                    "severity": "above_average",
+                    "hero": {
+                        "eyebrow": "Weekend Demand Read",
+                        "headline": "Projected weekend gym attendance of 340 visits across personal training & group classes.",
+                        "expected_value": "$4,200",
+                        "expected_unit": "revenue",
+                        "volume_forecast": 340,
+                        "demand_unit": "Check-ins",
+                        "confidence_pct": 90,
+                        "confidence_label": "High",
+                        "anchor": "Anchored in Mindbody turnstile check-ins & trainer session bookings."
+                    },
+                    "swing_factor": {
+                        "headline": "Saturday Morning Bootcamp Special (+28 check-ins)",
+                        "delta_text": "+$850",
+                        "direction": "up",
+                        "reasoning": "Special weekend guest trainer workshop boosting drop-in pass sales."
+                    },
+                    "section_summaries": {
+                        "do_this": {"summary": "Schedule assistant coach & stock protein smoothie bar", "severity": "above_average"},
+                        "whats_moving": {"summary": "2 key demand drivers (Saturday Bootcamp, New Year challenge milestone)", "severity": "above_average"},
+                        "breakdown": {"summary": "80% recurring membership, 14% personal training, 6% drop-in passes", "severity": "above_average"},
+                        "track_record": {"summary": "Fitness forecast accuracy ran within 2.3% over past 4 weekends", "severity": "above_average"},
+                        "world_scan": {"summary": "Sunny 70°F weekend encouraging outdoor turf training", "severity": "above_average"}
+                    },
+                    "actions": [
+                        {
+                            "id": "act_fit_bootcamp_01",
+                            "action": "Promote 10 remaining Saturday Bootcamp passes on Instagram Stories",
+                            "deadline": "Fri, Feb 7",
+                            "priority": "high",
+                            "tied_to_driver": "Saturday Morning Bootcamp Special",
+                            "why_this_much": "Fills remaining 10 spots for 100% capacity.",
+                            "dollar_logic": "Captures +$350 in instant drop-in revenue."
+                        }
+                    ],
+                    "whats_moving": [
+                        {
+                            "name": "Saturday Morning Bootcamp Special",
+                            "window": "This Weekend",
+                            "severity": "green",
+                            "impact_text": "+$850",
+                            "reasoning": "High demand for weekend high-intensity group workout.",
+                            "source": "Mindbody Class Roster",
+                            "confidence": "high"
+                        }
+                    ],
+                    "breakdown": {
+                        "committed": 3100.0,
+                        "expected_losses": 150.0,
+                        "unbooked_demand": 1250.0,
+                        "external_adjustment": 0.0
+                    },
+                    "track_record": {
+                        "accuracy_receipt": "Gym check-in predictions hit within 2.3% accuracy.",
+                        "lean_guidance": "High consistency on weekend morning peak hours."
+                    },
+                    "world_scan": [
+                        {
+                            "flag": "Community 5K Run Warmup Sponsorship",
+                            "horizon": "Saturday 8 AM - 11 AM",
+                            "depends_on": "Trainer staff availability",
+                            "action_yet": "Distribute free 3-day guest passes at finish line",
+                            "source": "Local Race Association"
+                        }
+                    ]
+                },
+                {
                     "window": "Next 30 Days",
                     "severity": "red",
                     "hero": {

@@ -148,6 +148,75 @@ MAIN_ST_GOODS_PAYLOADS = {
             "demand_unit": "revenue",
             "windows": [
                 {
+                    "window": "This Weekend",
+                    "severity": "above_average",
+                    "hero": {
+                        "eyebrow": "Weekend Demand Read",
+                        "headline": "Projected weekend retail sales of $5,400 across boutique footwear & apparel.",
+                        "expected_value": "$5,400",
+                        "expected_unit": "revenue",
+                        "volume_forecast": 68,
+                        "demand_unit": "Units",
+                        "confidence_pct": 89,
+                        "confidence_label": "High",
+                        "anchor": "Anchored in Square POS 8-week weekend foot traffic & register transactions."
+                    },
+                    "swing_factor": {
+                        "headline": "Downtown Art Walk (+22% foot traffic)",
+                        "delta_text": "+$1,100",
+                        "direction": "up",
+                        "reasoning": "Friday evening sidewalk stroll boosting boutique storefront visits."
+                    },
+                    "section_summaries": {
+                        "do_this": {"summary": "Merchandise front window display & stock top 3 handbag SKUs", "severity": "above_average"},
+                        "whats_moving": {"summary": "2 positive drivers (Art Walk, autumn outerwear pre-orders)", "severity": "above_average"},
+                        "breakdown": {"summary": "58% footwear, 30% apparel, 12% accessories", "severity": "above_average"},
+                        "track_record": {"summary": "Weekend forecast accuracy ran within 2.8% over last month", "severity": "above_average"},
+                        "world_scan": {"summary": "Sunny 68°F forecast encouraging downtown shopping", "severity": "above_average"}
+                    },
+                    "actions": [
+                        {
+                            "id": "act_retail_stock_01",
+                            "action": "Restock front display with high-margin leather tote bags before Friday 4 PM",
+                            "deadline": "Fri, Feb 7",
+                            "priority": "high",
+                            "tied_to_driver": "Downtown Art Walk",
+                            "why_this_much": "Captures impulse tourist purchases during Art Walk hours.",
+                            "dollar_logic": "Secures +$1,100 in high-margin accessory sales."
+                        }
+                    ],
+                    "whats_moving": [
+                        {
+                            "name": "Downtown Art Walk",
+                            "window": "This Weekend",
+                            "severity": "green",
+                            "impact_text": "+$1,100",
+                            "reasoning": "Monthly gallery walk brings 2,500+ pedestrians to North Main St.",
+                            "source": "Downtown Business Alliance",
+                            "confidence": "high"
+                        }
+                    ],
+                    "breakdown": {
+                        "committed": 3800.0,
+                        "expected_losses": 150.0,
+                        "unbooked_demand": 1600.0,
+                        "external_adjustment": 0.0
+                    },
+                    "track_record": {
+                        "accuracy_receipt": "Boutique weekend predictions hit within 2.8% of POS actuals.",
+                        "lean_guidance": "Slight conservative bias on sunny event weekends."
+                    },
+                    "world_scan": [
+                        {
+                            "flag": "Asheville Downtown Art Walk",
+                            "horizon": "Friday 5 PM - 9 PM",
+                            "depends_on": "Storefront lighting & sidewalk display",
+                            "action_yet": "Keep front doors open with warm welcome display",
+                            "source": "City Tourism Board"
+                        }
+                    ]
+                },
+                {
                     "window": "Next 30 Days",
                     "severity": "amber",
                     "hero": {

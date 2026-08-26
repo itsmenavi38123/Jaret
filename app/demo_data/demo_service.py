@@ -148,6 +148,75 @@ IRONWOOD_PLUMBING_PAYLOADS = {
             "demand_unit": "revenue",
             "windows": [
                 {
+                    "window": "This Weekend",
+                    "severity": "above_average",
+                    "hero": {
+                        "eyebrow": "Weekend Demand Read",
+                        "headline": "Projected weekend emergency dispatch revenue of $18,500 across HVAC & plumbing.",
+                        "expected_value": "$18,500",
+                        "expected_unit": "revenue",
+                        "volume_forecast": 24,
+                        "demand_unit": "Dispatches",
+                        "confidence_pct": 93,
+                        "confidence_label": "High",
+                        "anchor": "Anchored in Jobber dispatch logs + 3-year winter freeze service calls."
+                    },
+                    "swing_factor": {
+                        "headline": "Winter Freeze Warning (+35% emergency calls)",
+                        "delta_text": "+$4,200",
+                        "direction": "up",
+                        "reasoning": "Sub-freezing temperatures driving residential pipe freeze & furnace outage calls."
+                    },
+                    "section_summaries": {
+                        "do_this": {"summary": "Stage 2 on-call technicians & prep emergency pipe repair inventory", "severity": "above_average"},
+                        "whats_moving": {"summary": "2 key demand drivers (Freeze warning, commercial maintenance contracts)", "severity": "above_average"},
+                        "breakdown": {"summary": "65% emergency repair, 25% commercial HVAC, 10% scheduled maintenance", "severity": "above_average"},
+                        "track_record": {"summary": "Emergency forecast accuracy ran within 1.9% over past 3 freezes", "severity": "above_average"},
+                        "world_scan": {"summary": "22°F overnight low forecast across Dallas metro area", "severity": "above_average"}
+                    },
+                    "actions": [
+                        {
+                            "id": "act_service_dispatch_01",
+                            "action": "Assign 2 additional technicians to Friday & Saturday overnight emergency shifts",
+                            "deadline": "Fri, Feb 7",
+                            "priority": "high",
+                            "tied_to_driver": "Winter Freeze Warning",
+                            "why_this_much": "Prevents missed $350/hr emergency dispatch calls.",
+                            "dollar_logic": "Captures +$4,200 in high-margin emergency service billing."
+                        }
+                    ],
+                    "whats_moving": [
+                        {
+                            "name": "Winter Freeze Warning",
+                            "window": "This Weekend",
+                            "severity": "green",
+                            "impact_text": "+$4,200",
+                            "reasoning": "Overnight low of 22°F triggers surge in furnace & pipe freeze calls.",
+                            "source": "National Weather Service",
+                            "confidence": "high"
+                        }
+                    ],
+                    "breakdown": {
+                        "committed": 12000.0,
+                        "expected_losses": 600.0,
+                        "unbooked_demand": 7100.0,
+                        "external_adjustment": 0.0
+                    },
+                    "track_record": {
+                        "accuracy_receipt": "Emergency dispatch predictions hit within 1.9% accuracy.",
+                        "lean_guidance": "High precision during severe weather events."
+                    },
+                    "world_scan": [
+                        {
+                            "flag": "North Texas Winter Weather Advisory",
+                            "horizon": "Friday Night - Sunday Morning",
+                            "depends_on": "On-call technician availability & van inventory",
+                            "action_yet": "Stock 4 service vans with 3/4-inch copper pipe & fittings",
+                            "source": "NWS Dallas Bureau"
+                        }
+                    ]
+                },
+                {
                     "window": "Next 30 Days",
                     "severity": "red",
                     "hero": {

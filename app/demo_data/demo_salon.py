@@ -148,6 +148,75 @@ VELVET_VINE_SALON_PAYLOADS = {
             "demand_unit": "revenue",
             "windows": [
                 {
+                    "window": "This Weekend",
+                    "severity": "above_average",
+                    "hero": {
+                        "eyebrow": "Weekend Demand Read",
+                        "headline": "Projected weekend salon revenue of $6,800 with 94% chair utilization.",
+                        "expected_value": "$6,800",
+                        "expected_unit": "revenue",
+                        "volume_forecast": 42,
+                        "demand_unit": "Appointments",
+                        "confidence_pct": 91,
+                        "confidence_label": "High",
+                        "anchor": "Anchored in 68% client rebooking rate + Boulevard salon booking engine."
+                    },
+                    "swing_factor": {
+                        "headline": "Bridal party group booking (+3 chairs)",
+                        "delta_text": "+$1,200",
+                        "direction": "up",
+                        "reasoning": "High-margin color & blowout package booked for Saturday morning."
+                    },
+                    "section_summaries": {
+                        "do_this": {"summary": "Enable $25 deposit policy for Saturday color appointments", "severity": "above_average"},
+                        "whats_moving": {"summary": "2 positive drivers (Bridal group booking, Prom season prep)", "severity": "above_average"},
+                        "breakdown": {"summary": "72% color/balayage, 20% haircuts, 8% retail products", "severity": "above_average"},
+                        "track_record": {"summary": "Weekend forecast accuracy ran within 2.1% over last 30 days", "severity": "above_average"},
+                        "world_scan": {"summary": "Local prom event driving Friday afternoon blowout demand", "severity": "above_average"}
+                    },
+                    "actions": [
+                        {
+                            "id": "act_salon_dep_01",
+                            "action": "Enable $25 deposit requirement on Boulevard for Saturday color appointments",
+                            "deadline": "Fri, Feb 7",
+                            "priority": "high",
+                            "tied_to_driver": "Bridal party group booking",
+                            "why_this_much": "Protects chair capacity against last-minute no-shows.",
+                            "dollar_logic": "Recovers ~$950 in lost chair revenue."
+                        }
+                    ],
+                    "whats_moving": [
+                        {
+                            "name": "Bridal party group booking",
+                            "window": "This Weekend",
+                            "severity": "green",
+                            "impact_text": "+$1,200",
+                            "reasoning": "Full bridal party styling reserved across 3 senior stylists.",
+                            "source": "Boulevard Booking Engine",
+                            "confidence": "high"
+                        }
+                    ],
+                    "breakdown": {
+                        "committed": 5200.0,
+                        "expected_losses": 250.0,
+                        "unbooked_demand": 1850.0,
+                        "external_adjustment": 0.0
+                    },
+                    "track_record": {
+                        "accuracy_receipt": "Salon weekend forecasts hit within 2.1% accuracy.",
+                        "lean_guidance": "Consistent high rebooking accuracy on weekend slots."
+                    },
+                    "world_scan": [
+                        {
+                            "flag": "Regional High School Prom Gala",
+                            "horizon": "Friday 3 PM - 7 PM",
+                            "depends_on": "Blowout chair availability",
+                            "action_yet": "Add 2 express blowout slots",
+                            "source": "Local Events Register"
+                        }
+                    ]
+                },
+                {
                     "window": "Next 30 Days",
                     "severity": "amber",
                     "hero": {

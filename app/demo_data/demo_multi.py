@@ -150,6 +150,75 @@ DRIFTWOOD_COFFEE_PAYLOADS = {
             "demand_unit": "revenue",
             "windows": [
                 {
+                    "window": "This Weekend",
+                    "severity": "above_average",
+                    "hero": {
+                        "eyebrow": "Weekend Demand Read",
+                        "headline": "Projected multi-location weekend revenue of $12,400 across Flagship & Satellite cafes.",
+                        "expected_value": "$12,400",
+                        "expected_unit": "revenue",
+                        "volume_forecast": 1650,
+                        "demand_unit": "Transactions",
+                        "confidence_pct": 91,
+                        "confidence_label": "High",
+                        "anchor": "Anchored in Square POS 12-week multi-location weekend ticket averages."
+                    },
+                    "swing_factor": {
+                        "headline": "Downtown Farmers Market (+15% Flagship foot traffic)",
+                        "delta_text": "+$1,850",
+                        "direction": "up",
+                        "reasoning": "High weekend pedestrian traffic boosting espresso & cold brew beverage sales."
+                    },
+                    "section_summaries": {
+                        "do_this": {"summary": "Shift 1 barista to Flagship & stock 20 gal oat milk", "severity": "above_average"},
+                        "whats_moving": {"summary": "2 key demand drivers (Farmers Market, weekend pastry popup)", "severity": "above_average"},
+                        "breakdown": {"summary": "68% Flagship Location, 32% Satellite Location", "severity": "above_average"},
+                        "track_record": {"summary": "Multi-unit weekend forecast accuracy ran within 2.2% over past month", "severity": "above_average"},
+                        "world_scan": {"summary": "Sunny 74°F weather expected across both location districts", "severity": "above_average"}
+                    },
+                    "actions": [
+                        {
+                            "id": "act_multi_shift_01",
+                            "action": "Reassign 1 barista from Division St to Flagship Saturday morning shift",
+                            "deadline": "Fri, Feb 7",
+                            "priority": "high",
+                            "tied_to_driver": "Downtown Farmers Market",
+                            "why_this_much": "Prevents queue bottlenecks during 9 AM - 12 PM peak.",
+                            "dollar_logic": "Secures +$1,850 in high-margin espresso beverage volume."
+                        }
+                    ],
+                    "whats_moving": [
+                        {
+                            "name": "Downtown Farmers Market",
+                            "window": "This Weekend",
+                            "severity": "green",
+                            "impact_text": "+$1,850",
+                            "reasoning": "Weekly weekend market draws 3,000+ shoppers to Flagship block.",
+                            "source": "City Farmers Market Alliance",
+                            "confidence": "high"
+                        }
+                    ],
+                    "breakdown": {
+                        "committed": 8200.0,
+                        "expected_losses": 300.0,
+                        "unbooked_demand": 4500.0,
+                        "external_adjustment": 0.0
+                    },
+                    "track_record": {
+                        "accuracy_receipt": "Multi-location weekend predictions hit within 2.2% of POS actuals.",
+                        "lean_guidance": "High precision across both store locations."
+                    },
+                    "world_scan": [
+                        {
+                            "flag": "Flagship Block Sidewalk Maintenance",
+                            "horizon": "Sunday 6 AM - 11 AM",
+                            "depends_on": "Side entrance accessibility",
+                            "action_yet": "Put up side door directional signage",
+                            "source": "Municipal Works Notice"
+                        }
+                    ]
+                },
+                {
                     "window": "Next 30 Days",
                     "severity": "amber",
                     "hero": {

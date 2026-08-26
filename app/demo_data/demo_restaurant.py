@@ -172,6 +172,75 @@ TONYS_BROOKLYN_PIZZA_PAYLOADS = {
             "demand_unit": "revenue",
             "windows": [
                 {
+                    "window": "This Weekend",
+                    "severity": "above_average",
+                    "hero": {
+                        "eyebrow": "Weekend Demand Read",
+                        "headline": "Projected weekend revenue of $14,800 across Friday dinner & Saturday rush.",
+                        "expected_value": "$14,800",
+                        "expected_unit": "revenue",
+                        "volume_forecast": 185,
+                        "demand_unit": "Covers",
+                        "confidence_pct": 92,
+                        "confidence_label": "High",
+                        "anchor": "Anchored in Toast POS 12-week Friday/Saturday dining room seatings."
+                    },
+                    "swing_factor": {
+                        "headline": "Park Slope Street Festival (+18% foot traffic)",
+                        "delta_text": "+$2,400",
+                        "direction": "up",
+                        "reasoning": "High pedestrian inflow on 5th Ave boosting slice counter walk-ins."
+                    },
+                    "section_summaries": {
+                        "do_this": {"summary": "Order 15 extra dough boxes & schedule 2 additional floor servers", "severity": "above_average"},
+                        "whats_moving": {"summary": "2 positive drivers (Festival foot traffic, patio dining weather)", "severity": "above_average"},
+                        "breakdown": {"summary": "70% dine-in, 18% takeout, 12% slice counter", "severity": "above_average"},
+                        "track_record": {"summary": "Weekend forecast accuracy ran within 2.4% over past 4 weekends", "severity": "above_average"},
+                        "world_scan": {"summary": "Clear skies (72°F) expected all Saturday afternoon", "severity": "above_average"}
+                    },
+                    "actions": [
+                        {
+                            "id": "act_order_mozz_01",
+                            "action": "Order 15 additional mozzarella & dough cases by Thursday 2 PM",
+                            "deadline": "Thu, Feb 6",
+                            "priority": "high",
+                            "tied_to_driver": "Park Slope Street Festival",
+                            "why_this_much": "Prevents dough stockouts during Saturday 7-9 PM peak.",
+                            "dollar_logic": "Secures +$2,400 in incremental high-margin pie sales."
+                        }
+                    ],
+                    "whats_moving": [
+                        {
+                            "name": "Park Slope Street Festival",
+                            "window": "This Weekend",
+                            "severity": "green",
+                            "impact_text": "+$2,400",
+                            "reasoning": "Annual street fair draws 4,000+ local visitors within 2 blocks.",
+                            "source": "Local Event Calendar",
+                            "confidence": "high"
+                        }
+                    ],
+                    "breakdown": {
+                        "committed": 8500.0,
+                        "expected_losses": 400.0,
+                        "unbooked_demand": 6700.0,
+                        "external_adjustment": 0.0
+                    },
+                    "track_record": {
+                        "accuracy_receipt": "Weekend predictions hit within 2.4% over last month.",
+                        "lean_guidance": "Slight upward bias on warm sunny Saturdays."
+                    },
+                    "world_scan": [
+                        {
+                            "flag": "5th Ave Street Fair Closure",
+                            "horizon": "Saturday 10 AM - 8 PM",
+                            "depends_on": "Pedestrian patio seating & slice counter",
+                            "action_yet": "Set up outdoor slice warmer booth",
+                            "source": "City Permits Registry"
+                        }
+                    ]
+                },
+                {
                     "window": "Next 30 Days",
                     "severity": "amber",
                     "hero": {

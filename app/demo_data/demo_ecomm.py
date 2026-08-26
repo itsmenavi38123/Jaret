@@ -149,6 +149,75 @@ LAKESHORE_CANDLE_PAYLOADS = {
             "demand_unit": "revenue",
             "windows": [
                 {
+                    "window": "This Weekend",
+                    "severity": "above_average",
+                    "hero": {
+                        "eyebrow": "Weekend Demand Read",
+                        "headline": "Projected weekend e-commerce sales of $4,800 across Shopify store orders.",
+                        "expected_value": "$4,800",
+                        "expected_unit": "revenue",
+                        "volume_forecast": 92,
+                        "demand_unit": "Orders",
+                        "confidence_pct": 89,
+                        "confidence_label": "High",
+                        "anchor": "Anchored in Shopify Analytics weekend checkout conversion & Klaviyo email flows."
+                    },
+                    "swing_factor": {
+                        "headline": "Sunday Evening Email Campaign (+18% conversion)",
+                        "delta_text": "+$950",
+                        "direction": "up",
+                        "reasoning": "Automated Sunday night flash sale broadcast targeting VIP subscriber list."
+                    },
+                    "section_summaries": {
+                        "do_this": {"summary": "Queue Klaviyo Sunday 7 PM broadcast & check 3PL weekend inventory", "severity": "above_average"},
+                        "whats_moving": {"summary": "2 key demand drivers (Klaviyo email campaign, TikTok organic video viral spike)", "severity": "above_average"},
+                        "breakdown": {"summary": "60% organic/email, 28% Meta Ads, 12% affiliate referrals", "severity": "above_average"},
+                        "track_record": {"summary": "DTC weekend forecast accuracy ran within 2.5% over past 4 weekends", "severity": "above_average"},
+                        "world_scan": {"summary": "Sunday night online shopping traffic peak expected at 8 PM EST", "severity": "above_average"}
+                    },
+                    "actions": [
+                        {
+                            "id": "act_ecomm_email_01",
+                            "action": "Schedule Klaviyo VIP flash sale broadcast for Sunday 7 PM EST",
+                            "deadline": "Sun, Feb 9",
+                            "priority": "high",
+                            "tied_to_driver": "Sunday Evening Email Campaign",
+                            "why_this_much": "Captures peak Sunday night online shopper traffic.",
+                            "dollar_logic": "Generates +$950 in direct high-margin store orders."
+                        }
+                    ],
+                    "whats_moving": [
+                        {
+                            "name": "Sunday Evening Email Campaign",
+                            "window": "This Weekend",
+                            "severity": "green",
+                            "impact_text": "+$950",
+                            "reasoning": "Proven high open-rate email segment driving immediate checkout orders.",
+                            "source": "Klaviyo Analytics",
+                            "confidence": "high"
+                        }
+                    ],
+                    "breakdown": {
+                        "committed": 3200.0,
+                        "expected_losses": 120.0,
+                        "unbooked_demand": 1720.0,
+                        "external_adjustment": 0.0
+                    },
+                    "track_record": {
+                        "accuracy_receipt": "DTC store predictions hit within 2.5% accuracy.",
+                        "lean_guidance": "High accuracy on scheduled email marketing pushes."
+                    },
+                    "world_scan": [
+                        {
+                            "flag": "USPS Weekend Fulfillment Shift",
+                            "horizon": "Saturday 12 PM Pickup",
+                            "depends_on": "3PL warehouse packing speed",
+                            "action_yet": "Batch print labels by 10 AM Saturday",
+                            "source": "Shopify Shipping Manager"
+                        }
+                    ]
+                },
+                {
                     "window": "Next 30 Days",
                     "severity": "amber",
                     "hero": {

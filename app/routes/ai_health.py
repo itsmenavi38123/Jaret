@@ -63,6 +63,77 @@ async def generate_watch_area_explanation(watch_areas: List[str]) -> str:
 
 
 
+def _normalize_demo_business_health_v6(raw_bh: dict, login_label: str = "demo-restaurant") -> dict:
+    """Normalize legacy demo business health objects to V6 rich schema."""
+    overall_score = raw_bh.get("overall_score", 80)
+    dims = raw_bh.get("dimensions", {})
+    
+    fin_score = dims.get("liquidity", {}).get("score", 82)
+    ops_score = dims.get("efficiency", {}).get("score", 74)
+    cust_score = dims.get("customer", {}).get("score", 79)
+    risk_score = dims.get("resilience", {}).get("score", 85)
+    growth_score = dims.get("growth", {}).get("score", 81)
+    
+    return {
+        "overall": {
+            "score": overall_score,
+            "label": "above_average" if overall_score >= 75 else "at_average",
+            "prior_score": overall_score - 4,
+            "peer_avg": 71,
+            "ai_confidence": 0.88,
+            "data_completeness": 88,
+            "incomplete_data": False,
+            "as_of": datetime.utcnow().date().isoformat()
+        },
+        "categories": {
+            "financial": {"score": fin_score, "label": "above_average", "prior_score": fin_score - 3, "peer_avg": 72, "missing": []},
+            "operational": {"score": ops_score, "label": "at_average", "prior_score": ops_score - 2, "peer_avg": 70, "missing": []},
+            "customer": {"score": cust_score, "label": "above_average", "prior_score": cust_score - 1, "peer_avg": 75, "missing": []},
+            "risk": {"score": risk_score, "label": "top_tier", "prior_score": risk_score, "peer_avg": 68, "missing": []},
+            "growth": {"score": growth_score, "label": "above_average", "prior_score": growth_score - 5, "peer_avg": 69, "missing": []}
+        },
+        "benchmarks": {
+            "peer_pool": "Regional Small Business Benchmark Pool",
+            "peer_avg": 71
+        },
+        "ai_summary": "Core operating health is resilient. Cash flow trajectory is steady with solid margin retention.",
+        "drivers_display": {
+            "positives": [
+                {
+                    "headline": "Strong retail & service attach rate",
+                    "description": "Cross-category attach rate increased by 8% over prior quarter.",
+                    "recommended_action": "Expand successful promotional bundles."
+                }
+            ],
+            "drags": [
+                {
+                    "headline": "Receivables collection lag",
+                    "description": "Invoice collection velocity dropped 4 days below benchmark.",
+                    "recommended_action": "Enable 14-day early pay incentive terms."
+                }
+            ]
+        },
+        "watch_areas": [
+            {
+                "title": "Peak Period Staffing & Capacity Gap",
+                "description": "Weekend demand utilization reached 92%, causing minor customer wait times.",
+                "possible_causes": [{"cause": "Staffing schedule bottleneck", "evidence": "92% peak utilization"}],
+                "recommended_action": "Adjust weekend shift overlaps by 1 hour.",
+                "owner_confirmation_prompt": "Confirm if weekend wait times exceed 15 minutes?",
+                "learning_id": "learn_capacity_01"
+            }
+        ],
+        "active_alerts": [
+            {
+                "description": "Uncollected receivables extending runway pressure by $2,400",
+                "urgency_context": "Why now: Overdue invoices doubled this month.",
+                "recommended_action": "Send automated email reminders for 30+ day past-due invoices."
+            }
+        ],
+        "data_coverage_note": "QuickBooks & POS synced 2h ago"
+    }
+
+
 @router.get("/full")
 async def get_business_health_full(
     range: str = Query("12m"),
@@ -71,10 +142,8 @@ async def get_business_health_full(
     current_user: dict = Depends(get_current_user),
 ):
     """
-    Get comprehensive Business Health Scorecard.
+    Get comprehensive Business Health Scorecard V6.
     Returns Financial, Operational, Customer, Risk, and Growth health metrics.
-    Uses ONLY real data from QuickBooks and AI-generated insights.
-    NO dummy/placeholder data.
     """
     try:
         user_id = current_user["id"]
@@ -92,7 +161,12 @@ async def get_business_health_full(
             from app.demo_data import get_demo_payload
             demo_payload = get_demo_payload(login_label or "demo-restaurant")
             if demo_payload and "business_health" in demo_payload:
-                return demo_payload["business_health"]
+                raw_bh = demo_payload["business_health"]
+                if "overall" not in raw_bh:
+                    v6_bh = _normalize_demo_business_health_v6(raw_bh, login_label)
+                else:
+                    v6_bh = raw_bh
+                return JSONResponse(status_code=200, content={"success": True, "data": v6_bh, **v6_bh})
 
         # 1. Fetch Real Financial Data from QuickBooks
         qs = quickbooks_financial_service

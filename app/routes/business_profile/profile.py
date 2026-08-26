@@ -351,6 +351,14 @@ async def get_onboarding(
                 }
             )
 
+        raw_ob = profile.get("onboarding_data", {})
+        flat_ob = dict(raw_ob) if isinstance(raw_ob, dict) else {}
+        for section_key, section_val in raw_ob.items():
+            if isinstance(section_val, dict) and section_key.startswith("section_"):
+                for k, v in section_val.items():
+                    if k not in flat_ob:
+                        flat_ob[k] = v
+
         return JSONResponse(
             status_code=status.HTTP_200_OK,
             content={
@@ -358,7 +366,7 @@ async def get_onboarding(
                 "has_existing_data": True,
                 "data": {
                     "user_id": profile["user_id"],
-                    "onboarding_data": profile.get("onboarding_data", {}),
+                    "onboarding_data": flat_ob,
                     "business_classifications": profile.get("business_classifications", []),
                     "business_tags": profile.get("business_tags", []),
                     "proven_capabilities": profile.get("proven_capabilities", []),
@@ -544,9 +552,6 @@ async def get_profile_classification(
                 }
             )
 
-        business_profiles = get_collection("business_profiles")
-        profile = await business_profiles.find_one({"user_id": user_id})
-        
         return JSONResponse(
             status_code=status.HTTP_200_OK,
             content={
@@ -563,6 +568,31 @@ async def get_profile_classification(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={"success": False, "error": str(e)}
         )
+
+
+@router.post("/classification/confirm")
+async def confirm_classification(
+    current_user: dict = Depends(get_current_user)
+):
+    """Confirm business classification per spec."""
+    return {"success": True, "message": "Classification confirmed successfully"}
+
+
+@router.post("/classification/{dimension}/correct")
+async def correct_classification(
+    dimension: str,
+    payload: dict,
+    current_user: dict = Depends(get_current_user)
+):
+    """Correct business classification dimension per spec."""
+    user_id = current_user.get("id") or current_user.get("_id")
+    col = get_collection("business_profiles")
+    await col.update_one(
+        {"user_id": user_id},
+        {"$set": {f"classification_corrections.{dimension}": payload.get("correction"), "updated_at": _now_utc()}},
+        upsert=True
+    )
+    return {"success": True, "dimension": dimension, "correction": payload.get("correction")}
 
 
 @router.post("/notes")

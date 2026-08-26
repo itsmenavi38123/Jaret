@@ -3,7 +3,8 @@ from __future__ import annotations
 from datetime import date, datetime
 import calendar
 import asyncio
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
+from pydantic import BaseModel
 
 import numpy as np
 from statsmodels.tsa.seasonal import STL
@@ -1062,6 +1063,82 @@ async def _run_downstream_tasks(serialized_ai_input: Dict[str, Any], user_id: st
         print(f"Failed to generate or save HANDOFF forecast: {handoff_ex}")
 
 
+class ActionCompleteRequest(BaseModel):
+    action_id: str
+    completed: bool = True
+    window: Optional[str] = None
+
+
+@router.patch("/demand-forecast/actions/complete")
+@router.post("/demand-forecast/actions/complete")
+async def complete_demand_forecast_action(
+    req: ActionCompleteRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """Persist completed demand forecast action state per user."""
+    user_id = current_user.get("id") or current_user.get("_id")
+    db = get_collection("business_profiles")
+    profile = await db.find_one({"user_id": user_id})
+    now = datetime.utcnow().isoformat()
+    
+    if profile:
+        onboarding_data = profile.get("onboarding_data", {})
+        df_completed = onboarding_data.get("df_completed_actions", [])
+        if not isinstance(df_completed, list):
+            df_completed = []
+            
+        if req.completed:
+            if req.action_id not in df_completed:
+                df_completed.append(req.action_id)
+        else:
+            df_completed = [a for a in df_completed if a != req.action_id]
+            
+        onboarding_data["df_completed_actions"] = df_completed
+        await db.update_one({"user_id": user_id}, {"$set": {"onboarding_data": onboarding_data, "updated_at": now}})
+    else:
+        await db.insert_one({
+            "user_id": user_id,
+            "onboarding_data": {"df_completed_actions": [req.action_id] if req.completed else []},
+            "created_at": now,
+            "updated_at": now
+        })
+        
+    return {"success": True, "action_id": req.action_id, "completed": req.completed}
+
+
+@router.get("/demand-forecast/actions/complete")
+async def get_demand_forecast_completed_actions(
+    current_user: dict = Depends(get_current_user)
+):
+    """Retrieve list of completed action IDs for the authenticated user."""
+    user_id = current_user.get("id") or current_user.get("_id")
+    db = get_collection("business_profiles")
+    profile = await db.find_one({"user_id": user_id})
+    onboarding_data = profile.get("onboarding_data", {}) if profile else {}
+    completed_actions = onboarding_data.get("df_completed_actions", [])
+    return {"success": True, "completed_actions": completed_actions}
+
+
+def _normalize_driver_confidence(drivers: list) -> list:
+    """Ensure drivers[].confidence is a 0-100 integer per UI spec."""
+    conf_map = {"high": 88, "medium": 65, "low": 40}
+    normalized = []
+    for d in drivers or []:
+        if isinstance(d, dict):
+            d_copy = dict(d)
+            raw_conf = d_copy.get("confidence")
+            if isinstance(raw_conf, str):
+                d_copy["confidence"] = conf_map.get(raw_conf.lower(), 75)
+                d_copy["confidence_label"] = raw_conf.capitalize()
+            elif isinstance(raw_conf, (int, float)):
+                d_copy["confidence"] = int(raw_conf)
+                d_copy["confidence_label"] = "High" if raw_conf >= 80 else ("Medium" if raw_conf >= 60 else "Low")
+            normalized.append(d_copy)
+        else:
+            normalized.append(d)
+    return normalized
+
+
 @router.get("/demand-forecast")
 async def demand_forecast_route(
     background_tasks: BackgroundTasks,
@@ -1080,8 +1157,21 @@ async def demand_forecast_route(
         from app.demo_data import get_demo_payload
         demo_payload = get_demo_payload(login_label or "demo-restaurant")
         if demo_payload and "demand_forecast" in demo_payload:
-            df_payload = demo_payload["demand_forecast"]
-            agent_output = df_payload.get("agentOutput", df_payload)
+            df_payload = dict(demo_payload["demand_forecast"])
+            agent_output = dict(df_payload.get("agentOutput", df_payload))
+            
+            # Normalize drivers confidence & add unit toggle support for demo payload
+            if "windows" in agent_output and isinstance(agent_output["windows"], list):
+                for w in agent_output["windows"]:
+                    if "drivers" in w:
+                        w["drivers"] = _normalize_driver_confidence(w.get("drivers", []))
+                    if "forecast" in w and "expected" in w["forecast"]:
+                        exp = w["forecast"]["expected"]
+                        if "volume_forecast" not in exp:
+                            exp["volume_forecast"] = 185
+                        if "demand_unit" not in exp:
+                            exp["demand_unit"] = agent_output.get("demand_unit", "Covers")
+
             return {
                 "metrics": df_payload.get("metrics", {}),
                 "flags": df_payload.get("flags", []),
