@@ -1,7 +1,8 @@
 # backend/app/routes/business_profile/profile.py
 import os
+import uuid
 from datetime import datetime, timezone
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -16,6 +17,10 @@ from app.services.internal_event_bus import internal_event_bus
 
 router = APIRouter(tags=["business_profile"])
 mapbox_service = MapboxService()
+
+class OwnerNoteCreate(BaseModel):
+    text: str
+
 
 @router.post("/onboarding")
 async def create_or_update_onboarding(
@@ -407,19 +412,38 @@ async def get_profile_richness(
         
         onboarding_data = profile.get("onboarding_data", {}) if profile else {}
         
-        # Calculate filled sections out of 16
-        sections = [
-            "section_1_basics", "section_2_ownership", "section_3_industry", "section_4_operations",
-            "section_5_financial", "section_6_assets", "section_7_customers", "section_8_risk",
-            "section_9_capacity", "section_10_opportunity_readiness", "section_11_goals",
-            "section_12_pricing", "section_13_team", "section_14_marketing", "section_15_owner_prefs", "section_16_docs"
+        # Calculate filled sections out of 16 using alias groups
+        section_aliases = [
+            ["section_01_business_basics", "section_1_basics", "section_1_business_basics", "business_basics"],
+            ["section_02_ownership_and_key_people", "section_2_ownership", "ownership_and_key_people"],
+            ["section_03_industry_and_model", "section_3_industry", "industry_and_model"],
+            ["section_04_operations", "section_4_operations", "operations"],
+            ["section_05_financial_overview", "section_5_financial", "financial_overview"],
+            ["section_06_assets_and_equipment", "section_6_assets", "assets_and_equipment"],
+            ["section_07_customers_and_market", "section_7_customers", "customers_and_market"],
+            ["section_08_risk_and_exposure", "section_8_risk", "risk_and_exposure"],
+            ["section_09_capacity_and_constraints", "section_9_capacity", "capacity_and_constraints"],
+            ["section_10_opportunity_readiness", "section_10_opportunity_readiness", "opportunity_readiness"],
+            ["section_11_strategic_goals", "section_11_goals", "strategic_goals"],
+            ["section_12_pricing_and_revenue", "section_12_pricing", "pricing_and_revenue"],
+            ["section_13_hiring_and_team_structure", "section_13_team", "hiring_and_team_structure"],
+            ["section_14_sales_and_marketing", "section_14_marketing", "sales_and_marketing"],
+            ["section_15_owner_goals_and_preferences", "section_15_owner_prefs", "owner_goals_and_preferences"],
+            ["section_16_uploads_and_docs", "section_16_docs", "uploads_and_docs"]
         ]
         
         complete_count = 0
-        for s in sections:
-            if s in onboarding_data and isinstance(onboarding_data[s], dict) and len(onboarding_data[s]) > 0:
-                complete_count += 1
-            elif s in onboarding_data and onboarding_data[s]:
+        for group in section_aliases:
+            found = False
+            for s in group:
+                if s in onboarding_data and onboarding_data[s]:
+                    if isinstance(onboarding_data[s], dict) and len(onboarding_data[s]) > 0:
+                        found = True
+                        break
+                    elif not isinstance(onboarding_data[s], dict):
+                        found = True
+                        break
+            if found:
                 complete_count += 1
         
         # Fallback to top-level onboarding fields if structured sections not used yet
@@ -533,6 +557,155 @@ async def get_profile_classification(
                     "proven_capabilities": profile.get("proven_capabilities", []) if profile else []
                 }
             }
+        )
+    except Exception as e:
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"success": False, "error": str(e)}
+        )
+
+
+@router.post("/notes")
+async def save_owner_note(
+    note: OwnerNoteCreate,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Save an Owner Note to the Business Profile.
+    Per UI screenshot 'BUSINESS PROFILE - OWNER NOTES'.
+    """
+    try:
+        user_id = current_user.get("id") or current_user.get("_id")
+        business_profiles = get_collection("business_profiles")
+        
+        profile = await business_profiles.find_one({"user_id": user_id})
+        now = _now_utc()
+        
+        note_entry = {
+            "id": str(uuid.uuid4()),
+            "timestamp": now.isoformat(),
+            "text": note.text.strip()
+        }
+        
+        if profile:
+            onboarding_data = profile.get("onboarding_data", {})
+            obs_list = onboarding_data.get("owner_observations", [])
+            if not isinstance(obs_list, list):
+                obs_list = []
+            obs_list.insert(0, note_entry)
+            onboarding_data["owner_observations"] = obs_list
+            
+            await business_profiles.update_one(
+                {"user_id": user_id},
+                {
+                    "$set": {
+                        "onboarding_data": onboarding_data,
+                        "updated_at": now
+                    }
+                }
+            )
+        else:
+            onboarding_data = {"owner_observations": [note_entry]}
+            new_profile = BusinessProfile(
+                user_id=user_id,
+                onboarding_data=onboarding_data,
+                business_classifications=[],
+                business_tags=[],
+                proven_capabilities=[],
+                created_at=now,
+                updated_at=now
+            )
+            await business_profiles.insert_one(new_profile.dict(by_alias=True))
+            
+        return JSONResponse(
+            status_code=status.HTTP_201_CREATED,
+            content={
+                "success": True,
+                "message": "Note saved successfully",
+                "data": note_entry
+            }
+        )
+    except Exception as e:
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"success": False, "error": str(e)}
+        )
+
+
+@router.get("/notes")
+async def get_owner_notes(
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Get all Owner Notes for the Business Profile.
+    """
+    try:
+        user_id = current_user.get("id") or current_user.get("_id")
+        business_profiles = get_collection("business_profiles")
+        
+        profile = await business_profiles.find_one({"user_id": user_id})
+        onboarding_data = profile.get("onboarding_data", {}) if profile else {}
+        
+        obs_list = onboarding_data.get("owner_observations", [])
+        if not isinstance(obs_list, list):
+            obs_list = []
+            
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content={
+                "success": True,
+                "count": len(obs_list),
+                "data": obs_list
+            }
+        )
+    except Exception as e:
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"success": False, "error": str(e)}
+        )
+
+
+@router.delete("/notes/{note_id}")
+async def delete_owner_note(
+    note_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Remove an Owner Note by ID.
+    """
+    try:
+        user_id = current_user.get("id") or current_user.get("_id")
+        business_profiles = get_collection("business_profiles")
+        
+        profile = await business_profiles.find_one({"user_id": user_id})
+        if not profile:
+            return JSONResponse(
+                status_code=status.HTTP_404_NOT_FOUND,
+                content={"success": False, "error": "Profile not found"}
+            )
+            
+        onboarding_data = profile.get("onboarding_data", {})
+        obs_list = onboarding_data.get("owner_observations", [])
+        if not isinstance(obs_list, list):
+            obs_list = []
+            
+        updated_list = [n for n in obs_list if n.get("id") != note_id]
+        onboarding_data["owner_observations"] = updated_list
+        
+        now = _now_utc()
+        await business_profiles.update_one(
+            {"user_id": user_id},
+            {
+                "$set": {
+                    "onboarding_data": onboarding_data,
+                    "updated_at": now
+                }
+            }
+        )
+        
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content={"success": True, "message": "Note deleted successfully"}
         )
     except Exception as e:
         return JSONResponse(
