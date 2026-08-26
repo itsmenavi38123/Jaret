@@ -324,16 +324,49 @@ async def get_onboarding(
         else:
             login_label = current_user.get("login_label") or current_user.get("username") or (email.split("@")[0] if email else "demo-restaurant")
 
+        def _flatten_profile_dict(raw: dict) -> dict:
+            if not isinstance(raw, dict):
+                return {}
+            flat = dict(raw)
+            for section_key, section_val in raw.items():
+                if isinstance(section_val, dict) and (section_key.startswith("section_") or section_key in ["business_basics", "financial_overview", "operations"]):
+                    for k, v in section_val.items():
+                        if k not in flat:
+                            flat[k] = v
+            if "business_name" in flat and "company_name" not in flat:
+                flat["company_name"] = flat["business_name"]
+            if "company_name" in flat and "business_name" not in flat:
+                flat["business_name"] = flat["company_name"]
+            if "headquarters" in flat and "primary_location" not in flat:
+                flat["primary_location"] = flat["headquarters"]
+            if "address" in flat and "primary_location" not in flat:
+                flat["primary_location"] = flat["address"]
+            if "primary_industry" in flat and "industry" not in flat:
+                flat["industry"] = flat["primary_industry"]
+            return flat
+
         if is_demo_flag:
             from app.demo_data import get_demo_payload
             demo_payload = get_demo_payload(login_label or "demo-restaurant")
             if demo_payload and "business_profile" in demo_payload:
+                raw_bp = demo_payload["business_profile"]
+                flat_bp = _flatten_profile_dict(raw_bp)
+                demo_data = {
+                    "user_id": user_id,
+                    "onboarding_data": flat_bp,
+                    "business_classifications": [demo_payload.get("account", {}).get("industry", "Restaurant")],
+                    "business_tags": ["Demo"],
+                    "proven_capabilities": [],
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                    **flat_bp
+                }
                 return JSONResponse(
                     status_code=status.HTTP_200_OK,
                     content={
                         "success": True,
                         "has_existing_data": True,
-                        "data": demo_payload["business_profile"]
+                        "data": demo_data
                     }
                 )
 
@@ -352,27 +385,27 @@ async def get_onboarding(
             )
 
         raw_ob = profile.get("onboarding_data", {})
-        flat_ob = dict(raw_ob) if isinstance(raw_ob, dict) else {}
-        for section_key, section_val in raw_ob.items():
-            if isinstance(section_val, dict) and section_key.startswith("section_"):
-                for k, v in section_val.items():
-                    if k not in flat_ob:
-                        flat_ob[k] = v
+        flat_ob = _flatten_profile_dict(raw_ob)
+        created_val = profile.get("created_at")
+        updated_val = profile.get("updated_at")
+
+        response_data = {
+            "user_id": profile["user_id"],
+            "onboarding_data": flat_ob,
+            "business_classifications": profile.get("business_classifications", []),
+            "business_tags": profile.get("business_tags", []),
+            "proven_capabilities": profile.get("proven_capabilities", []),
+            "created_at": created_val.isoformat() if hasattr(created_val, "isoformat") else str(created_val or ""),
+            "updated_at": updated_val.isoformat() if hasattr(updated_val, "isoformat") else str(updated_val or ""),
+            **flat_ob
+        }
 
         return JSONResponse(
             status_code=status.HTTP_200_OK,
             content={
                 "success": True,
                 "has_existing_data": True,
-                "data": {
-                    "user_id": profile["user_id"],
-                    "onboarding_data": flat_ob,
-                    "business_classifications": profile.get("business_classifications", []),
-                    "business_tags": profile.get("business_tags", []),
-                    "proven_capabilities": profile.get("proven_capabilities", []),
-                    "created_at": profile["created_at"].isoformat() if profile.get("created_at") else None,
-                    "updated_at": profile["updated_at"].isoformat() if profile.get("updated_at") else None
-                }
+                "data": response_data
             }
         )
 

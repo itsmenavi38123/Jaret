@@ -45,30 +45,38 @@ class ShareLinkCreateRequest(BaseModel):
     scope: str = Field(default="fo+bh", description="Scope of share link e.g. fo+bh")
 
 
+def _get_user_id(current_user: Any) -> str:
+    if isinstance(current_user, dict):
+        return current_user.get("id") or current_user.get("_id") or ""
+    return str(current_user)
+
+
 # ------------------------------------------------------------------------------
 # 1. GENERAL SETTINGS (GET / PATCH)
 # ------------------------------------------------------------------------------
 @router.get("/settings/general")
-async def get_general_settings(current_user: dict = Depends(get_current_user)):
-    data = await settings_v2_service.get_general_settings(current_user["id"])
+async def get_general_settings(current_user: Any = Depends(get_current_user)):
+    user_id = _get_user_id(current_user)
+    data = await settings_v2_service.get_general_settings(user_id)
     return JSONResponse(status_code=200, content={"success": True, "data": data})
 
 
 @router.patch("/settings/general")
 async def update_general_settings(
     body: GeneralSettingsUpdateRequest,
-    current_user: dict = Depends(get_current_user),
+    current_user: Any = Depends(get_current_user),
 ):
-
+    user_id = _get_user_id(current_user)
     updates = body.model_dump(exclude_unset=True)
-    data = await settings_v2_service.update_general_settings(current_user["id"], updates)
+    data = await settings_v2_service.update_general_settings(user_id, updates)
     return JSONResponse(status_code=200, content={"success": True, "data": data})
 
 
 
 @router.get("/diagnostics/export")
-async def export_diagnostics(current_user: dict = Depends(get_current_user)):
-    data = await settings_v2_service.export_diagnostics(current_user["id"])
+async def export_diagnostics(current_user: Any = Depends(get_current_user)):
+    user_id = _get_user_id(current_user)
+    data = await settings_v2_service.export_diagnostics(user_id)
     return JSONResponse(status_code=200, content={"success": True, "data": data})
 
 
@@ -76,32 +84,35 @@ async def export_diagnostics(current_user: dict = Depends(get_current_user)):
 # 2. DATA & PRIVACY & PHOTO PERMISSIONS (GET / PATCH)
 # ------------------------------------------------------------------------------
 @router.get("/settings/privacy")
-async def get_privacy_settings(current_user: dict = Depends(get_current_user)):
-    data = await settings_v2_service.get_privacy_settings(current_user["id"])
+async def get_privacy_settings(current_user: Any = Depends(get_current_user)):
+    user_id = _get_user_id(current_user)
+    data = await settings_v2_service.get_privacy_settings(user_id)
     return JSONResponse(status_code=200, content={"success": True, "data": data})
 
 
 @router.patch("/settings/privacy")
 async def update_privacy_settings(
     body: PrivacySettingsUpdateRequest,
-    current_user: dict = Depends(get_current_user),
+    current_user: Any = Depends(get_current_user),
 ):
-
+    user_id = _get_user_id(current_user)
     updates = body.model_dump(exclude_unset=True)
-    data = await settings_v2_service.update_privacy_settings(current_user["id"], updates)
+    data = await settings_v2_service.update_privacy_settings(user_id, updates)
     return JSONResponse(status_code=200, content={"success": True, "data": data})
 
 
 
 @router.get("/consents")
-async def get_consent_history(current_user: dict = Depends(get_current_user)):
-    data = await settings_v2_service.get_consent_history(current_user["id"])
+async def get_consent_history(current_user: Any = Depends(get_current_user)):
+    user_id = _get_user_id(current_user)
+    data = await settings_v2_service.get_consent_history(user_id)
     return JSONResponse(status_code=200, content={"success": True, "data": data})
 
 
 @router.post("/account/delete")
-async def initiate_account_deletion(current_user: dict = Depends(get_current_user)):
-    data = await settings_v2_service.initiate_account_deletion(current_user["id"])
+async def initiate_account_deletion(current_user: Any = Depends(get_current_user)):
+    user_id = _get_user_id(current_user)
+    data = await settings_v2_service.initiate_account_deletion(user_id)
     return JSONResponse(status_code=200, content={"success": True, "data": data})
 
 
@@ -109,26 +120,30 @@ async def initiate_account_deletion(current_user: dict = Depends(get_current_use
 # 3. SECURITY & TEAM & ADVISOR SHARE LINK
 # ------------------------------------------------------------------------------
 @router.get("/sessions")
-async def get_sessions(current_user: dict = Depends(get_current_user)):
-    data = await settings_v2_service.get_sessions(current_user["id"])
+async def get_sessions(current_user: Any = Depends(get_current_user)):
+    user_id = _get_user_id(current_user)
+    data = await settings_v2_service.get_sessions(user_id)
     return JSONResponse(status_code=200, content={"success": True, "data": data})
 
 
 @router.post("/sessions/revoke-all")
-async def revoke_all_sessions(current_user: dict = Depends(get_current_user)):
-    data = await settings_v2_service.revoke_all_sessions(current_user["id"])
+async def revoke_all_sessions(current_user: Any = Depends(get_current_user)):
+    user_id = _get_user_id(current_user)
+    data = await settings_v2_service.revoke_all_sessions(user_id)
     return JSONResponse(status_code=200, content={"success": True, "data": data})
 
 
 @router.delete("/sessions/{session_id}")
-async def revoke_session(session_id: str, current_user: dict = Depends(get_current_user)):
-    data = await settings_v2_service.revoke_session(current_user["id"], session_id)
+async def revoke_session(session_id: str, current_user: Any = Depends(get_current_user)):
+    user_id = _get_user_id(current_user)
+    data = await settings_v2_service.revoke_session(user_id, session_id)
     return JSONResponse(status_code=200, content={"success": True, "data": data})
 
 
 @router.get("/team")
-async def get_team_members(current_user: dict = Depends(get_current_user)):
-    data = await settings_v2_service.get_team_members(current_user["id"])
+async def get_team_members(current_user: Any = Depends(get_current_user)):
+    user_id = _get_user_id(current_user)
+    data = await settings_v2_service.get_team_members(user_id)
     return JSONResponse(status_code=200, content={"success": True, "data": data})
 
 
@@ -232,8 +247,9 @@ async def export_backup(format: str = Query("json", description="json or csv"), 
 
 
 @router.get("/snapshots/unified")
-async def get_unified_snapshots(current_user: dict = Depends(get_current_user)):
-    data = await settings_v2_service.get_unified_snapshots(current_user["id"])
+async def get_unified_snapshots(current_user: Any = Depends(get_current_user)):
+    user_id = _get_user_id(current_user)
+    data = await settings_v2_service.get_unified_snapshots(user_id)
     return JSONResponse(status_code=200, content={"success": True, "data": data})
 
 
@@ -272,10 +288,10 @@ async def admin_toggle_landing_mode(current_admin: dict = Depends(require_admin_
 
 
 @router.get("/broadcasts/active")
-async def get_active_broadcast(current_user: dict = Depends(get_current_user)):
+async def get_active_broadcast(current_user: Any = Depends(get_current_user)):
     try:
         broadcasts_col = get_collection("broadcasts")
-        user_id = current_user["id"]
+        user_id = _get_user_id(current_user)
         latest_broadcast = await broadcasts_col.find_one(
             {"$or": [{"target_user_ids": user_id}, {"target_user_ids": {"$exists": False}}]},
             sort=[("created_at", -1)]

@@ -1073,16 +1073,22 @@ class ActionCompleteRequest(BaseModel):
 @router.post("/demand-forecast/actions/complete")
 async def complete_demand_forecast_action(
     req: ActionCompleteRequest,
-    current_user: dict = Depends(get_current_user)
+    current_user: Any = Depends(get_current_user)
 ):
     """Persist completed demand forecast action state per user."""
-    user_id = current_user.get("id") or current_user.get("_id")
+    if isinstance(current_user, dict):
+        user_id = current_user.get("id") or current_user.get("_id")
+    else:
+        user_id = str(current_user)
+
     db = get_collection("business_profiles")
     profile = await db.find_one({"user_id": user_id})
     now = datetime.utcnow().isoformat()
     
     if profile:
-        onboarding_data = profile.get("onboarding_data", {})
+        onboarding_data = profile.get("onboarding_data")
+        if not isinstance(onboarding_data, dict):
+            onboarding_data = {}
         df_completed = onboarding_data.get("df_completed_actions", [])
         if not isinstance(df_completed, list):
             df_completed = []
@@ -1108,14 +1114,20 @@ async def complete_demand_forecast_action(
 
 @router.get("/demand-forecast/actions/complete")
 async def get_demand_forecast_completed_actions(
-    current_user: dict = Depends(get_current_user)
+    current_user: Any = Depends(get_current_user)
 ):
     """Retrieve list of completed action IDs for the authenticated user."""
-    user_id = current_user.get("id") or current_user.get("_id")
+    if isinstance(current_user, dict):
+        user_id = current_user.get("id") or current_user.get("_id")
+    else:
+        user_id = str(current_user)
+
     db = get_collection("business_profiles")
     profile = await db.find_one({"user_id": user_id})
-    onboarding_data = profile.get("onboarding_data", {}) if profile else {}
+    onboarding_data = profile.get("onboarding_data") if profile and isinstance(profile.get("onboarding_data"), dict) else {}
     completed_actions = onboarding_data.get("df_completed_actions", [])
+    if not isinstance(completed_actions, list):
+        completed_actions = []
     return {"success": True, "completed_actions": completed_actions}
 
 

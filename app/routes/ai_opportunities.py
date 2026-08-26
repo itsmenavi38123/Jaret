@@ -369,6 +369,16 @@ async def ai_opportunities_search(
             )
         except Exception as e:
             await cost_guardrail_service.refund_reserve(user_id, "scout_ondemand")
+            if is_demo_user:
+                from app.demo_data import get_demo_payload
+                login_label = user_doc.get("login_label") or user_doc.get("username") or (user_doc.get("email", "").split("@")[0] if user_doc.get("email") else "demo-restaurant")
+                demo_payload = get_demo_payload(login_label or "demo-restaurant")
+                if demo_payload and "opportunities" in demo_payload:
+                    return JSONResponse(
+                        status_code=status.HTTP_200_OK,
+                        content=jsonable_encoder(demo_payload["opportunities"]),
+                        media_type="application/json",
+                    )
             raise e
 
         if ( result.get("opportunities") and result["opportunities"].get("cards")):

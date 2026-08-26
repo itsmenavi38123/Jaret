@@ -1332,12 +1332,17 @@ def _enrich_and_fallback_scenario_result(parsed: Optional[dict] = None, question
             "closing_line": "Overall positive expected value with manageable initial cash outlay."
         }
     else:
-        # Enrich existing parsed result if fields are missing
+        # Enrich existing parsed result so both old and new frontend components render without undefined errors
         verdict = parsed.setdefault("verdict", {})
         if "confidence_reason" not in verdict:
             verdict["confidence_reason"] = "Based on historical financial trends and baseline data."
         if "risk_reason" not in verdict:
             verdict["risk_reason"] = "Evaluated against 12-month operating cash reserves."
+        
+        # Adapter fields for legacy UI components
+        verdict["category"] = verdict.get("category") or verdict.get("recommendation") or "Decision"
+        verdict["label"] = verdict.get("label") or verdict.get("headline") or verdict.get("recommendation") or "Recommended Action"
+        verdict["reserve_warning"] = verdict.get("reserve_warning") or verdict.get("risk_reason") or ""
 
         for kn in parsed.setdefault("key_numbers", []):
             if isinstance(kn, dict):
@@ -1346,6 +1351,7 @@ def _enrich_and_fallback_scenario_result(parsed: Optional[dict] = None, question
                     kn["color_flag"] = "green" if "+" in val else ("amber" if "-" in val else "cyan")
                 if "severity" not in kn:
                     kn["severity"] = "resolved" if kn["color_flag"] == "green" else ("building" if kn["color_flag"] == "amber" else "stable")
+                kn["source"] = kn.get("source") or kn.get("context") or "Calculated model"
 
         for p in parsed.setdefault("pros", []):
             if isinstance(p, dict):
@@ -1353,6 +1359,10 @@ def _enrich_and_fallback_scenario_result(parsed: Optional[dict] = None, question
                     p["dollar_impact"] = 3500.0
                 if "impact_text" not in p:
                     p["impact_text"] = f"+${p['dollar_impact']:,.0f}"
+                p["pro"] = p.get("pro") or p.get("headline") or ""
+                p["plain_language"] = p.get("plain_language") or p.get("detail") or ""
+                p["action_to_capture"] = p.get("action_to_capture") or p.get("detail") or ""
+                p["time_dimension"] = p.get("time_dimension") or "Immediate"
 
         for c in parsed.setdefault("cons", []):
             if isinstance(c, dict):
@@ -1361,6 +1371,57 @@ def _enrich_and_fallback_scenario_result(parsed: Optional[dict] = None, question
                 if "impact_text" not in c:
                     p_val = abs(c['dollar_impact'])
                     c["impact_text"] = f"-${p_val:,.0f}"
+                c["con"] = c.get("con") or c.get("headline") or ""
+                c["plain_language"] = c.get("plain_language") or c.get("detail") or ""
+                c["mitigation"] = c.get("mitigation") or c.get("detail") or ""
+                c["time_dimension"] = c.get("time_dimension") or "Immediate"
+
+        # Assumptions table adapter
+        assumptions = parsed.setdefault("assumptions_table", [])
+        if isinstance(assumptions, list):
+            for a in assumptions:
+                if isinstance(a, dict):
+                    a["what"] = a.get("what") or a.get("assumption") or ""
+                    a["value"] = a.get("value") or a.get("scenario") or ""
+                    a["source"] = a.get("source") or a.get("baseline") or "Baseline"
+                    a["note"] = a.get("note") or f"Baseline: {a.get('baseline', '')} -> Scenario: {a.get('scenario', '')}"
+
+        # Steps adapter: support both list of strings and list of rich objects
+        raw_steps = parsed.get("steps", [])
+        rich_steps = []
+        for idx, s in enumerate(raw_steps):
+            if isinstance(s, str):
+                rich_steps.append({
+                    "title": f"Step {idx+1}",
+                    "what": s,
+                    "how": s,
+                    "why": "Execution step for scenario implementation.",
+                    "decision_gate": "Owner Approval"
+                })
+            elif isinstance(s, dict):
+                rich_steps.append(s)
+        parsed["steps"] = rich_steps
+
+        # Alternatives adapter: support both list of strings and list of objects
+        raw_alts = parsed.get("alternatives", [])
+        rich_alts = []
+        for alt in raw_alts:
+            if isinstance(alt, str):
+                rich_alts.append({"title": alt, "description": alt, "pros": alt})
+            elif isinstance(alt, dict):
+                rich_alts.append(alt)
+        parsed["alternatives"] = rich_alts
+
+        # Chart data adapter: support both flat array and rich chart object
+        chart = parsed.get("chart_data")
+        if isinstance(chart, list):
+            parsed["chart_data"] = {
+                "chart_type": "cash_waterfall",
+                "series": chart,
+                "flat_data": chart,
+                "markers": [],
+                "worst_case_series": []
+            }
 
     return parsed
 
@@ -1654,24 +1715,39 @@ async def get_recent_scenarios(
             content={"error": str(e)},
         )
 
+@router.get("/{opportunity_id}/prep")
 @router.get("/prep/{opportunity_id}")
 async def get_opportunity_prep(
     opportunity_id: str,
-    current_user: dict = Depends(get_current_user),
+    current_user: Any = Depends(get_current_user),
 ):
 
     try:
 
-        user_id = current_user["id"]
+        if isinstance(current_user, dict):
+            user_id = current_user.get("id") or current_user.get("_id")
+        else:
+            user_id = str(current_user)
 
         opportunities_collection = get_collection("opportunities")
 
         business_profiles = get_collection("business_profiles")
 
-        opportunity = await opportunities_collection.find_one({
-            "_id": opportunity_id,
-            "user_id": user_id,
-        })
+        opportunity = None
+        try:
+            if ObjectId.is_valid(opportunity_id):
+                opportunity = await opportunities_collection.find_one({
+                    "$or": [{"_id": opportunity_id}, {"_id": ObjectId(opportunity_id)}],
+                    "user_id": user_id,
+                })
+            else:
+                opportunity = await opportunities_collection.find_one({
+                    "_id": opportunity_id,
+                    "user_id": user_id,
+                })
+        except Exception as db_err:
+            print(f"[get_opportunity_prep] DB lookup warning/error: {db_err}")
+            opportunity = None
 
         if not opportunity:
             # Fallback prep guidance structure matching Opportunities v2 Build Spec §F

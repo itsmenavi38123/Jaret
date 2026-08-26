@@ -50,15 +50,16 @@ class DashboardService:
         Full dashboard payload that powers KPI cards, mini badges, insights,
         alerts, trend summaries, and reminder previews.
         """
-        (
-            current_kpis,
-            prior_kpis,
-            financial_overview,
-        ) = await asyncio.gather(
+        results = await asyncio.gather(
             self.qb_financial_service.get_dashboard_kpis(user_id),
             self._get_prior_period_kpis(user_id),
             self.qb_financial_service.get_financial_overview(user_id),
+            return_exceptions=True
         )
+
+        current_kpis = results[0] if isinstance(results[0], dict) else {}
+        prior_kpis = results[1] if isinstance(results[1], dict) else {}
+        financial_overview = results[2] if isinstance(results[2], dict) else {}
 
         ai_health_score = self._calculate_ai_health_score(financial_overview)
         prior_ai_health = self._calculate_ai_health_score_from_prior(prior_kpis, financial_overview)
@@ -69,7 +70,12 @@ class DashboardService:
             prior_ai_health,
         )
 
-        alerts_payload = await self.get_contextual_alerts(user_id=user_id)
+        alerts_payload = {}
+        try:
+            alerts_payload = await self.get_contextual_alerts(user_id=user_id)
+        except Exception:
+            alerts_payload = {"alerts": []}
+
         ai_components = self._build_ai_health_components(financial_overview, ai_health_score)
         trend_summaries = self._build_trend_summaries(current_kpis, prior_kpis, financial_overview)
         badges = self._build_mini_badges(
@@ -78,7 +84,12 @@ class DashboardService:
             financial_overview,
             alerts_payload.get("alerts", []),
         )
-        insights_summary = await self._get_dashboard_insights_summary(user_id, financial_overview)
+
+        insights_summary = []
+        try:
+            insights_summary = await self._get_dashboard_insights_summary(user_id, financial_overview)
+        except Exception:
+            insights_summary = []
 
         return {
             "kpis": kpi_cards,
@@ -380,11 +391,17 @@ class DashboardService:
         Returns:
             Dict with alerts array
         """
-        # Fetch current KPIs
-        current_kpis = await self.qb_financial_service.get_dashboard_kpis(user_id)
-        
-        # Fetch full overview for additional metrics
-        financial_overview = await self.qb_financial_service.get_financial_overview(user_id)
+        current_kpis = {}
+        financial_overview = {}
+        try:
+            current_kpis = await self.qb_financial_service.get_dashboard_kpis(user_id)
+        except Exception:
+            current_kpis = {}
+
+        try:
+            financial_overview = await self.qb_financial_service.get_financial_overview(user_id)
+        except Exception:
+            financial_overview = {}
         
         alerts = []
         
