@@ -310,7 +310,35 @@ async def ai_opportunities_search(
     mode: str = Query("live", description="Mode: 'demo' or 'live'"),
 ):
     try:
-        user_id = current_user["id"]
+        user_id = current_user.get("id") or current_user.get("_id")
+        email = current_user.get("email", "")
+        is_demo_flag = current_user.get("is_demo") or (email.startswith("demo-") and "@lightsignal.app" in email)
+        
+        if not is_demo_flag:
+            users_col = get_collection("users")
+            user_doc = await users_col.find_one({"id": user_id}) or await users_col.find_one({"_id": user_id}) or {}
+            is_demo_flag = user_doc.get("is_demo") or (user_doc.get("email", "").startswith("demo-") and "@lightsignal.app" in user_doc.get("email", ""))
+            login_label = user_doc.get("login_label") or user_doc.get("username") or (user_doc.get("email", "").split("@")[0] if user_doc.get("email") else "demo-restaurant")
+        else:
+            login_label = current_user.get("login_label") or current_user.get("username") or (email.split("@")[0] if email else "demo-restaurant")
+
+        # Demo users: return demo data directly with no AI calls or guardrails
+        if is_demo_flag:
+            from app.demo_data import get_demo_payload
+            demo_payload = get_demo_payload(login_label or "demo-restaurant")
+            if demo_payload and "opportunities" in demo_payload:
+                return JSONResponse(
+                    status_code=status.HTTP_200_OK,
+                    content=jsonable_encoder(demo_payload["opportunities"]),
+                    media_type="application/json",
+                )
+            return JSONResponse(
+                status_code=status.HTTP_200_OK,
+                content={"opportunities": {"cards": []}},
+                media_type="application/json",
+            )
+
+        # Normal users: execute real Scout on-demand search pipeline
         scout_rate_limits = get_collection("scout_rate_limits")
         scout_cache = get_collection("scout_query_cache")
         scout_runs = get_collection("scout_runs")
@@ -369,16 +397,6 @@ async def ai_opportunities_search(
             )
         except Exception as e:
             await cost_guardrail_service.refund_reserve(user_id, "scout_ondemand")
-            if is_demo_user:
-                from app.demo_data import get_demo_payload
-                login_label = user_doc.get("login_label") or user_doc.get("username") or (user_doc.get("email", "").split("@")[0] if user_doc.get("email") else "demo-restaurant")
-                demo_payload = get_demo_payload(login_label or "demo-restaurant")
-                if demo_payload and "opportunities" in demo_payload:
-                    return JSONResponse(
-                        status_code=status.HTTP_200_OK,
-                        content=jsonable_encoder(demo_payload["opportunities"]),
-                        media_type="application/json",
-                    )
             raise e
 
         if ( result.get("opportunities") and result["opportunities"].get("cards")):

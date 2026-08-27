@@ -131,7 +131,58 @@ class SettingsV2Service:
         )
         return await self.get_privacy_settings(user_id)
 
+    async def _resolve_demo_context(self, user_id: str) -> tuple[bool, str]:
+        users_col = get_collection("users")
+        user = await users_col.find_one({"id": user_id}) or await users_col.find_one({"_id": user_id}) or {}
+        email = user.get("email", "")
+        login_label = user.get("login_label") or user.get("username") or (email.split("@")[0] if email else "")
+        is_demo = (
+            user.get("is_demo", False)
+            or user_id.startswith("demo-")
+            or (email.startswith("demo-") and "@lightsignal.app" in email)
+            or (login_label.startswith("demo-"))
+        )
+        return is_demo, login_label or "demo-restaurant"
+
     async def get_consent_history(self, user_id: str) -> List[Dict[str, Any]]:
+        is_demo, login_label = await self._resolve_demo_context(user_id)
+        if is_demo:
+            now_iso = datetime.now(timezone.utc).isoformat()
+            return [
+                {
+                    "user_id": user_id,
+                    "action": "terms_and_privacy_accepted",
+                    "description": "Terms of Service and Privacy Policy accepted during onboarding",
+                    "timestamp": "2025-01-15T10:00:00Z",
+                    "ip_address": "72.229.28.185",
+                    "version": "v1.2",
+                },
+                {
+                    "user_id": user_id,
+                    "action": "quickbooks_connector_consent",
+                    "description": "Authorized read-only accounting ledger synchronization (QBO)",
+                    "timestamp": "2025-01-15T10:04:12Z",
+                    "ip_address": "72.229.28.185",
+                    "version": "v1.0",
+                },
+                {
+                    "user_id": user_id,
+                    "action": "pos_system_consent",
+                    "description": "Authorized daily sales and order-level data sync (Toast / Square)",
+                    "timestamp": "2025-01-15T10:06:45Z",
+                    "ip_address": "72.229.28.185",
+                    "version": "v1.0",
+                },
+                {
+                    "user_id": user_id,
+                    "action": "photo_media_permissions_granted",
+                    "description": "Authorized AI visual parsing of menu, floor layout, and signage photos",
+                    "timestamp": "2025-02-01T14:30:00Z",
+                    "ip_address": "72.229.28.185",
+                    "version": "v1.0",
+                },
+            ]
+
         col = get_collection("consents_history")
         cursor = col.find({"user_id": user_id}).sort("timestamp", -1)
         history = await cursor.to_list(length=100)
@@ -160,6 +211,33 @@ class SettingsV2Service:
     # 3. SECURITY & TEAM & ADVISOR LINK
     # --------------------------------------------------------------------------
     async def get_sessions(self, user_id: str) -> List[Dict[str, Any]]:
+        is_demo, login_label = await self._resolve_demo_context(user_id)
+        if is_demo:
+            now = datetime.now(timezone.utc)
+            return [
+                {
+                    "session_id": "sess_demo_curr_01",
+                    "device": "iPad Pro 12.9 (Safari Mobile)",
+                    "ip_address": "72.229.28.185 (New York, NY)",
+                    "last_active": now.isoformat(),
+                    "is_current": True,
+                },
+                {
+                    "session_id": "sess_demo_rec_02",
+                    "device": "MacBook Pro 16 (Chrome 124)",
+                    "ip_address": "72.229.28.185 (New York, NY)",
+                    "last_active": (now - timedelta(hours=3, minutes=18)).isoformat(),
+                    "is_current": False,
+                },
+                {
+                    "session_id": "sess_demo_rec_03",
+                    "device": "Store Station POS Tablet / Android 13",
+                    "ip_address": "192.168.1.102 (Local Store Network)",
+                    "last_active": (now - timedelta(days=1, hours=2)).isoformat(),
+                    "is_current": False,
+                },
+            ]
+
         col = get_collection("user_sessions")
         sessions = await col.find({"user_id": user_id}).to_list(length=20)
         formatted = []
@@ -187,6 +265,91 @@ class SettingsV2Service:
         return {"session_id": session_id, "status": "revoked"}
 
     async def get_team_members(self, user_id: str) -> List[Dict[str, Any]]:
+        is_demo, login_label = await self._resolve_demo_context(user_id)
+        if is_demo:
+            if "retail" in login_label:
+                return [
+                    {
+                        "id": "team_demo_01",
+                        "name": "Dana Whitfield",
+                        "email": "dana@mainstgoods.com",
+                        "role": "Owner / Admin",
+                        "status": "active",
+                        "created_at": "2024-03-01T10:00:00Z",
+                    },
+                    {
+                        "id": "team_demo_02",
+                        "name": "Clara Evans",
+                        "email": "clara@mainstgoods.com",
+                        "role": "Store Manager",
+                        "status": "active",
+                        "created_at": "2024-05-15T11:00:00Z",
+                    },
+                    {
+                        "id": "team_demo_03",
+                        "name": "Robert Klein, CPA",
+                        "email": "rklein@ashevillecpa.com",
+                        "role": "Bookkeeper / Advisor",
+                        "status": "active",
+                        "created_at": "2024-06-01T09:30:00Z",
+                    },
+                ]
+            elif "service" in login_label:
+                return [
+                    {
+                        "id": "team_demo_01",
+                        "name": "Marcus Boone",
+                        "email": "marcus@ironwoodhvac.com",
+                        "role": "Owner / Admin",
+                        "status": "active",
+                        "created_at": "2024-01-10T08:00:00Z",
+                    },
+                    {
+                        "id": "team_demo_02",
+                        "name": "Sarah Boone",
+                        "email": "sarah@ironwoodhvac.com",
+                        "role": "Operations / Dispatch Lead",
+                        "status": "active",
+                        "created_at": "2024-01-10T08:00:00Z",
+                    },
+                    {
+                        "id": "team_demo_03",
+                        "name": "Jake Miller",
+                        "email": "jake.m@ironwoodhvac.com",
+                        "role": "Lead HVAC Technician",
+                        "status": "active",
+                        "created_at": "2024-04-12T09:15:00Z",
+                    },
+                ]
+            else:
+                # Canonical demo-restaurant (Tony's Brooklyn Pizza) & default
+                return [
+                    {
+                        "id": "team_demo_01",
+                        "name": "Tony Marchetti",
+                        "email": "tony@tonysbrooklynpizza.com",
+                        "role": "Owner / Admin",
+                        "status": "active",
+                        "created_at": "2024-04-01T09:00:00Z",
+                    },
+                    {
+                        "id": "team_demo_02",
+                        "name": "Marco Rossi",
+                        "email": "marco.rossi@tonysbrooklynpizza.com",
+                        "role": "Kitchen Manager",
+                        "status": "active",
+                        "created_at": "2024-06-15T11:30:00Z",
+                    },
+                    {
+                        "id": "team_demo_03",
+                        "name": "Elena Marchetti",
+                        "email": "elena@marchettibookkeeping.com",
+                        "role": "Bookkeeper / Accountant",
+                        "status": "active",
+                        "created_at": "2024-07-20T14:10:00Z",
+                    },
+                ]
+
         col = get_collection("team_members")
         members = await col.find({"owner_user_id": user_id}).to_list(length=50)
         for m in members:

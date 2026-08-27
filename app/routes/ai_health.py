@@ -985,13 +985,63 @@ async def get_business_health_full(
 @router.get("/snapshots")
 async def list_business_health_snapshots(
     limit: int = Query(20, ge=1, le=100),
-    current_user: dict = Depends(get_current_user),
+    current_user: Any = Depends(get_current_user),
 ):
     """
     Returns list of historical Business Health snapshots for the snapshot dropdown menu.
     """
-    user_id = current_user["id"]
-    from app.db import get_collection
+    if isinstance(current_user, dict):
+        user_id = current_user.get("id") or current_user.get("_id")
+        email = current_user.get("email", "")
+    else:
+        user_id = str(current_user)
+        email = ""
+
+    is_demo_flag = (isinstance(current_user, dict) and current_user.get("is_demo")) or (email.startswith("demo-") and "@lightsignal.app" in email)
+    if not is_demo_flag:
+        users_col = get_collection("users")
+        user_doc = await users_col.find_one({"id": user_id}) or await users_col.find_one({"_id": user_id}) or {}
+        is_demo_flag = user_doc.get("is_demo") or (user_doc.get("email", "").startswith("demo-") and "@lightsignal.app" in user_doc.get("email", ""))
+        login_label = user_doc.get("login_label") or user_doc.get("username") or (user_doc.get("email", "").split("@")[0] if user_doc.get("email") else "demo-restaurant")
+    else:
+        login_label = current_user.get("login_label") or current_user.get("username") or (email.split("@")[0] if email else "demo-restaurant")
+
+    # Demo users: return demo snapshot dropdown list
+    if is_demo_flag:
+        from app.demo_data import get_demo_payload
+        demo_payload = get_demo_payload(login_label or "demo-restaurant")
+        raw_bh = (demo_payload.get("business_health") if demo_payload else {}) or {}
+        current_score = raw_bh.get("overall_score", 82)
+        now = datetime.utcnow()
+        items = [
+            {
+                "snapshot_id": "snap_demo_curr",
+                "score": current_score,
+                "label": "Above Average",
+                "created_at": now.isoformat(),
+            },
+            {
+                "snapshot_id": "snap_demo_prev1",
+                "score": current_score - 4,
+                "label": "Above Average",
+                "created_at": (now - timedelta(days=30)).isoformat(),
+            },
+            {
+                "snapshot_id": "snap_demo_prev2",
+                "score": current_score - 7,
+                "label": "At Average",
+                "created_at": (now - timedelta(days=60)).isoformat(),
+            }
+        ]
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content=jsonable_encoder({
+                "success": True,
+                "data": items,
+            })
+        )
+
+    # Normal users: fetch from MongoDB
     col = get_collection("business_health_snapshots")
     docs = await col.find({"user_id": user_id}).sort("created_at", -1).limit(limit).to_list(length=limit)
     
@@ -1022,16 +1072,93 @@ async def get_business_health_snapshot_detail(
     current_user: Any = Depends(get_current_user),
 ):
     """
-    Returns detailed snapshot payload for Compare Mode.
+    Returns detailed snapshot payload for Compare Mode with all 5 canonical categories.
     """
-    from app.db import get_collection
     from bson import ObjectId
 
     if isinstance(current_user, dict):
         user_id = current_user.get("id") or current_user.get("_id")
+        email = current_user.get("email", "")
     else:
         user_id = str(current_user)
+        email = ""
 
+    is_demo_flag = (isinstance(current_user, dict) and current_user.get("is_demo")) or (email.startswith("demo-") and "@lightsignal.app" in email)
+    if not is_demo_flag:
+        users_col = get_collection("users")
+        user_doc = await users_col.find_one({"id": user_id}) or await users_col.find_one({"_id": user_id}) or {}
+        is_demo_flag = user_doc.get("is_demo") or (user_doc.get("email", "").startswith("demo-") and "@lightsignal.app" in user_doc.get("email", ""))
+        login_label = user_doc.get("login_label") or user_doc.get("username") or (user_doc.get("email", "").split("@")[0] if user_doc.get("email") else "demo-restaurant")
+    else:
+        login_label = current_user.get("login_label") or current_user.get("username") or (email.split("@")[0] if email else "demo-restaurant")
+
+    # Demo users: return spec-compliant demo snapshot payload
+    if is_demo_flag:
+        from app.demo_data import get_demo_payload
+        demo_payload = get_demo_payload(login_label or "demo-restaurant")
+        raw_bh = (demo_payload.get("business_health") if demo_payload else {}) or {}
+        if "overall" not in raw_bh:
+            v6_bh = _normalize_demo_business_health_v6(raw_bh, login_label)
+        else:
+            v6_bh = raw_bh
+
+        base_overall = v6_bh.get("overall", {})
+        prior_score = base_overall.get("score", 82) - 4
+        prior_overall = {
+            "score": prior_score,
+            "label": "above_average" if prior_score >= 75 else "at_average",
+            "peer_avg": base_overall.get("peer_avg", 71),
+            "ai_confidence": 0.86,
+            "data_completeness": 86,
+            "incomplete_data": False,
+            "as_of": (datetime.utcnow() - timedelta(days=30)).date().isoformat()
+        }
+
+        prior_categories = {
+            "financial": {"score": 79, "label": "above_average", "prior_score": None, "peer_avg": 72, "missing": []},
+            "operational": {"score": 72, "label": "at_average", "prior_score": None, "peer_avg": 70, "missing": []},
+            "customer": {"score": 78, "label": "above_average", "prior_score": None, "peer_avg": 75, "missing": []},
+            "risk": {"score": 85, "label": "top_tier", "prior_score": None, "peer_avg": 68, "missing": []},
+            "growth": {"score": 76, "label": "above_average", "prior_score": None, "peer_avg": 69, "missing": []},
+            "financial_health": {"score": 79, "label": "above_average", "prior_score": None, "peer_avg": 72, "missing": []},
+            "operational_health": {"score": 72, "label": "at_average", "prior_score": None, "peer_avg": 70, "missing": []},
+            "customer_health": {"score": 78, "label": "above_average", "prior_score": None, "peer_avg": 75, "missing": []},
+            "risk_health": {"score": 85, "label": "top_tier", "prior_score": None, "peer_avg": 68, "missing": []},
+            "growth_health": {"score": 76, "label": "above_average", "prior_score": None, "peer_avg": 69, "missing": []},
+        }
+
+        snapshot_res = {
+            **v6_bh,
+            "overall": prior_overall,
+            "categories": prior_categories,
+            "financial_health": prior_categories["financial"],
+            "operational_health": prior_categories["operational"],
+            "customer_health": prior_categories["customer"],
+            "risk_health": prior_categories["risk"],
+            "growth_health": prior_categories["growth"],
+            "ai_summary": "Prior operating snapshot reflected solid margin retention and steady order velocity.",
+        }
+
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content=jsonable_encoder({
+                "success": True,
+                "data": snapshot_res,
+                "overall": prior_overall,
+                "categories": prior_categories,
+                "financial_health": prior_categories["financial"],
+                "operational_health": prior_categories["operational"],
+                "customer_health": prior_categories["customer"],
+                "risk_health": prior_categories["risk"],
+                "growth_health": prior_categories["growth"],
+                "active_alerts": v6_bh.get("active_alerts", []),
+                "watch_areas": v6_bh.get("watch_areas", []),
+                "drivers_display": v6_bh.get("drivers_display", []),
+                "ai_summary": snapshot_res["ai_summary"],
+            })
+        )
+
+    # Normal users: fetch from DB
     col = get_collection("business_health_snapshots")
     doc = None
 
@@ -1046,7 +1173,7 @@ async def get_business_health_snapshot_detail(
 
     if not doc:
         try:
-            # Fallback to the MOST RECENT snapshot (sort by created_at DESC) instead of oldest
+            # Fallback to the MOST RECENT snapshot (sort by created_at DESC)
             doc = await col.find_one({"user_id": user_id}, sort=[("created_at", -1)])
         except Exception as db_err:
             print(f"[get_business_health_snapshot_detail] DB fallback error: {db_err}")
@@ -1054,18 +1181,29 @@ async def get_business_health_snapshot_detail(
     
     if not doc:
         default_payload = {
-            "overall": {"score": 75, "label": "Healthy"},
+            "overall": {"score": 75, "label": "Healthy", "ai_confidence": 0.85},
             "categories": {
-                "financial_health": {"score": 75, "status": "Good"},
-                "operational_health": {"score": 70, "status": "Stable"},
-                "risk_health": {"score": 80, "status": "Low Risk"},
-                "growth_health": {"score": 72, "status": "Growing"}
+                "financial": {"score": 75, "label": "Good", "missing": []},
+                "operational": {"score": 70, "label": "Stable", "missing": []},
+                "customer": {"score": 76, "label": "Good", "missing": []},
+                "risk": {"score": 80, "label": "Low Risk", "missing": []},
+                "growth": {"score": 72, "label": "Growing", "missing": []},
+                "financial_health": {"score": 75, "label": "Good"},
+                "operational_health": {"score": 70, "label": "Stable"},
+                "customer_health": {"score": 76, "label": "Good"},
+                "risk_health": {"score": 80, "label": "Low Risk"},
+                "growth_health": {"score": 72, "label": "Growing"}
             },
+            "financial_health": {"score": 75, "label": "Good"},
+            "operational_health": {"score": 70, "label": "Stable"},
+            "customer_health": {"score": 76, "label": "Good"},
+            "risk_health": {"score": 80, "label": "Low Risk"},
+            "growth_health": {"score": 72, "label": "Growing"},
             "active_alerts": [],
             "watch_areas": [],
             "drivers_display": [],
             "ai_summary": "Initial baseline snapshot.",
-            "benchmarks": {},
+            "benchmarks": {"peer_pool": "Regional Small Business Pool", "peer_avg": 70},
             "data_coverage_note": None
         }
         return JSONResponse(
@@ -1075,6 +1213,11 @@ async def get_business_health_snapshot_detail(
                 "data": default_payload,
                 "overall": default_payload["overall"],
                 "categories": default_payload["categories"],
+                "financial_health": default_payload["financial_health"],
+                "operational_health": default_payload["operational_health"],
+                "customer_health": default_payload["customer_health"],
+                "risk_health": default_payload["risk_health"],
+                "growth_health": default_payload["growth_health"],
                 "active_alerts": [],
                 "watch_areas": [],
                 "drivers_display": [],
@@ -1091,17 +1234,38 @@ async def get_business_health_snapshot_detail(
         "label": doc.get("overall_label"),
     }
     
-    fin_health = payload.get("financial_health") or payload.get("categories", {}).get("financial_health")
-    op_health = payload.get("operational_health") or payload.get("categories", {}).get("operational_health")
-    risk_health = payload.get("risk_health") or payload.get("categories", {}).get("risk_health")
-    growth_health = payload.get("growth_health") or payload.get("categories", {}).get("growth_health")
+    raw_cats = payload.get("categories") if isinstance(payload.get("categories"), dict) else {}
 
-    categories = payload.get("categories") or {
+    fin_health = payload.get("financial_health") or raw_cats.get("financial_health") or raw_cats.get("financial")
+    op_health = payload.get("operational_health") or raw_cats.get("operational_health") or raw_cats.get("operational")
+    cust_health = payload.get("customer_health") or raw_cats.get("customer_health") or raw_cats.get("customer")
+    risk_health = payload.get("risk_health") or raw_cats.get("risk_health") or raw_cats.get("risk")
+    growth_health = payload.get("growth_health") or raw_cats.get("growth_health") or raw_cats.get("growth")
+
+    if not isinstance(fin_health, dict):
+        fin_health = {"score": None, "label": "missing_data", "missing": ["financial"]}
+    if not isinstance(op_health, dict):
+        op_health = {"score": None, "label": "missing_data", "missing": ["operational", "pos"]}
+    if not isinstance(cust_health, dict):
+        cust_health = {"score": None, "label": "missing_data", "missing": ["customer", "reviews"]}
+    if not isinstance(risk_health, dict):
+        risk_health = {"score": None, "label": "missing_data", "missing": ["risk"]}
+    if not isinstance(growth_health, dict):
+        growth_health = {"score": None, "label": "missing_data", "missing": ["growth"]}
+
+    categories = {
+        "financial": fin_health,
+        "operational": op_health,
+        "customer": cust_health,
+        "risk": risk_health,
+        "growth": growth_health,
         "financial_health": fin_health,
         "operational_health": op_health,
+        "customer_health": cust_health,
         "risk_health": risk_health,
         "growth_health": growth_health,
     }
+
     active_alerts = payload.get("active_alerts") or payload.get("active_health_alerts") or []
     watch_areas = payload.get("watch_areas") or payload.get("priority_watch_areas") or []
     drivers_display = payload.get("drivers_display") or payload.get("score_drivers") or []
@@ -1111,6 +1275,7 @@ async def get_business_health_snapshot_detail(
         "categories": categories,
         "financial_health": fin_health,
         "operational_health": op_health,
+        "customer_health": cust_health,
         "risk_health": risk_health,
         "growth_health": growth_health,
         "active_alerts": active_alerts,
@@ -1132,6 +1297,7 @@ async def get_business_health_snapshot_detail(
             "categories": categories,
             "financial_health": fin_health,
             "operational_health": op_health,
+            "customer_health": cust_health,
             "risk_health": risk_health,
             "growth_health": growth_health,
             "active_alerts": active_alerts,

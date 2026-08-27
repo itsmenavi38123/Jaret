@@ -14,6 +14,12 @@ DEFAULT_KPI_PROFILE = {
                 {"metric": "dso_days", "weight": 0.25},
             ]
         },
+        "customer_health": {
+            "metrics": [
+                {"metric": "repeat_customer_rate", "weight": 0.5},
+                {"metric": "avg_review_rating", "weight": 0.5},
+            ]
+        },
         "risk_health": {
             "metrics": [
                 {"metric": "runway_months", "weight": 0.5},
@@ -27,9 +33,10 @@ DEFAULT_KPI_PROFILE = {
         },
     },
     "category_weights": {
-        "financial_health": 0.35,
-        "operational_health": 0.25,
-        "risk_health": 0.25,
+        "financial_health": 0.30,
+        "operational_health": 0.20,
+        "customer_health": 0.15,
+        "risk_health": 0.20,
         "growth_health": 0.15,
     },
 }

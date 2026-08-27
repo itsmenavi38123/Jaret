@@ -1613,20 +1613,10 @@ question:
         )
 
     except Exception as e:
-        print(f"[scenario] Execution fallback activated due to API error: {e}")
+        print(f"[scenario] API Error: {e}")
         import traceback
         traceback.print_exc()
-
-        created = datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
-        fallback_data = _enrich_and_fallback_scenario_result(None, getattr(payload, "question", ""))
-        return JSONResponse(
-            status_code=status.HTTP_200_OK,
-            content={
-                "success": True,
-                "data": fallback_data,
-                "created_at": created
-            }
-        )
+        raise e
         # FIX #5: Store assistant message content as string, not raw dict.
         # Sending the parsed dict back in history caused the content-type
         # mismatch that broke multi-turn conversations.
@@ -1715,22 +1705,122 @@ async def get_recent_scenarios(
             content={"error": str(e)},
         )
 
+def _stringify_object_ids(obj: Any) -> Any:
+    if isinstance(obj, ObjectId):
+        return str(obj)
+    elif isinstance(obj, dict):
+        return {k: _stringify_object_ids(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [_stringify_object_ids(item) for item in obj]
+    return obj
+
+
 @router.get("/{opportunity_id}/prep")
 @router.get("/prep/{opportunity_id}")
 async def get_opportunity_prep(
     opportunity_id: str,
     current_user: Any = Depends(get_current_user),
 ):
-
     try:
-
         if isinstance(current_user, dict):
             user_id = current_user.get("id") or current_user.get("_id")
+            email = current_user.get("email", "")
         else:
             user_id = str(current_user)
+            email = ""
+
+        is_demo_flag = (isinstance(current_user, dict) and current_user.get("is_demo")) or (email.startswith("demo-") and "@lightsignal.app" in email)
+        if not is_demo_flag:
+            users_col = get_collection("users")
+            user_doc = await users_col.find_one({"id": user_id}) or await users_col.find_one({"_id": user_id}) or {}
+            is_demo_flag = user_doc.get("is_demo") or (user_doc.get("email", "").startswith("demo-") and "@lightsignal.app" in user_doc.get("email", ""))
+
+        # Demo users: return deterministic spec-compliant prep guidance with no AI calls
+        if is_demo_flag:
+            fallback_prep = {
+                "opportunity_id": opportunity_id,
+                "checklist": [
+                    {
+                        "task_id": "chk_1",
+                        "label": "Confirm staffing schedule and shift coverage",
+                        "title": "Confirm staffing schedule and shift coverage",
+                        "phase": "2_3_weeks_before",
+                        "deadline_date": (datetime.utcnow() + timedelta(days=7)).strftime("%Y-%m-%d"),
+                        "priority": "critical",
+                        "is_urgent": True,
+                        "addresses": "operational",
+                        "completed": False
+                    },
+                    {
+                        "task_id": "chk_2",
+                        "label": "Review inventory stock levels and supplier lead times",
+                        "title": "Review inventory stock levels and supplier lead times",
+                        "phase": "7_10_days",
+                        "deadline_date": (datetime.utcnow() + timedelta(days=12)).strftime("%Y-%m-%d"),
+                        "priority": "standard",
+                        "is_urgent": False,
+                        "addresses": "financial",
+                        "completed": False
+                    },
+                    {
+                        "task_id": "chk_3",
+                        "label": "Verify mobile POS terminal connectivity and card reader backup",
+                        "title": "Verify mobile POS terminal connectivity and card reader backup",
+                        "phase": "event_week",
+                        "deadline_date": (datetime.utcnow() + timedelta(days=18)).strftime("%Y-%m-%d"),
+                        "priority": "standard",
+                        "is_urgent": False,
+                        "addresses": "operational",
+                        "completed": False
+                    }
+                ],
+                "judgment_prompts": [
+                    {
+                        "category": "Human Factors",
+                        "check_prompt": "Will key staff require overtime or schedule adjustments during this window?",
+                        "prompt": "Will key staff require overtime or schedule adjustments during this window?",
+                        "title": "Human Factors",
+                        "severity": "medium"
+                    },
+                    {
+                        "category": "Financial Ripple",
+                        "check_prompt": "What is the expected ROI multiple relative to upfront ingredient and transport costs?",
+                        "prompt": "What is the expected ROI multiple relative to upfront ingredient and transport costs?",
+                        "title": "Financial Ripple",
+                        "severity": "low"
+                    }
+                ],
+                "risk_prompts": [
+                    {
+                        "category": "Human Factors",
+                        "check_prompt": "Will key staff require overtime or schedule adjustments during this window?",
+                        "prompt": "Will key staff require overtime or schedule adjustments during this window?",
+                        "title": "Human Factors",
+                        "severity": "medium"
+                    },
+                    {
+                        "category": "Financial Ripple",
+                        "check_prompt": "What is the expected ROI multiple relative to upfront ingredient and transport costs?",
+                        "prompt": "What is the expected ROI multiple relative to upfront ingredient and transport costs?",
+                        "title": "Financial Ripple",
+                        "severity": "low"
+                    }
+                ],
+                "checkpoint_summary": "Preparation tracking active. Complete checklist items to stay on schedule.",
+                "cash_balance": 18500.0,
+                "revenue_attributed": 4200.0,
+                "owner_responses": {}
+            }
+            return JSONResponse(
+                status_code=status.HTTP_200_OK,
+                content=jsonable_encoder(_stringify_object_ids({
+                    "success": True,
+                    "cached": True,
+                    "data": fallback_prep,
+                }), custom_encoder={ObjectId: str}),
+            )
 
         opportunities_collection = get_collection("opportunities")
-
         business_profiles = get_collection("business_profiles")
 
         opportunity = None
@@ -1750,68 +1840,20 @@ async def get_opportunity_prep(
             opportunity = None
 
         if not opportunity:
-            # Fallback prep guidance structure matching Opportunities v2 Build Spec §F
-            fallback_prep = {
-                "opportunity_id": opportunity_id,
-                "checklist": [
-                    {
-                        "task_id": "chk_1",
-                        "label": "Confirm staffing schedule and shift coverage",
-                        "phase": "2_3_weeks_before",
-                        "deadline_date": (datetime.utcnow() + timedelta(days=7)).strftime("%Y-%m-%d"),
-                        "priority": "critical",
-                        "is_urgent": True,
-                        "addresses": "operational",
-                        "completed": False
-                    },
-                    {
-                        "task_id": "chk_2",
-                        "label": "Review inventory stock levels for key products",
-                        "phase": "7_10_days",
-                        "deadline_date": (datetime.utcnow() + timedelta(days=12)).strftime("%Y-%m-%d"),
-                        "priority": "standard",
-                        "is_urgent": False,
-                        "addresses": "financial",
-                        "completed": False
-                    }
-                ],
-                "judgment_prompts": [
-                    {
-                        "category": "Human Factors",
-                        "check_prompt": "Will key staff require overtime to support this opportunity?",
-                        "severity": "medium"
-                    },
-                    {
-                        "category": "Financial Ripple",
-                        "check_prompt": "What is the expected ROI multiple relative to upfront inventory costs?",
-                        "severity": "low"
-                    }
-                ],
-                "checkpoint_summary": "Preparation tracking active. Complete checklist items to stay on schedule.",
-                "cash_balance": 18500.0,
-                "revenue_attributed": 4200.0,
-                "owner_responses": {}
-            }
-            return JSONResponse(
-                status_code=status.HTTP_200_OK,
-                content={
-                    "success": True,
-                    "cached": False,
-                    "data": fallback_prep,
-                },
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Opportunity not found"
             )
 
         cached_output = opportunity.get("prep_agent_output")
-
         if cached_output:
-
             return JSONResponse(
                 status_code=status.HTTP_200_OK,
-                content={
+                content=jsonable_encoder(_stringify_object_ids({
                     "success": True,
                     "cached": True,
                     "data": cached_output,
-                },
+                }), custom_encoder={ObjectId: str}),
             )
 
         business_profile = await business_profiles.find_one({
@@ -1819,13 +1861,13 @@ async def get_opportunity_prep(
         })
 
         prep_output = await prep_agent_service.generate_preparation_guidance(
-            opportunity=opportunity,
-            business_profile=business_profile or {},
+            opportunity=_stringify_object_ids(opportunity),
+            business_profile=_stringify_object_ids(business_profile or {}),
         )
 
         await opportunities_collection.update_one(
             {
-                "_id": opportunity_id
+                "_id": opportunity.get("_id")
             },
             {
                 "$set": {
@@ -1837,29 +1879,31 @@ async def get_opportunity_prep(
 
         return JSONResponse(
             status_code=status.HTTP_200_OK,
-            content={
+            content=jsonable_encoder(_stringify_object_ids({
                 "success": True,
                 "cached": False,
                 "data": prep_output,
-            },
+            }), custom_encoder={ObjectId: str}),
         )
 
     except Exception as e:
-
         import traceback
         traceback.print_exc()
 
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content={
+            content=jsonable_encoder({
+                "success": False,
                 "error": str(e)
-            },
+            }),
         )
 
 
 class OpportunitySearchRequest(BaseModel):
     query: str
     location: Optional[str] = None
+    opportunity_types: Optional[List[str]] = None
+    limit: Optional[int] = 10
 
 
 class OpportunityStatusRequest(BaseModel):
@@ -1880,27 +1924,13 @@ async def search_opportunities_ondemand(
     current_user: dict = Depends(get_current_user)
 ):
     """On-demand web search for opportunities per spec §B."""
-    user_id = current_user.get("id") or current_user.get("_id")
-    try:
-        from app.services.cost_guardrail_service import cost_guardrail_service
-        allowed, reason = await cost_guardrail_service.check_and_reserve(user_id, "opportunities_search")
-        if not allowed:
-            raise HTTPException(
-                status_code=429,
-                detail="You've used today's 10 searches — resets at midnight."
-            )
-    except Exception:
-        pass
-
-    results = await research_scout.search_opportunities(query=req.query, location=req.location or "US")
-    return JSONResponse(
-        status_code=status.HTTP_200_OK,
-        content={
-            "success": True,
-            "query": req.query,
-            "results": results or []
-        }
+    from app.routes.ai_opportunities import ai_opportunities_search, OpportunitySearchRequest as AIOppSearchRequest
+    ai_req = AIOppSearchRequest(
+        query=req.query,
+        opportunity_types=req.opportunity_types,
+        limit=req.limit or 10,
     )
+    return await ai_opportunities_search(request=ai_req, current_user=current_user)
 
 
 @router.patch("/{opportunity_id}/status")

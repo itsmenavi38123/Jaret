@@ -21,7 +21,7 @@ class CostGuardrailService:
         # Load configuration (with hardcoded placeholders if config missing)
         config = await self.settings_col.find_one({"_id": "site_config"}) or {}
         
-        hard_ceiling = config.get("account_daily_hard_ceiling", 1000)  # cents ($10.00)
+        hard_ceiling = config.get("account_daily_hard_ceiling", 600)   # cents ($6.00)
         soft_alert = config.get("account_daily_soft_alert", 600)      # cents ($6.00)
         
         cap_manual_refresh = config.get("cap_manual_refresh", 3)

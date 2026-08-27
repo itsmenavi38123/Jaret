@@ -23,16 +23,22 @@ class OwnerNoteCreate(BaseModel):
 
 
 @router.post("/onboarding")
+@router.patch("/onboarding")
+@router.post("")
+@router.patch("")
 async def create_or_update_onboarding(
     data: BusinessProfileCreate,
-    current_user: dict = Depends(get_current_user)
+    current_user: Any = Depends(get_current_user)
 ):
 
     try:
         business_profiles = get_collection("business_profiles")
         opportunities_profiles = get_collection("opportunities_profiles")
 
-        user_id = current_user["id"]
+        if isinstance(current_user, dict):
+            user_id = current_user.get("id") or current_user.get("_id")
+        else:
+            user_id = str(current_user)
 
         onboarding_data = data.onboarding_data.copy()
 
@@ -170,16 +176,20 @@ async def create_or_update_onboarding(
         )
 
 @router.put("/onboarding")
+@router.put("")
 async def update_onboarding(
     data: BusinessProfileUpdate,
-    current_user: dict = Depends(get_current_user)
+    current_user: Any = Depends(get_current_user)
 ):
 
     try:
         business_profiles = get_collection("business_profiles")
         opportunities_profiles = get_collection("opportunities_profiles")
 
-        user_id = current_user["id"]
+        if isinstance(current_user, dict):
+            user_id = current_user.get("id") or current_user.get("_id")
+        else:
+            user_id = str(current_user)
 
         existing = await business_profiles.find_one(
             {"user_id": user_id}
@@ -307,8 +317,9 @@ async def update_onboarding(
         )
 
 @router.get("/onboarding")
+@router.get("")
 async def get_onboarding(
-    current_user: dict = Depends(get_current_user)
+    current_user: Any = Depends(get_current_user)
 ):
     try:
         business_profiles = get_collection("business_profiles")

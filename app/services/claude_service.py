@@ -53,12 +53,12 @@ def _prepare_user_content(user_content: Any) -> Any:
     if user_content is None:
         return None
     if isinstance(user_content, dict):
-        return json.dumps(user_content)
+        return json.dumps(user_content, default=str)
     if isinstance(user_content, list):
         # If it's a list of dicts with 'type' key, it's valid Anthropic content blocks format
         if all(isinstance(x, dict) and "type" in x for x in user_content):
             return user_content
-        return json.dumps(user_content)
+        return json.dumps(user_content, default=str)
     if isinstance(user_content, str):
         return user_content
     return str(user_content)

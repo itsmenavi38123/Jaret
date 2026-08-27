@@ -496,8 +496,21 @@ class BusinessHealthEngineService:
             "score_drivers": signal_surfaces.get("score_drivers", []),
             "financial_health": category_results.get("financial_health"),
             "operational_health": category_results.get("operational_health"),
+            "customer_health": category_results.get("customer_health"),
             "risk_health": category_results.get("risk_health"),
             "growth_health": category_results.get("growth_health"),
+            "categories": {
+                "financial": category_results.get("financial_health"),
+                "operational": category_results.get("operational_health"),
+                "customer": category_results.get("customer_health"),
+                "risk": category_results.get("risk_health"),
+                "growth": category_results.get("growth_health"),
+                "financial_health": category_results.get("financial_health"),
+                "operational_health": category_results.get("operational_health"),
+                "customer_health": category_results.get("customer_health"),
+                "risk_health": category_results.get("risk_health"),
+                "growth_health": category_results.get("growth_health"),
+            },
         }
 
         await business_health_snapshot_service.create_snapshot(
