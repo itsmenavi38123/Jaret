@@ -6,11 +6,11 @@ class SyncMemoryService:
 
     def __init__(self):
         self.client = MongoClient(
-            os.getenv("MONGO_URI")
+            os.getenv("MONGO_URI", "mongodb://localhost:27017")
         )
 
         self.db = self.client[
-            os.getenv("MONGO_DB_NAME")
+            os.getenv("MONGO_DB_NAME", "lightsignal")
         ]
 
         self.collection = self.db[

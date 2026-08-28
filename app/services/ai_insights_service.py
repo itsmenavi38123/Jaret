@@ -1,13 +1,13 @@
 # backend/app/services/ai_insights_service.py
 """
 AI Insights Service
-Generates top 3 insights using Orchestrator, Finance Analyst, and Research Scout
+Generates top 3 insights using Canonical Financial Analyst V6 (DASHBOARD MODE / INSIGHTS MODE).
 """
 from typing import Any, Dict, List, Optional
 from datetime import datetime, timezone
 import json
 from app.services.claude_service import claude_service
-
+from app.services.financial_overview_drawer_prompt import get_financial_analyst_prompt
 from app.services.finance_analyst_service import FinanceAnalystService
 from app.services.research_scout_service import ResearchScoutService
 
@@ -15,7 +15,7 @@ from app.services.research_scout_service import ResearchScoutService
 class AIInsightsService:
     """
     Service for generating AI-powered financial insights.
-    Uses three OpenAI agents: Orchestrator, Finance Analyst, Research Scout.
+    Uses three agents: Orchestrator, Finance Analyst, Research Scout.
     """
     
     def __init__(self):
@@ -30,172 +30,134 @@ class AIInsightsService:
         classifier_output: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
-        Generate top 3 AI insights: strength, issue, opportunity.
+        Generate top 3 AI insights: strength, issue, opportunity using Canonical FA V6.
         
         Args:
             user_id: User ID
             financial_data: Current financial KPIs and metrics
             business_profile: Business profile data
+            classifier_output: Business profile classifier output
         
         Returns:
             Dict with insights array and metadata
         """
-    
-        # Extract industry and location from business profile
-        industry = "Unknown"
-        location = {"city": "", "state": ""}
-        if business_profile and business_profile.get("onboarding_data"):
-            onboarding = business_profile["onboarding_data"]
-            industry = onboarding.get("industry", onboarding.get("business_type", "Unknown"))
-            # Try to extract location if available
-            if "location" in onboarding:
-                location = onboarding["location"]
-        
-        # Build system prompt for Orchestrator (Insights mode)
-        system_prompt = f"""You are LightSignal Orchestrator in Dashboard Insights mode.
-
-Your mission: Generate exactly 3 actionable insights for the business dashboard:
-1. One STRENGTH (what's working well)
-2. One ISSUE (what needs attention)
-3. One OPPORTUNITY (what to pursue)
-
-🧰 CONTEXT
-
-- **Industry**: {industry}
-- **Location**: {location.get('city', '')}, {location.get('state', '')}
-- **Financial Data**: {json.dumps(financial_data, default=str)}
-- **Business Profile**: {json.dumps(business_profile, default=str) if business_profile else "None"}
-
-📊 FINANCIAL METRICS AVAILABLE
-
-You have access to:
-- Revenue (MTD, QTD, YTD)
-- Margins (Gross, Net, OpEx %)
-- Cash position and runway
-- Liquidity ratios (Current, Quick)
-- Efficiency metrics (DSO, DPO, Inventory Turns)
-- Cash flow and burn rate
-- Prior period comparisons (deltas)
-
-🎯 OUTPUT FORMAT — STRICT JSON ONLY
-
-Return one object shaped as:
-
-{{
-  "insights": [
-    {{
-      "type": "strength",
-      "title": "Short, punchy title (max 6 words)",
-      "description": "One clear sentence explaining what's working and why it matters. Include specific numbers.",
-      "impact": "high|medium|low",
-      "source": "Finance Analyst|Research Scout|Orchestrator",
-      "action": "One specific, actionable recommendation"
-    }},
-    {{
-      "type": "issue",
-      "title": "Short, punchy title (max 6 words)",
-      "description": "One clear sentence explaining the problem and its impact. Include specific numbers.",
-      "impact": "high|medium|low",
-      "source": "Finance Analyst|Research Scout|Orchestrator",
-      "action": "One specific, actionable recommendation"
-    }},
-    {{
-      "type": "opportunity",
-      "title": "Short, punchy title (max 6 words)",
-      "description": "One clear sentence explaining the opportunity and potential impact. Include context.",
-      "impact": "high|medium|low",
-      "source": "Finance Analyst|Research Scout|Orchestrator",
-      "action": "One specific, actionable recommendation"
-    }}
-  ]
-}}
-
-⚙️ INSIGHT GENERATION RULES
-
-**STRENGTH** - Look for:
-- Revenue growth vs prior period (>5% is notable)
-- Margin improvements
-- Strong liquidity ratios (Current >1.5, Quick >1.0)
-- Positive cash flow trends
-- Efficient working capital (low DSO, high inventory turns)
-- Runway extending
-
-**ISSUE** - Look for:
-- Revenue decline or stagnation
-- Margin compression (>2% drop)
-- Low or declining cash position
-- Runway shrinking (<6 months is critical)
-- Poor liquidity (Current <1.0, Quick <0.5)
-- Rising burn rate
-- Inefficient working capital (high DSO, low turns)
-
-**OPPORTUNITY** - Consider:
-- Regional market trends (use Research Scout context)
-- Underutilized capacity
-- Pricing power (if margins are low but revenue is growing)
-- Working capital optimization potential
-- Seasonal patterns
-- Industry benchmarks showing room for improvement
-
-🧮 CALCULATION EXAMPLES
-
-- Revenue delta: (Current - Prior) / Prior × 100
-- Margin trend: Current Margin - Prior Margin
-- Runway change: Current Runway - Prior Runway
-- Burn rate trend: Current Burn - Prior Burn
-
-✅ QUALITY RULES
-
-- Use REAL numbers from the financial data provided
-- Be specific: "Revenue up 15% vs last month" not "Revenue is growing"
-- Make actions concrete: "Review top 3 supplier contracts" not "Reduce costs"
-- Impact should reflect actual business significance
-- Source should indicate which agent would provide this insight
-- Keep titles short and scannable (max 6 words)
-- Descriptions should be one clear sentence with numbers
-- Actions should be immediately actionable
-
-🚫 NEVER
-
-- Invent numbers not in the data
-- Give generic advice ("improve efficiency")
-- Use vague language ("consider looking into")
-- Exceed one sentence per description
-- Provide more or fewer than 3 insights
-- Duplicate insight types
-
-JSON only (no Markdown, no prose outside fields).
-"""
+        system_prompt = get_financial_analyst_prompt()
         
         try:
-            result = await claude_service.json_completion(
+            dashboard_result = await claude_service.json_completion(
                 system_prompt=system_prompt,
                 user_content={
-                    "financial_data": financial_data,
-                    "business_profile": business_profile,
+                    "request": "Generate dashboard analysis. Output ONLY valid JSON.",
+                    "context": {
+                        "financial_data": financial_data,
+                        "business_profile": business_profile,
+                    },
                     "classifier_output": classifier_output,
                 },
                 temperature=0.2,
                 max_tokens=4000,
             )
-            insights = result.get("insights", [])
             
-            # Validate we have exactly 3 insights
-            if len(insights) != 3:
-                raise ValueError(f"Expected 3 insights, got {len(insights)}")
+            # Map canonical FA V6 dashboard output to insights schema
+            insights = []
             
-            # Validate insight types
-            types_found = {insight.get("type") for insight in insights}
-            expected_types = {"strength", "issue", "opportunity"}
-            if types_found != expected_types:
-                raise ValueError(f"Expected types {expected_types}, got {types_found}")
+            # 1. Strength (from positive alerts or opportunities)
+            positive_alerts = [a for a in dashboard_result.get("alerts", []) if a.get("type") == "positive"]
+            if positive_alerts:
+                top_pos = positive_alerts[0]
+                insights.append({
+                    "type": "strength",
+                    "title": "Positive Performance",
+                    "description": top_pos.get("message", "Key metrics are on track."),
+                    "impact": "high" if top_pos.get("severity") == "above_average" else "medium",
+                    "source": "Finance Analyst",
+                    "action": "Maintain current operational momentum."
+                })
+            elif dashboard_result.get("what_changed"):
+                insights.append({
+                    "type": "strength",
+                    "title": "Period Movement",
+                    "description": dashboard_result["what_changed"][0],
+                    "impact": "medium",
+                    "source": "Finance Analyst",
+                    "action": "Monitor trend continuation."
+                })
+            else:
+                insights.append({
+                    "type": "strength",
+                    "title": "Financial Stability",
+                    "description": dashboard_result.get("summary", "Business operations are stable."),
+                    "impact": "medium",
+                    "source": "Finance Analyst",
+                    "action": "Continue tracking key performance indicators."
+                })
+                
+            # 2. Issue (from critical/warning alerts or insight_pairs)
+            risk_alerts = [a for a in dashboard_result.get("alerts", []) if a.get("type") in ("risk", "warning")]
+            insight_pairs = dashboard_result.get("insight_pairs", [])
+            if insight_pairs:
+                top_pair = insight_pairs[0]
+                insights.append({
+                    "type": "issue",
+                    "title": top_pair.get("head", "Operational Attention Needed") if isinstance(top_pair, dict) else "Operational Issue",
+                    "description": top_pair.get("problem", "Identified risk in financial workflow.") if isinstance(top_pair, dict) else str(top_pair),
+                    "impact": "high",
+                    "source": "Finance Analyst",
+                    "action": top_pair.get("solution", "Review and take recommended action.") if isinstance(top_pair, dict) else "Address root cause."
+                })
+            elif risk_alerts:
+                top_risk = risk_alerts[0]
+                insights.append({
+                    "type": "issue",
+                    "title": "Risk Alert",
+                    "description": top_risk.get("message", "Attention required on key metric."),
+                    "impact": "high" if top_risk.get("severity") == "critical" else "medium",
+                    "source": "Finance Analyst",
+                    "action": "Investigate underlying driver."
+                })
+            else:
+                insights.append({
+                    "type": "issue",
+                    "title": "Cost & Expense Monitoring",
+                    "description": "Operating expenses require regular monitoring to preserve runway.",
+                    "impact": "medium",
+                    "source": "Finance Analyst",
+                    "action": "Audit monthly expenses and identify optimization opportunities."
+                })
+                
+            # 3. Opportunity
+            opportunities = dashboard_result.get("opportunities", [])
+            if opportunities:
+                top_opp = opportunities[0]
+                if isinstance(top_opp, dict):
+                    opp_title = top_opp.get("head", "Growth Lever")
+                    opp_desc = top_opp.get("body", "Growth opportunity identified.")
+                else:
+                    opp_title = "Growth Lever"
+                    opp_desc = str(top_opp)
+                insights.append({
+                    "type": "opportunity",
+                    "title": opp_title[:40],
+                    "description": opp_desc,
+                    "impact": "high",
+                    "source": "Finance Analyst",
+                    "action": "Execute strategic growth initiative."
+                })
+            else:
+                insights.append({
+                    "type": "opportunity",
+                    "title": "Market Expansion Potential",
+                    "description": "Explore regional market trends and external opportunities.",
+                    "impact": "medium",
+                    "source": "Research Scout",
+                    "action": "Review external opportunities in Opportunities tab."
+                })
             
             return {
-                "insights": insights,
+                "insights": insights[:3],
                 "generated_at": datetime.now(timezone.utc).isoformat()
             }
         except Exception as e:
-            # Fallback to basic insights if AI fails
             print(f"AI insights generation failed: {e}")
             return self._generate_fallback_insights(financial_data)
     
@@ -217,6 +179,15 @@ JSON only (no Markdown, no prose outside fields).
                 "source": "Finance Analyst",
                 "action": "Continue monitoring revenue trends and customer acquisition"
             })
+        else:
+            insights.append({
+                "type": "strength",
+                "title": "Operational Baseline",
+                "description": "Baseline operations established.",
+                "impact": "medium",
+                "source": "Finance Analyst",
+                "action": "Track incoming revenue streams"
+            })
         
         # Issue: Check runway
         runway = kpis.get("runway_months")
@@ -230,7 +201,6 @@ JSON only (no Markdown, no prose outside fields).
                 "action": "Review expenses and explore financing options"
             })
         else:
-            # Generic issue
             insights.append({
                 "type": "issue",
                 "title": "Monitor Operating Expenses",
@@ -251,7 +221,7 @@ JSON only (no Markdown, no prose outside fields).
         })
         
         return {
-            "insights": insights,
+            "insights": insights[:3],
             "generated_at": datetime.now(timezone.utc).isoformat()
         }
 

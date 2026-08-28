@@ -10,11 +10,14 @@ from app.services.claude_service import claude_service
 from app.services.research_scout_service import ResearchScoutService
 from app.services.finance_analyst_service import FinanceAnalystService
 from app.services.quickbooks_financial_service import quickbooks_financial_service
+from app.services.scenario_lab_prompt import get_scenario_lab_prompt
+from app.services.orchestrator_prompt import get_orchestrator_prompt
+
 
 class OrchestratorService:
     """
-    Orchestrator agent that coordinates scenario planning workflow.
-    Classifies scenario type, calls Research Scout for priors, and Finance Analyst for KPIs.
+    Main Orchestrator Service.
+    Coordinates between Research Scout, Finance Analyst, and Claude.
     """
     
     def __init__(self):
@@ -121,131 +124,10 @@ class OrchestratorService:
         return response
 
     async def render_business_health(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-
-        system_prompt = """
-        You are LightSignal Orchestrator in Business Health mode.
-
-        Your role:
-        Generate Business Health narrative output from structured business health payloads.
-
-        CRITICAL RULES
-        - Never invent numbers, entities, metrics, causes, percentages, dates, invoices, vendors, customers, products, locations, or facts.
-        - Use ONLY information present in the payload.
-        - Use plain-English owner-facing language.
-        - Be specific and consequence-oriented.
-        - No generic business advice.
-        - Do not mention internal scoring systems.
-        - If data is incomplete, acknowledge it naturally.
-
-        AI SUMMARY RULES
-
-        - Must be exactly 2 sentences.
-        - Must create a narrative arc.
-        - Must not restate the score.
-        - Must not mention specific customers, vendors, invoices, products, locations, or named entities.
-        - Vocabulary should match the business classifier dimensions.
-        - Focus on overall business situation and trajectory.
-
-        DRIVERS / DRAGS RULES
-
-        - Description is diagnosis only.
-        - recommended_action is action only.
-        - Description and recommended_action must not overlap.
-        - Use specific named entities whenever available in payload.
-        - Include quantified magnitude whenever available.
-        - Explain why the metric matters operationally.
-        - recommended_action must contain decision criteria and timing.
-
-        WATCH AREA RULES
-
-        - Must contain title, description, possible_causes, and recommended_action.
-        - Description must explain trajectory and consequence.
-        - possible_causes must come only from watch_area_investigations.
-        - Empty possible_causes is allowed.
-        - recommended_action must be specific and time-bound.
-
-        ACTIVE ALERT RULES
-
-        - Active alerts represent hard threshold crossings only.
-        - Must contain description, urgency_context, and recommended_action.
-        - urgency_context explains why immediate attention is required.
-        - Active alerts may be empty.
-
-        OUTPUT FORMAT RULES
-
-        - Return valid JSON only.
-        - Do not return markdown.
-        - Do not return explanations outside JSON.
-
-        OUTPUT FORMAT — STRICT JSON ONLY
-
-        {
-        "intent": "render_business_health",
-        "as_of": "<ISO timestamp>",
-
-        "overall_label": "top_tier|above_average|at_average|below_average|critical",
-
-        "ai_summary": "2 sentence business narrative summary.",
-
-        "category_labels": {
-            "financial": "",
-            "operational": "",
-            "customer": "",
-            "risk": "",
-            "growth": ""
-        },
-
-        "drivers_display": {
-            "positives": [
-            {
-                "headline": "",
-                "description": "",
-                "recommended_action": "",
-                "points": 0
-            }
-            ],
-
-            "drags": [
-            {
-                "headline": "",
-                "description": "",
-                "recommended_action": "",
-                "points": 0
-            }
-            ]
-        },
-
-        "watch_areas": [
-            {
-            "title": "",
-            "description": "",
-            "possible_causes": [
-                {
-                "cause": "",
-                "evidence": "",
-                "source_url": ""
-                }
-            ],
-            "recommended_action": ""
-            }
-        ],
-
-        "active_alerts": [
-            {
-            "alert_id": "",
-            "description": "",
-            "urgency_context": "",
-            "recommended_action": ""
-            }
-        ],
-
-        "data_coverage_note": "",
-
-        "ai_confidence": 0.0
-        }
-
-        JSON only.
         """
+        Generate Business Health narrative output using Canonical Orchestrator v3.7 (HEALTH NARRATIVE MODE).
+        """
+        system_prompt = get_orchestrator_prompt()
 
         classifier_output = await self.get_classifier_output(payload.get("user_id"))
         watch_area_investigations = []

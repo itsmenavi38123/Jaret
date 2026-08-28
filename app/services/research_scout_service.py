@@ -7,12 +7,14 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 import json
 import os
+import re
 from app.services.tagging_service import tagging_service
 from app.services.claude_service import claude_service
 from app.services.research_scout_tools import (
     firecrawl_search_tool,
     firecrawl_scrape_tool,
 )
+from app.services.research_scout_prompt import get_research_scout_prompt
 from app.services.lightsignal_memory_tool import LightSignalMemoryTool, LightSignalAsyncMemoryTool
 
 class ResearchScoutService:
@@ -282,262 +284,17 @@ class ResearchScoutService:
             firecrawl_scrape_tool,
         ]
 
-        # Build system prompt using the user-provided template
-        # We inject the known profile data directly so the model doesn't need to fetch it.
-        system_prompt = f"""You are LightSignal Research Scout, the intelligence wing of LightSignal.
-Your mission: deliver decision-grade, structured JSON that combines:
 
-- a current market/region digest, and
-- a personalized opportunity feed (events, RFPs, grants, partnerships, listings, promo windows) for any business type,
+        system_prompt = get_research_scout_prompt()
 
-with:
-- fit scoring,
-- weather badges (for in-person outdoor events when relevant),
-- ROI estimates,
-- clear, prioritized recommendations,
-- an optional Ops Plan that includes how much to prepare (units, staffing, budgets),
-- a short pros/cons view for the best opportunities, and
-- simple industry benchmarks and “what top operators are doing” insights.
-
-Every claim must be grounded in real data. No invented events, RFPs, or benchmarks.
-
-🧰 TOOLS
-
-- firecrawl_search(query, recency_days, max_results)
-  → Use for all live web research (events, RFPs, grants, partnerships, benchmarks, peer practices).
-
-- firecrawl_scrape(url)
-  → Use when the model needs page content from a specific URL to verify details, providers, or source information.
-
-- getWeather(lat, lng, date)
-  → Use only for weather-sensitive businesses or clearly outdoor, in-person events to set event weather_badge based on forecast. Return full Open-Meteo weather data whenever possible.
-
-🧩 INPUTS
-
-- User Query: "{query}"
-- Business Profile: {json.dumps(scope, default=str)}
-- Opportunities Profile: {json.dumps(opportunities_profile, default=str) if opportunities_profile else "None"}
-
-(Note: Profiles are already provided above, no need to fetch).
-
-🌐 WEB RESEARCH & BENCHMARKS
-
-Use firecrawl_search to:
-
-- Find specific opportunities:
-  - Events, markets, tournaments, expos
-  - RFPs (city/state/federal portals)
-  - Grants/incentives
-  - Partner/vendor listings
-  - Supplier programs
-  - Training/certifications
-
-- Find benchmarks & peer practices:
-  - Typical margins, revenue per event or job, close rates, utilization, ticket sizes (when available).
-  - “What successful [industry] operators do” (e.g., playbooks, best-practice articles, case studies).
-
-Use firecrawl_scrape when a specific link needs deeper content extraction for accuracy or source validation.
-
-Populate:
-- benchmarks[] with simple numeric or directional benchmarks.
-- digest.opportunities and advisor.actions with “what top performers are doing that this business could emulate.”
-
-🧱 OUTPUT FORMAT — STRICT JSON ONLY
-
-Return one object shaped as:
-
-{{
-  "query": "original user text",
-  "scope": {{
-    "company_id": "string",
-    "industry": "string",
-    "naics": "string|null",
-    "location": {{"city":"", "state":"", "lat":0, "lng":0}},
-    "business_classifications": ["solo_operator","food_hospitality"],
-    "radius_miles": 0,
-    "window_days": 0,
-    "types": ["event","rfp","grant","partnership","listing","training"],
-    "mode": "demo|live"
-  }},
-  "digest": {{
-    "demand": ["recent, factual bullet", "..."],
-    "competition": ["density, notable players, channel mix", "..."],
-    "labor": {{
-      "wage_range_hour": [0,0],
-      "availability_note": "short",
-      "licensing": "short"
-    }},
-    "costs": {{
-      "rent_note": "short",
-      "insurance_note": "short",
-      "materials_or_inputs_note": "short",
-      "tax_or_fee_note": "short"
-    }},
-    "seasonality": "one line",
-    "regulatory": ["permits/rules worth knowing", "..."],
-    "customer_profile": ["demographic/segment note", "..."],
-    "risks": ["cost/labor/regulatory/volatility", "..."],
-    "opportunities": ["growth vectors, incentives, channels, what top performers are doing", "..."]
-  }},
-  "opportunities": {{
-    "kpis": {{
-      "active_count": 0,
-      "potential_value": 0,
-      "avg_fit_score": 0.0,
-      "event_readiness": 0.0
-    }},
-    "cards": [
-      {{
-        "title": "string",
-        "type": "event|rfp|grant|partnership|listing|training",
-        "date": "YYYY-MM-DD",
-        "deadline": "YYYY-MM-DD|null",
-        "location": {{"city":"", "state":"", "lat":0, "lng":0}},
-        "est_revenue": 0,
-        "cost": 0,
-        "roi_est": 0.0,
-        "fit_score": 0,
-        "confidence": 0.0,
-        "weather_badge": "good|mixed|poor|null",
-        "link": "https://provider/item",
-        "provider": "eventbrite|sam_gov|grants_gov|city_portal|trade_site|…",
-        "source_id": "stable id",
-        "notes": "1 short line",
-        "pros": ["short upside bullets"],
-        "cons": ["short downside/risks bullets"]
-      }}
-    ],
-    "advisor": {{
-      "summary": "1–2 sentences that synthesize what to do now.",
-      "actions": [
-        {{"title":"Do X","impact":"$ or % or qualitative","deadline":"YYYY-MM-DD","reason":"short"}},
-        {{"title":"Do Y","impact":"…","deadline":"…","reason":"…"}}
-      ],
-      "risks": [
-        {{"level":"low|med|high","message":"short, practical"}}
-      ]
-    }},
-    "ops_plan": {{
-      "applicable_to": "event|rfp|grant|partnership|null",
-      "assumptions": {{
-        "expected_attendance": 0,
-        "conversion_rate": 0.0,
-        "avg_order_value_or_ticket": 0.0,
-        "service_hours": 0,
-        "units_per_hour_capacity": 0
-      }},
-      "recommendations": {{
-        "units_to_prepare": {{"item":"qty"}},
-        "staffing": {{"crew": 0, "shifts": 0}},
-        "prep_budget": 0,
-        "fee_or_booth_budget": 0,
-        "checklist": ["permit/insurance","power/water","POS/float","backup plan"]
-      }},
-      "explain": "Plain-English derivation of quantities, staffing, and budgets for the selected high-fit opportunity."
-    }}
-  }},
-  "benchmarks": [
-    {{
-      "metric": "gross_margin|revenue_per_event|close_rate|other",
-      "peer_median": 0.00,
-      "region": "state/metro/online",
-      "sample_note": "cohort note or source summary"
-    }}
-  ],
-  "so_what": "Executive implication in 1–2 sentences.",
-  "sources": [
-    {{"title":"Source/Report","url":"https://…","date":"YYYY-MM-DD","note":"what this supports"}}
-  ]
-}}
-
-🧮 SCORING & LOGIC
-
-Fit score (0–100) = industry match (+30) + region/radius (+20) + affordability vs cash/runway (+20, if profile provides it, otherwise 0) + seasonality/demand (+15) + peer/ROI context (+15).
-
-ROI estimate when both est_revenue and cost exist:
-(est_revenue - cost) / max(1, cost).
-
-Weather badge (events only, via getWeather):
-- good if precip <20%, wind <15 mph, temp 55–85°F;
-- mixed if precip <50% or wind 15–25 mph;
-- else poor.
-
-Ops Plan:
-- Include for high-fit opportunities (fit_score ≥ 70) or when the user hints at attendance/sales prep.
-- Use profile AOV/capacity and any event details to estimate units_to_prepare, staffing, and budgets.
-- State key assumptions under ops_plan.assumptions.
-- Make sure the ops_plan clearly answers: “How much should we prepare for this opportunity?” and “What are the tradeoffs?”
-
-Business classifications influence scoring priority.
-
-Examples:
-- food_hospitality boosts events and food grants
-- solo_operator suppresses large RFPs
-- established_smb boosts supplier diversity and large contracts
-- product_business boosts retail placements
-- service_business suppresses shelf-placement opportunities
-
-Use provided business_classifications when ranking opportunities.
-
-⚙️ BEHAVIOR RULES
-
-- Use firecrawl_search for:
-  • opportunities (events, RFPs, grants, partnerships, listings, training), and
-  • benchmarks & peer practices.
-- Use firecrawl_scrape when a referenced URL requires deeper content extraction for accuracy or source validation.
-- Vary sources by type (event platforms, city calendars, SAM.gov/grants.gov/state portals, trade associations, marketplaces, vendor/franchise listings, certification/training registries, industry reports).
-- Always include 3–8 sources with valid titles + URLs + dates.
-- If nothing is found, return empty cards with an advisor that explains why and suggests new filters (change dates/types/radius, try different channels).
-- No fabrication. If an estimate leverages assumptions, include them under ops_plan.assumptions and keep the note short.
-- JSON only (no Markdown, no prose outside fields). Keep it concise and owner-friendly.
-
-🧪 DEMO vs LIVE
-
-- mode=demo: you may use conservative ranges and generic providers but still return real, current examples when possible. Mark assumptions clearly.
-- mode=live: strictly current items only; prefer official portals/providers.
-- Use actual values from provided business profile scope. Schema values are examples only.
-✅ QUALITY CHECK BEFORE RETURN
-
-- All top-level keys present (query, scope, digest, opportunities, benchmarks, so_what, sources).
-- cards[].link are valid URLs; date/deadline ISO; numbers are numbers.
-- advisor.summary is actionable and specific.
-- If weather used, weather_badge is set and justified by forecast.
-- benchmarks[] is populated with at least 1–3 meaningful metrics where possible.
-
-ASSUMPTION RULES (IMPORTANT)
-
-When estimating revenue, conversion rates, attendance, units to prepare, or staffing:
-
-- Use INDUSTRY-REALISTIC RANGES ONLY.
-- If no real data exists, choose the *LOW end of national ranges*.
-- ALWAYS state the assumption under ops_plan.assumptions.
-
-Conversion Rate Rules:
-- Food trucks / mobile food vendors:
-    Typical: 6–15% of total attendees.
-    Strong alignment: max 20%.
-    Absolute ceiling: 25% (never exceed).
-- Fitness, gyms, martial arts events:
-    Conversion of attendees to buyers: 1–4%.
-- HVAC / contractors / B2B services (RFPs):
-    Lead → proposal: 10–20%
-    Proposal → win: 20–40%
-- Retail pop-ups:
-    Foot traffic → buyers: 4–12%
-- Online / digital leads:
-    Traffic → lead: 1–3%
-    Lead → purchase: 5–20%
-
-If the model cannot estimate with confidence:
-- Use the LOWEST tier.
-- Document the assumption clearly.
-
-NEVER use optimistic or invented conversion rates.
-NEVER exceed known industry ceilings.
-NEVER estimate event revenue without stating conversion_rate and attendance explicitly.
-"""
-
-        messages = [{"role": "system", "content": system_prompt}]
+        user_payload = {
+            "mode": "opportunity_discovery",
+            "query": query,
+            "business_profile": business_profile or scope,
+            "opportunities_profile": opportunities_profile,
+            "scope": scope,
+        }
+        user_content_str = json.dumps(user_payload, default=str)
         
         # Initial call
         response = await claude_service.tool_runner(
@@ -545,7 +302,13 @@ NEVER estimate event revenue without stating conversion_rate and attendance expl
             messages=[
                 {
                     "role": "user",
-                    "content": query,
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": user_content_str,
+                            "cache_control": {"type": "ephemeral"}
+                        }
+                    ],
                 }
             ],
             tools=tools,
@@ -560,62 +323,84 @@ NEVER estimate event revenue without stating conversion_rate and attendance expl
                 final_content += block.text
             
         # Parse JSON
+        parsed = None
         try:
-            parsed = json.loads(final_content)
-            if parsed.get("opportunities") and parsed["opportunities"].get("cards"):
+            cleaned = final_content.strip()
+            cleaned = re.sub(r"^```json\s*", "", cleaned)
+            cleaned = re.sub(r"^```\s*", "", cleaned)
+            cleaned = re.sub(r"\s*```$", "", cleaned)
+            cleaned = cleaned.strip()
 
-                business_tags = scope.get("business_tags", [])
+            start = cleaned.find("{")
+            end = cleaned.rfind("}") + 1
+            if start != -1 and end != -1:
+                cleaned = cleaned[start:end]
 
-                for card in parsed["opportunities"]["cards"]:
+            parsed = json.loads(cleaned)
+        except Exception as e:
+            print(f"Failed to parse Claude JSON response from tool_runner: {e}. Trying json_completion fallback...")
+            try:
+                parsed = await claude_service.json_completion(
+                    system_prompt=system_prompt,
+                    user_content=user_payload,
+                    temperature=0.2,
+                    max_tokens=4000,
+                )
+            except Exception as fb_err:
+                print(f"Fallback json_completion also failed: {fb_err}")
+                raise ValueError("Invalid JSON response from Claude")
 
-                    metadata = tagging_service.extract_full_opportunity_metadata(
-                        title=card.get("title", ""),
-                        notes=card.get("notes", ""),
-                        opportunity_type=card.get("type", ""),
-                    )
-
-                    opportunity_tags = metadata.get("opportunity_tags", [])
-
-                    card["opportunity_tags"] = opportunity_tags
-                    card["business_tags"] = business_tags
-                    card["event_prestige_tier"] = metadata.get("event_prestige_tier")
-                    card["event_audience"] = metadata.get("event_audience")
-                    card["event_service_fit"] = metadata.get("event_service_fit", [])
-                    card["business_classifications"] = scope.get("business_classifications",[],)
-                    card["service_model"] = scope.get("service_model")
-                    card["price_tier"] = scope.get("price_tier")
-                    card["audience"] = scope.get("audience")
-                    card["proven_capabilities"] = scope.get("proven_capabilities", [])
-                    card["historical_outcomes"] = scope.get("historical_outcomes", [])
-                    card["cash_balance"] = scope.get("cash_balance", 0)
-                    card["outstanding_ar"] = scope.get("outstanding_ar", [])
-                    card["runway_trend"] = scope.get("runway_trend", "stable")
-
-                    card["demand_strain_next_30d"] = scope.get("demand_strain_next_30d")
-                    card["demand_strain_next_60d"] = scope.get("demand_strain_next_60d")
-                    card["demand_strain_next_90d"] = scope.get("demand_strain_next_90d")
-                    card["latest_demand_forecast"] = scope.get("latest_demand_forecast")
-
-                    card["permits_and_licenses"] = scope.get("permits_and_licenses", [])
-
-                    card["industry_jaccard_score"] = tagging_service.calculate_jaccard_similarity(
-                        business_tags,
-                        opportunity_tags,
-                    )
-
-                    card["adjacent_match"] = tagging_service.has_adjacent_match(
-                        business_tags,
-                        opportunity_tags,
-                    )
-
-            max_cards = 8 if scope.get("run_type") == "on_demand" else 12
-            if ( parsed.get("opportunities") and parsed["opportunities"].get("cards") ):
-                parsed["opportunities"]["cards"] = (parsed["opportunities"]["cards"][:max_cards])
-            return parsed
-        
-        except json.JSONDecodeError:
-            print("Failed to parse Claude JSON response")
+        if not parsed or not isinstance(parsed, dict):
             raise ValueError("Invalid JSON response from Claude")
+
+        if parsed.get("opportunities") and parsed["opportunities"].get("cards"):
+            business_tags = scope.get("business_tags", [])
+
+            for card in parsed["opportunities"]["cards"]:
+                metadata = tagging_service.extract_full_opportunity_metadata(
+                    title=card.get("title", ""),
+                    notes=card.get("notes", ""),
+                    opportunity_type=card.get("type", ""),
+                )
+
+                opportunity_tags = metadata.get("opportunity_tags", [])
+
+                card["opportunity_tags"] = opportunity_tags
+                card["business_tags"] = business_tags
+                card["event_prestige_tier"] = metadata.get("event_prestige_tier")
+                card["event_audience"] = metadata.get("event_audience")
+                card["event_service_fit"] = metadata.get("event_service_fit", [])
+                card["business_classifications"] = scope.get("business_classifications", [])
+                card["service_model"] = scope.get("service_model")
+                card["price_tier"] = scope.get("price_tier")
+                card["audience"] = scope.get("audience")
+                card["proven_capabilities"] = scope.get("proven_capabilities", [])
+                card["historical_outcomes"] = scope.get("historical_outcomes", [])
+                card["cash_balance"] = scope.get("cash_balance", 0)
+                card["outstanding_ar"] = scope.get("outstanding_ar", [])
+                card["runway_trend"] = scope.get("runway_trend", "stable")
+
+                card["demand_strain_next_30d"] = scope.get("demand_strain_next_30d")
+                card["demand_strain_next_60d"] = scope.get("demand_strain_next_60d")
+                card["demand_strain_next_90d"] = scope.get("demand_strain_next_90d")
+                card["latest_demand_forecast"] = scope.get("latest_demand_forecast")
+
+                card["permits_and_licenses"] = scope.get("permits_and_licenses", [])
+
+                card["industry_jaccard_score"] = tagging_service.calculate_jaccard_similarity(
+                    business_tags,
+                    opportunity_tags,
+                )
+
+                card["adjacent_match"] = tagging_service.has_adjacent_match(
+                    business_tags,
+                    opportunity_tags,
+                )
+
+        max_cards = 8 if scope.get("run_type") == "on_demand" else 12
+        if parsed.get("opportunities") and parsed["opportunities"].get("cards"):
+            parsed["opportunities"]["cards"] = parsed["opportunities"]["cards"][:max_cards]
+        return parsed
 
     async def _get_weather_badge(
         self,
@@ -997,8 +782,53 @@ Return JSON with trends array:
         Returns:
             Impact stats dictionary
         """
-        # Placeholder for now, can be expanded with AI lookup
         return {
             "avg_impact": 0.0,
             "confidence": 0.5
         }
+
+    async def investigate_watch_area(
+        self,
+        pattern: Dict[str, Any],
+        business_context: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """
+        Investigate a business pattern using Canonical Research Scout (MODE 2: WATCH AREA INVESTIGATION).
+        Searches web/weather to find grounded real-world causes backed by evidence and URLs.
+        """
+        system_prompt = get_research_scout_prompt()
+        
+        try:
+            return await claude_service.json_completion(
+                system_prompt=system_prompt,
+                user_content={
+                    "mode": "watch_area_investigation",
+                    "pattern": pattern,
+                    "business_context": business_context,
+                },
+                temperature=0.2,
+                max_tokens=4000,
+            )
+        except Exception as e:
+            print(f"Watch area investigation failed: {e}")
+            return {
+                "mode": "watch_area_investigation",
+                "pattern": pattern,
+                "possible_causes": [],
+                "search_summary": {
+                    "queries_run": [],
+                    "sources_consulted": [],
+                    "weather_checked": False,
+                    "no_findings_explanation": f"Investigation could not complete: {e}"
+                },
+                "investigation_metadata": {
+                    "investigation_id": "fallback",
+                    "pattern_type": "internal_only",
+                    "is_internal_pattern": True
+                }
+            }
+
+
+# Singleton instance
+research_scout_service = ResearchScoutService()
+

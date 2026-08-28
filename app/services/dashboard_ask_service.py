@@ -8,16 +8,20 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 import re
+import json
 
 from app.db import get_collection
 from app.services.claude_service import claude_service
 from app.services.quickbooks_financial_service import quickbooks_financial_service
 
 
+from app.services.orchestrator_prompt import get_orchestrator_prompt
+
+
 class DashboardAskService:
     """
     Whole-business Ask AI Advisor.
-    Acts as a $500/hr, 30-year-tenured business advisor with full platform knowledge.
+    Powered by Canonical Orchestrator v3.7 (ASK MODE).
     """
 
     def __init__(self):
@@ -35,8 +39,8 @@ class DashboardAskService:
         chat_history: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
         """
-        Processes a user question with Claude, incorporates financial context,
-        and saves the turn to MongoDB.
+        Processes a user question with Claude using Canonical Orchestrator v3.7 ASK MODE,
+        incorporates financial context, and saves the turn to MongoDB.
         """
         # Fetch baseline financial metrics for context
         try:
@@ -51,26 +55,22 @@ class DashboardAskService:
         business_name = onboarding_data.get("company_name") or onboarding_data.get("business_name") or "Your Business"
         industry = onboarding_data.get("industry") or onboarding_data.get("industry_description") or "General Business"
 
-        # System prompt following Dashboard Ask AI spec
-        system_prompt = f"""You are LightSignal's Ask AI Advisor — a $500/hr, 30-year-tenured advisor who has known this owner's business ({business_name}, Industry: {industry}) for decades.
-
-BUSINESS REALITY & FINANCIAL CONTEXT (Grounded data):
-- Revenue MTD: ${kpis_data.get('revenue_mtd', 0):,.2f}
-- Net Margin: {kpis_data.get('net_margin_pct', 0) * 100:.1f}%
-- Cash Balance: ${kpis_data.get('cash', 0):,.2f}
-- Cash Runway: {kpis_data.get('runway_months', 0):.1f} months
-
-CORE ADVISOR RULES:
-1. Whole-Business Perspective: Answer questions through a practical business owner lens. Synthesize financial, operational, demand, and risk factors into ONE clear, advisor-grade answer.
-2. Complete & Anticipatory: Provide who/what/when/why/how-much in your response. Never leave the owner guessing.
-3. Concise & Glance-Appropriate: Keep responses short-to-medium (2-4 clear paragraphs/bullets maximum). Concise full answer, not a shallow one.
-4. Relevance Guard: If a question is completely unrelated to business operations ("should I use wipes today?"), respond briefly: "How does that relate to your business?"
-5. Grounded & Anti-Hallucination: Use the business context provided. Do not fabricate facts or numbers.
-6. Optional Explore Pointer: When relevant, end with one optional closing line inviting them to explore ongoing tracking (e.g. "For the ongoing view on this, check the Financial Overview tab.").
-"""
+        # Canonical Orchestrator System Prompt (ASK MODE)
+        system_prompt = get_orchestrator_prompt()
 
         # Format user message content including conversation history if available
         formatted_messages = []
+        context_payload = {
+            "mode": "ask",
+            "business_context": {
+                "business_name": business_name,
+                "industry": industry,
+                "profile": profile_doc,
+                "kpis": kpis_data,
+            }
+        }
+        formatted_messages.append(f"[CONTEXT PAYLOAD]: {json.dumps(context_payload, default=str)}")
+        
         if chat_history:
             for item in chat_history[-6:]:  # Keep last 6 turns for context
                 role = item.get("role") or item.get("sender")

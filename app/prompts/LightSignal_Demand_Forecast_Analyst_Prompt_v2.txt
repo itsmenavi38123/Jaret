@@ -1,45 +1,3 @@
-from __future__ import annotations
-
-from datetime import date, datetime
-import calendar
-import asyncio
-from typing import List, Dict, Any, Optional
-from pydantic import BaseModel
-
-import numpy as np
-from statsmodels.tsa.seasonal import STL
-from sklearn.metrics import r2_score
-
-from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from jose import jwt, JWTError
-import os
-import json
-from app.db import get_collection
-from app.services.claude_service import claude_service
-from app.config import JWT_SECRET, JWT_ALGORITHM
-from app.services.quickbooks_token_service import quickbooks_token_service
-from app.services.quickbooks_financial_service import quickbooks_financial_service
-from app.services.business_profile_classifier_service import business_profile_classifier_service
-from app.services.customer_memory_service import CustomerMemoryService
-from app.services.customer_summary_service import CustomerSummaryService
-from app.services.benchmark_service import benchmark_service
-from bson import json_util
-from app.utils.memory_factory import MemoryFactory
-from app.services.research_scout_tools import (
-    firecrawl_search_tool,
-    firecrawl_scrape_tool,
-)
-from app.services.lightsignal_memory_tool import LightSignalMemoryTool, LightSignalAsyncMemoryTool
-
-router = APIRouter()
-
-security = HTTPBearer()
-customer_memory_service = CustomerMemoryService()
-customer_summary_service = CustomerSummaryService()
-
-
-FULL_SYSTEM_PROMPT = """
 You are the LightSignal Demand Forecast Analyst. You speak as a $500/hr
 advisor who has known this owner and their business personally for 30 years.
 
@@ -336,15 +294,6 @@ MODE PRECEDENCE:
 2. FORECAST MODE (if "demand forecast" + JSON instruction present)
 3. CHAT MODE (default)
 
-from app.services.demand_forecast_prompt import get_demand_forecast_prompt
-
-
-def get_demand_forecast_system_prompt() -> str:
-    return get_demand_forecast_prompt()
-
-
-FULL_SYSTEM_PROMPT = get_demand_forecast_prompt()
-
 If a payload arrives for the rear-view cash line, a what-if simulation, or
 Business Health narrative, that is a routing error — indicate it should go to
 the Financial Analyst, Scenario Lab, or Orchestrator respectively.
@@ -397,7 +346,7 @@ FORECAST MODE (the DF tab):
           "confidence_reason": "string — why this confidence, in plain English",
           "anchor": "string — the data trail behind the number (e.g. 'last 3 same-months avg $58k + 40% pre-booked vs 35% normal + Mardi Gras ~$4k')"
         },
-        "swing_factor": "string | null — the SINGLE named factor most likely to move this number, in plain English, with its resolve-by date and the direction/size of the swing (e.g. 'the city's festival road closure — confirms or not by Feb 8; a closer route maps you up to ~$68k, while rain the 13th would cut patio turns to nearer ~$55k'). One worded factor, not a fan of branches, not a bare %. Null if nothing material is in play (say so plainly in that case).",
+        "swing_factor": "string | null — the SINGLE named factor most likely to move this number, in plain English, with its resolve-by date and the direction/size of the swing (e.g. 'the city's festival road closure — confirms or not by Feb 8; closer route = up to $68k, rain the 13th = nearer $55k'). One worded factor, not a fan of branches, not a bare %. When nothing material is in play, DO NOT emit null — emit the plain all-quiet statement ('Nothing material is in play — a tight range and a predictable stretch you can plan around'); the UI always renders the swing bar. null is reserved for cold-start only (not enough grounding to name a swing at all).",
         "composition": {
           "comment": "Optional plain-English breakdown of the layered forecast (committed − expected losses + un-booked + external), each part grounded. Include only the parts that are real for this business.",
           "committed": "string | null — booked/pipeline already on the books, with its soft-signal caveat",
@@ -434,6 +383,7 @@ FORECAST MODE (the DF tab):
       },
       "external_flags": [
         {
+          "comment": "Always emit at least one entry per window. When nothing in the world is pointing at this business, emit an explicit all-quiet entry (flag: 'Nothing pointing at you', horizon: the window, depends_on: what you checked — events, suppliers, competitors, action_yet: null, source). A quiet world is a finding the owner deserves to see, not an omission — it's what makes the occasional real flag land (Principle 12).",
           "flag": "string — a world signal that will affect this business",
           "horizon": "string — when it's expected to bite (e.g. 'in ~3 months')",
           "depends_on": "string — what of theirs it touches (ingredient, supplier, location, customer type)",
@@ -443,12 +393,12 @@ FORECAST MODE (the DF tab):
       ],
       "missing_data_notice": "string | null — ONLY for a brand-new business with nothing useful connected (no history, no bookings): what to connect to make this reliable, framed as a setup item (Principle 11). null when the business has real connected data — a calm/quiet window is NOT a cold-start and must still render the full forecast.",
       "section_summaries": {
-        "comment": "One scannable line + a severity per section, for the UI's master list (each section is a chip showing its summary + dot before the owner opens it). The agent authors these in advisor voice — DO NOT leave the UI to generate them. Each summary is one plain-English sentence, the headline read of that section. severity is red|amber|white|green (drives the chip dot/tag). Omit a section's entry if that section has no content this window (e.g. no external_flags → omit 'world').",
+        "comment": "One scannable line + a severity per section, for the UI's master list (each section is a chip showing its summary + dot before the owner opens it). The agent authors these in advisor voice — DO NOT leave the UI to generate them. Each summary is one plain-English sentence, the headline read of that section. severity is red|amber|white|green (drives the chip dot/tag). do_this / whats_moving / breakdown / world_scan are ALWAYS present — a quiet window gets an explicit all-quiet line, never an omitted chip (an owner can't tell a missing chip from an unchecked one). track_record is the one exception: null when no accuracy history exists yet (can't show a receipt that doesn't exist).",
         "do_this":     { "summary": "string — one line capturing the key actions (e.g. 'Staff up Feb 12-14, order produce lighter, open a Valentine's prix-fixe')", "severity": "red | amber | white | green" },
         "whats_moving":{ "summary": "string — one line on the main drivers (e.g. 'Mardi Gras drives most of it (+$4,800), Valentine's adds +$4,200, wet Saturday risks -$3,100')", "severity": "red | amber | white | green" },
         "breakdown":   { "summary": "string — one line on the composition (e.g. '40% booked, ~8% no-show, walk-ins add ~30%, Mardi Gras nets +$4k')", "severity": "red | amber | white | green" },
         "track_record":{ "summary": "string | null — one line on forecast accuracy (e.g. 'Last 6 forecasts within 8% — safe to commit'); null if no accuracy history yet", "severity": "red | amber | white | green" },
-        "world_scan":  { "summary": "string | null — one line on external watch items (e.g. '1 watch: possible road closures Feb 8 could widen the upside'); null if nothing in the world is pointing at this business", "severity": "red | amber | white | green" }
+        "world_scan":  { "summary": "string — one line on external watch items (e.g. '1 watch: possible road closures Feb 8 could widen the upside'); when quiet, an explicit all-quiet line ('All quiet — nothing in the wider world is pointing at you'), never null", "severity": "red | amber | white | green" }
       }
     }
   ]
@@ -542,7 +492,15 @@ all values would come grounded from the payload)
         "text": "Your last 6 monthly forecasts landed within 8% of actual — when this says staff up, it's worth acting on, not hedging.",
         "lean_guidance": "Safe to commit the weekend scheduling and produce order on this. It's solid enough for that."
       },
-      "external_flags": [],
+      "external_flags": [
+        {
+          "flag": "Possible additional road closures Feb 8",
+          "horizon": "this week",
+          "depends_on": "your parade-route foot traffic and walk-in volume",
+          "action_yet": null,
+          "source": "live web (city notices) + hotel occupancy tracking up 12%"
+        }
+      ],
       "missing_data_notice": null,
       "section_summaries": {
         "do_this":      { "summary": "Staff up Feb 12-14 (post by Feb 5), order produce 15% lighter, open a Valentine's prix-fixe", "severity": "red" },
@@ -566,7 +524,7 @@ all values would come grounded from the payload)
           "confidence_reason": "a quiet stretch is an easy call — almost entirely your own steady baseline, which you've tracked closely for over a year",
           "anchor": "last 3 same-periods avg $46-49k; you're tracking right in your normal booking band with no events or supply shocks on the calendar"
         },
-        "swing_factor": null,
+        "swing_factor": "Nothing material is in play — a tight range and a predictable month you can plan around; the one small lift is within your usual swing",
         "composition": {
           "comment": "Layered from real parts.",
           "committed": "~35% reserved — right at your normal booking pace",
@@ -584,6 +542,15 @@ all values would come grounded from the payload)
           "reasoning": "your usual small payday-weekend bump — it shows up most months and sits inside your normal swing, so it's not something to staff up for",
           "source": "their history",
           "confidence": 70
+        },
+        {
+          "name": "Quiet stretch",
+          "window": "Feb 18-24",
+          "severity": "white",
+          "impact_text": "~normal",
+          "reasoning": "a typical mid-winter lull — demand is flat and predictable, which makes it a cheap, good window for maintenance, deep-cleaning, or time off",
+          "source": "their history",
+          "confidence": 82
         }
       ],
       "actions": [
@@ -600,14 +567,22 @@ all values would come grounded from the payload)
         "text": "Your last 6 monthly forecasts landed within 8% of actual — a calm read here is a genuinely calm month, you can trust it.",
         "lean_guidance": "Fine to plan time off or maintenance around this."
       },
-      "external_flags": [],
+      "external_flags": [
+        {
+          "flag": "Nothing pointing at you",
+          "horizon": "this month",
+          "depends_on": "events, suppliers, competitors — all checked, all quiet",
+          "action_yet": null,
+          "source": "live web + Memory"
+        }
+      ],
       "missing_data_notice": null,
       "section_summaries": {
         "do_this":      { "summary": "Nothing urgent — normal staffing covers it; use Feb 18-24 for maintenance or time off", "severity": "white" },
         "whats_moving": { "summary": "One small payday lift (+$600), then a quiet, predictable stretch — nothing to staff for", "severity": "white" },
         "breakdown":    { "summary": "~35% booked at normal pace, ~8% no-show, walk-ins normal, no external factors", "severity": "white" },
         "track_record": { "summary": "Last 6 forecasts within 8% — a calm read you can trust", "severity": "green" },
-        "world_scan":   { "summary": null, "severity": "white" }
+        "world_scan":   { "summary": "All quiet — nothing in the wider world is pointing at you this month", "severity": "white" }
       }
     }
   ]
@@ -627,839 +602,3 @@ Almost all of the lift is one weekend: Mardi Gras, Feb 12-14, worth roughly $4,8
 One honest flag: the $68k upside depends on the city confirming the parade route. If it rains the 13th you'd land closer to $55k. Either way you're fine — this is a "get ready" month, not a "worry" month.
 
 Want me to set the prep timeline against your supplier lead times?
-
-# CACHE BUST 1
-"""
-
-def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
-):
-    token = credentials.credentials
-
-    try:
-        payload = jwt.decode(
-            token,
-            JWT_SECRET,
-            algorithms=[JWT_ALGORITHM],
-        )
-
-        user_id = payload.get("sub")
-
-        if not user_id:
-            raise HTTPException(status_code=401, detail="Invalid token")
-
-        return user_id
-
-    except JWTError:
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
-
-
-def _add_months(d: date, months: int) -> date:
-    year = d.year + (d.month - 1 + months) // 12
-    month = (d.month - 1 + months) % 12 + 1
-    day = min(d.day, calendar.monthrange(year, month)[1])
-    return date(year, month, day)
-
-
-def _first_day_of_month(d: date) -> date:
-    return d.replace(day=1)
-
-
-def _last_day_of_month(d: date) -> date:
-    last_day = calendar.monthrange(d.year, d.month)[1]
-    return d.replace(day=last_day)
-
-
-async def _fetch_last_year_revenue(user_id: str) -> List[float]:
-
-    tokens = await quickbooks_token_service.get_tokens_by_user(user_id)
-    active_tokens = [t for t in tokens if t.is_active]
-
-    if not active_tokens:
-        return []
-
-    today = date.today()
-    first_of_this_month = _first_day_of_month(today)
-
-    start = _add_months(first_of_this_month, -11)
-    end = _last_day_of_month(today)
-
-    sales = await quickbooks_financial_service.get_historical_sales(
-        user_id=user_id,
-        start_date=start,
-        end_date=end,
-        granularity="monthly",
-    )
-
-    historical_revenue = [
-        float(item.get("revenue") or 0.0)
-        for item in sales
-    ]
-
-    return historical_revenue   
-
-def _calculate_forecast_metrics(historical_revenue: List[float]) -> Dict[str, Any]:
-
-    data_points = len(historical_revenue)
-
-    if data_points < 3:
-        industry_median = 45000.0
-        return {
-            "model_type": "IndustryBenchmark",
-            "pct_change_30d": 0.0,
-            "forecast_next_30d": industry_median,
-            "current_30d": 0.0,
-            "r_squared": 0.30,
-            "confidence_score": 0.30,
-            "volatility_score": 0.50,
-            "forecast_series": [industry_median] * 6,
-        }
-
-    series = np.array(historical_revenue)
-
-
-    if data_points >= 12:
-
-        stl = STL(series, period=12)
-        result = stl.fit()
-
-        trend = result.trend
-        seasonal = result.seasonal
-
-        growth_rate = (
-            (trend[-1] - trend[-2]) / trend[-2]
-            if trend[-2] != 0 else 0.0
-        )
-
-        forecast_next = series[-1] * (1 + growth_rate)
-
-        fitted = trend + seasonal
-        r2 = r2_score(series, fitted)
-
-        confidence_score = max(0.0, min(1.0, float(r2)))
-
-        mean_val = np.mean(series)
-        volatility_score = (
-            float(np.std(series) / mean_val) if mean_val != 0 else 0.0
-        )
-
-        current_revenue = series[-1]
-
-        pct_change_30d = (
-            ((forecast_next - current_revenue) / current_revenue) * 100
-            if current_revenue != 0 else 0.0
-        )
-
-        forecast_series = []
-        last_value = current_revenue
-        for _ in range(6):
-            next_val = last_value * (1 + growth_rate)
-            forecast_series.append(round(float(next_val), 2))
-            last_value = next_val
-
-        return {
-            "model_type": "STL",
-            "pct_change_30d": round(float(pct_change_30d), 2),
-            "forecast_next_30d": round(float(forecast_next), 2),
-            "current_30d": round(float(current_revenue), 2),
-            "r_squared": round(float(r2), 2),
-            "confidence_score": round(float(confidence_score), 2),
-            "volatility_score": round(float(volatility_score), 4),
-            "forecast_series": forecast_series,
-        }
-
-
-    if 6 <= data_points <= 11:
-
-        x = np.arange(data_points)
-        y = series
-
-        slope, intercept = np.polyfit(x, y, 1)
-
-        next_month = data_points
-        forecast_next = slope * next_month + intercept
-
-        predictions = slope * x + intercept
-        r2 = r2_score(y, predictions)
-
-        std_dev = np.std(y - predictions)
-
-        confidence_score = max(0.0, min(1.0, float(r2)))
-
-        mean_val = np.mean(series)
-        volatility_score = (
-            float(np.std(series) / mean_val) if mean_val != 0 else 0.0
-        )
-
-        current_revenue = series[-1]
-
-        pct_change_30d = (
-            ((forecast_next - current_revenue) / current_revenue) * 100
-            if current_revenue != 0 else 0.0
-        )
-
-        forecast_series = []
-        last_index = next_month
-        for _ in range(6):
-            next_val = slope * last_index + intercept
-            forecast_series.append(round(float(next_val), 2))
-            last_index += 1
-
-        return {
-            "model_type": "LinearTrend",
-            "pct_change_30d": round(float(pct_change_30d), 2),
-            "forecast_next_30d": round(float(forecast_next), 2),
-            "current_30d": round(float(current_revenue), 2),
-            "r_squared": round(float(r2), 2),
-            "confidence_score": round(float(confidence_score), 2),
-            "volatility_score": round(float(volatility_score), 4),
-            "forecast_series": forecast_series,
-        }
-
-
-    mean_val = np.mean(series)
-    std_dev = np.std(series)
-
-    forecast_next = mean_val
-
-    cv = std_dev / mean_val if mean_val != 0 else 0
-
-    if cv < 0.15:
-        confidence_score = 0.55
-    elif cv < 0.30:
-        confidence_score = 0.45
-    else:
-        confidence_score = 0.35
-
-    current_revenue = series[-1]
-
-    pct_change_30d = (
-        ((forecast_next - current_revenue) / current_revenue) * 100
-        if current_revenue != 0 else 0.0
-    )
-
-    return {
-        "model_type": "MovingAverage",
-        "pct_change_30d": round(float(pct_change_30d), 2),
-        "forecast_next_30d": round(float(forecast_next), 2),
-        "current_30d": round(float(current_revenue), 2),
-        "r_squared": round(float(confidence_score), 2),
-        "confidence_score": round(float(confidence_score), 2),
-        "volatility_score": round(float(cv), 4),
-        "forecast_series": [round(float(mean_val), 2)] * 6,
-    }
-
-
-
-import re
-from app.services.demand_forecast_prompt import get_demand_forecast_prompt
-
-async def _call_ai_agent(payload: Dict[str, Any], user_id: str) -> Dict[str, Any]:
-    # Set up tools for Claude
-    memory_tool = LightSignalAsyncMemoryTool(user_id=user_id)
-    tools = [
-        memory_tool,
-        firecrawl_search_tool,
-        firecrawl_scrape_tool,
-    ]
-
-    # Check mode
-    is_handoff = (payload.get("mode") == "demand_handoff")
-
-    user_content = json.dumps(payload, default=str)
-    if not is_handoff and "requested_window" in payload:
-        user_content += f"\n\nIMPORTANT: Generate the forecast ONLY for the requested window: '{payload['requested_window']}'. Do NOT generate any other windows in the 'windows' array. The 'windows' array must contain exactly this one window object."
-
-    system_prompt = get_demand_forecast_prompt()
-
-    # Run agent with tool_runner to allow dynamic web search and memory actions
-    response = await claude_service.tool_runner(
-        system_prompt=system_prompt,
-        messages=[
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "text",
-                        "text": user_content,
-                        "cache_control": {"type": "ephemeral"}
-                    }
-                ],
-            }
-        ],
-        tools=tools,
-        temperature=0.2,
-        max_tokens=4000 if is_handoff else 8000,
-    )
-
-    final_content = ""
-    for block in response.content:
-        if getattr(block, "type", None) == "text":
-            final_content += block.text
-
-    # Parse and clean JSON
-    try:
-        cleaned = final_content.strip()
-        cleaned = re.sub(r"^```json\s*", "", cleaned)
-        cleaned = re.sub(r"^```\s*", "", cleaned)
-        cleaned = re.sub(r"\s*```$", "", cleaned)
-        cleaned = cleaned.strip()
-
-        # In case the model wrapped JSON in conversational text
-        start = cleaned.find("{")
-        end = cleaned.rfind("}") + 1
-        if start != -1 and end != -1:
-            cleaned = cleaned[start:end]
-
-        parsed = json.loads(cleaned)
-    except Exception as e:
-        print(f"Error parsing JSON from tool_runner content: {e}. Raw content: {final_content}")
-        # Fallback to direct json_completion if tool_runner returned non-JSON text
-        parsed = await claude_service.json_completion(
-            system_prompt=system_prompt,
-            user_content=user_content if not is_handoff and "requested_window" in payload else payload,
-            temperature=0.2,
-            max_tokens=4000,
-        )
-
-    # Validate schema
-    if is_handoff:
-        required_keys = [
-            "level",
-            "windows",
-            "drivers",
-            "means_for_downstream",
-            "confidence_overall",
-            "missing_data_notice",
-        ]
-        for key in required_keys:
-            if key not in parsed:
-                raise Exception(f"Missing key in AI handoff output: {key}")
-
-        if not isinstance(parsed["windows"], list):
-            raise Exception("handoff windows must be a list")
-
-        if not isinstance(parsed["drivers"], list):
-            raise Exception("handoff drivers must be a list")
-    else:
-        required_keys = [
-            "tab_label",
-            "demand_unit",
-            "windows",
-        ]
-
-        for key in required_keys:
-            if key not in parsed:
-                raise Exception(f"Missing key in AI output: {key}")
-
-        if not isinstance(parsed["windows"], list):
-            raise Exception("windows must be a list")
-
-        if len(parsed["windows"]) == 0:
-            raise Exception("windows array cannot be empty")
-
-        valid_severity = {"red", "amber", "white", "green"}
-        valid_direction = {"up", "down", "flat"}
-        valid_priority = {"high", "medium", "low"}
-
-        for window in parsed["windows"]:
-            if window.get("severity") not in valid_severity:
-                raise Exception("Invalid window severity")
-
-            expected = window.get("forecast", {}).get("expected", {})
-            if expected:
-                vs_normal = expected.get("vs_normal")
-                if vs_normal:
-                    if vs_normal.get("direction") not in valid_direction:
-                        raise Exception("Invalid vs_normal direction")
-
-            for driver in window.get("drivers", []):
-                if driver.get("severity") not in valid_severity:
-                    raise Exception("Invalid driver severity")
-
-            for action in window.get("actions", []):
-                if action.get("priority") not in valid_priority:
-                    raise Exception("Invalid action priority")
-
-            summaries = window.get("section_summaries", {})
-            for section in summaries.values():
-                if section and section.get("severity") not in valid_severity:
-                    raise Exception("Invalid section severity")
-
-    return parsed
-
-async def _run_downstream_tasks(serialized_ai_input: Dict[str, Any], user_id: str, agent_output: Dict[str, Any]):
-    try:
-        # Programmatically construct handoff_output from agent_output (FORECAST mode)
-        # to match the HANDOFF schema expected by downstream agents
-        first_window = agent_output.get("windows", [{}])[0] if agent_output.get("windows") else {}
-        
-        severity_map = {
-            "red": "elevated",
-            "amber": "soft",
-            "white": "steady",
-            "green": "good"
-        }
-        
-        overall_severity = first_window.get("severity", "white")
-        overall_level = severity_map.get(overall_severity, "steady")
-        
-        handoff_windows = []
-        for w in agent_output.get("windows", []):
-            w_sev = w.get("severity", "white")
-            w_level = severity_map.get(w_sev, "steady")
-            handoff_windows.append({
-                "window": w.get("window"),
-                "level": w_level,
-                "confidence": w.get("forecast", {}).get("expected", {}).get("confidence", 70)
-            })
-            
-        handoff_drivers = []
-        for w in agent_output.get("windows", []):
-            for d in w.get("drivers", []):
-                d_sev = d.get("severity", "white")
-                direction = "down" if d_sev == "red" else "up"
-                handoff_drivers.append({
-                    "name": d.get("name"),
-                    "window": d.get("window"),
-                    "direction": direction,
-                    "magnitude_text": d.get("impact_text", "no lift")
-                })
-                
-        means_for_downstream = first_window.get("verdict", {}).get("headline", "Demand steady.")
-        if first_window.get("missing_data_notice"):
-            means_for_downstream += f" NOTE: {first_window['missing_data_notice']}"
-            
-        handoff_output = {
-            "level": overall_level,
-            "windows": handoff_windows,
-            "drivers": handoff_drivers,
-            "means_for_downstream": means_for_downstream,
-            "confidence_overall": first_window.get("forecast", {}).get("expected", {}).get("confidence", 70),
-            "missing_data_notice": first_window.get("missing_data_notice")
-        }
-
-        # Save to opportunities_profiles collection
-        opportunities_profiles_col = get_collection("opportunities_profiles")
-        await opportunities_profiles_col.update_one(
-            {"user_id": user_id},
-            {"$set": {
-                "latest_demand_forecast": handoff_output,
-                "demand_strain_next_30d": None,
-                "demand_strain_next_60d": None,
-                "demand_strain_next_90d": None,
-                "updated_at": datetime.utcnow()
-            }}
-        )
-
-        # Update active opportunities with the handoff object
-        opportunities_col = get_collection("opportunities")
-        await opportunities_col.update_many(
-            {
-                "user_id": user_id,
-                "status_user": {"$nin": ["selected"]}
-            },
-            {"$set": {
-                "latest_demand_forecast": handoff_output,
-                "demand_strain_next_30d": None,
-                "demand_strain_next_60d": None,
-                "demand_strain_next_90d": None,
-                "updated_at": datetime.utcnow()
-            }}
-        )
-
-        # Trigger downstream rescoring
-        from app.services.opportunity_rescore_service import opportunity_rescore_service
-        await opportunity_rescore_service.rescore_by_demand_update(user_id)
-    except Exception as handoff_ex:
-        print(f"Failed to generate or save HANDOFF forecast: {handoff_ex}")
-
-
-class ActionCompleteRequest(BaseModel):
-    action_id: str
-    completed: bool = True
-    window: Optional[str] = None
-
-
-@router.patch("/demand-forecast/actions/complete")
-@router.post("/demand-forecast/actions/complete")
-async def complete_demand_forecast_action(
-    req: ActionCompleteRequest,
-    current_user: Any = Depends(get_current_user)
-):
-    """Persist completed demand forecast action state per user."""
-    if isinstance(current_user, dict):
-        user_id = current_user.get("id") or current_user.get("_id")
-    else:
-        user_id = str(current_user)
-
-    db = get_collection("business_profiles")
-    profile = await db.find_one({"user_id": user_id})
-    now = datetime.utcnow().isoformat()
-    
-    if profile:
-        onboarding_data = profile.get("onboarding_data")
-        if not isinstance(onboarding_data, dict):
-            onboarding_data = {}
-        df_completed = onboarding_data.get("df_completed_actions", [])
-        if not isinstance(df_completed, list):
-            df_completed = []
-            
-        if req.completed:
-            if req.action_id not in df_completed:
-                df_completed.append(req.action_id)
-        else:
-            df_completed = [a for a in df_completed if a != req.action_id]
-            
-        onboarding_data["df_completed_actions"] = df_completed
-        await db.update_one({"user_id": user_id}, {"$set": {"onboarding_data": onboarding_data, "updated_at": now}})
-    else:
-        await db.insert_one({
-            "user_id": user_id,
-            "onboarding_data": {"df_completed_actions": [req.action_id] if req.completed else []},
-            "created_at": now,
-            "updated_at": now
-        })
-        
-    return {"success": True, "action_id": req.action_id, "completed": req.completed}
-
-
-@router.get("/demand-forecast/actions/complete")
-async def get_demand_forecast_completed_actions(
-    current_user: Any = Depends(get_current_user)
-):
-    """Retrieve list of completed action IDs for the authenticated user."""
-    if isinstance(current_user, dict):
-        user_id = current_user.get("id") or current_user.get("_id")
-    else:
-        user_id = str(current_user)
-
-    db = get_collection("business_profiles")
-    profile = await db.find_one({"user_id": user_id})
-    onboarding_data = profile.get("onboarding_data") if profile and isinstance(profile.get("onboarding_data"), dict) else {}
-    completed_actions = onboarding_data.get("df_completed_actions", [])
-    if not isinstance(completed_actions, list):
-        completed_actions = []
-    return {"success": True, "completed_actions": completed_actions}
-
-
-def _normalize_driver_confidence(drivers: list) -> list:
-    """Ensure drivers[].confidence is a 0-100 integer per UI spec."""
-    conf_map = {"high": 88, "medium": 65, "low": 40}
-    normalized = []
-    for d in drivers or []:
-        if isinstance(d, dict):
-            d_copy = dict(d)
-            raw_conf = d_copy.get("confidence")
-            if isinstance(raw_conf, str):
-                d_copy["confidence"] = conf_map.get(raw_conf.lower(), 75)
-                d_copy["confidence_label"] = raw_conf.capitalize()
-            elif isinstance(raw_conf, (int, float)):
-                d_copy["confidence"] = int(raw_conf)
-                d_copy["confidence_label"] = "High" if raw_conf >= 80 else ("Medium" if raw_conf >= 60 else "Low")
-            normalized.append(d_copy)
-        else:
-            normalized.append(d)
-    return normalized
-
-
-@router.get("/demand-forecast")
-async def demand_forecast_route(
-    background_tasks: BackgroundTasks,
-    window: str = "this weekend",
-    user_id: str = Depends(get_current_user)
-):
-    # Check if demo user
-    users_col = get_collection("users")
-    user_doc = await users_col.find_one({"id": user_id}) or await users_col.find_one({"_id": user_id}) or {}
-    
-    if user_doc.get("is_demo") or (user_doc.get("email", "").startswith("demo-") and "@lightsignal.app" in user_doc.get("email", "")):
-        login_label = user_doc.get("login_label") or user_doc.get("username")
-        if not login_label and user_doc.get("email"):
-            login_label = user_doc.get("email").split("@")[0]
-        
-        from app.demo_data import get_demo_payload
-        demo_payload = get_demo_payload(login_label or "demo-restaurant")
-        if demo_payload and "demand_forecast" in demo_payload:
-            df_payload = dict(demo_payload["demand_forecast"])
-            agent_output = dict(df_payload.get("agentOutput", df_payload))
-            
-            # Normalize drivers confidence & add unit toggle support for demo payload
-            if "windows" in agent_output and isinstance(agent_output["windows"], list):
-                for w in agent_output["windows"]:
-                    if "drivers" in w:
-                        w["drivers"] = _normalize_driver_confidence(w.get("drivers", []))
-                    if "forecast" in w and "expected" in w["forecast"]:
-                        exp = w["forecast"]["expected"]
-                        if "volume_forecast" not in exp:
-                            exp["volume_forecast"] = 185
-                        if "demand_unit" not in exp:
-                            exp["demand_unit"] = agent_output.get("demand_unit", "Covers")
-
-            return {
-                "metrics": df_payload.get("metrics", {}),
-                "flags": df_payload.get("flags", []),
-                "data": df_payload.get("data", {}),
-                "agentOutput": agent_output
-            }
-
-    from app.services.cost_guardrail_service import cost_guardrail_service
-    allowed, reason = await cost_guardrail_service.check_and_reserve(user_id, "demand_forecast")
-    if not allowed:
-        detail_msg = (
-            "You've reached today's limit for this action. It resets at midnight."
-            if reason == "surface_cap" else
-            "You've reached today's usage limit for your account. It resets at midnight. Contact support if you need more."
-        )
-        raise HTTPException(status_code=429, detail=detail_msg)
-
-    # We now request both weekly and monthly windows simultaneously to fulfill the UI spec
-    # which requires emitting ALL relevant windows in one pass for instant client-side switching.
-    requested_windows = ["this week", "this month"]
-
-    business_profiles = get_collection("business_profiles")
-    business_profile = await business_profiles.find_one({"user_id": user_id})
-
-    if not business_profile:
-        raise HTTPException(
-            status_code=400,
-            detail="Business profile not found. Please complete onboarding."
-        )
-
-    # Business onboarding data
-    onboarding_data = business_profile.get("onboarding_data", {})
-
-    # Compute annual revenue early for benchmark lookup
-    annual_revenue = None
-    if onboarding_data.get("annual_revenue"):
-        try:
-            annual_revenue = float(onboarding_data["annual_revenue"])
-        except (TypeError, ValueError):
-            annual_revenue = None
-
-    opportunities_profiles_col = get_collection("opportunities_profiles")
-    opportunities_col = get_collection("opportunities")
-
-    # Start independent async fetches in parallel to reduce endpoint latency
-    owner_observations_task = asyncio.ensure_future(
-      customer_memory_service.get_memory_by_user(user_id=user_id, limit=50)
-    )
-    opportunities_profile_task = asyncio.ensure_future(
-      opportunities_profiles_col.find_one({"user_id": user_id})
-    )
-    committed_opportunities_task = asyncio.ensure_future(
-      opportunities_col.find(
-        {
-          "user_id": user_id,
-          "status": {"$in": ["Tracked", "Selected", "Applied"]}
-        }
-      ).to_list(length=50)
-    )
-    previous_df_memories_task = asyncio.ensure_future(
-      customer_memory_service.get_memories_by_path_prefix(
-        path_prefix=f"/memories/customer_{user_id}/demand_forecast/",
-        limit=10
-      )
-    )
-    peer_benchmarks_task = asyncio.ensure_future(
-      benchmark_service.get_or_fetch_benchmarks(
-        business_type=onboarding_data.get("industry_description", "general"),
-        country=onboarding_data.get("country", "US"),
-        annual_revenue_dollars=annual_revenue,
-      )
-    )
-    historical_revenue_task = asyncio.ensure_future(_fetch_last_year_revenue(user_id))
-    living_summary_task = asyncio.ensure_future(customer_summary_service.get_summary(user_id))
-    accuracy_memories_task = asyncio.ensure_future(
-      customer_memory_service.collection.find(
-        {
-          "user_id": user_id,
-          "tags": {"$in": ["accuracy", "forecast_accuracy"]},
-          "outdated": False
-        }
-      ).sort("created_at", -1).to_list(length=10)
-    )
-
-    try:
-        owner_observations, opportunities_profile, committed_opportunities, previous_df_memories, peer_benchmarks, historical_revenue, living_summary, accuracy_memories = await asyncio.gather(
-            owner_observations_task,
-            opportunities_profile_task,
-            committed_opportunities_task,
-            previous_df_memories_task,
-            peer_benchmarks_task,
-            historical_revenue_task,
-            living_summary_task,
-            accuracy_memories_task,
-        )
-
-        # Business classifier output
-        classifier_output = business_profile_classifier_service.classify_business(
-            onboarding=onboarding_data
-        )
-
-        living_summary_content = living_summary.get("content") if living_summary else None
-
-        # Tiered forecasting handled inside this function
-        metrics = _calculate_forecast_metrics(historical_revenue)
-
-        weather_applicable = True
-        item_tracking_enabled = True
-
-        # Trim MongoDB payload data to avoid token bloat
-        trimmed_observations = []
-        for obs in (owner_observations or []):
-            trimmed_observations.append({
-                "content": obs.get("content"),
-                "observation_type": obs.get("observation_type"),
-                "created_at": obs.get("created_at"),
-                "pinned": obs.get("pinned"),
-                "tags": obs.get("tags")
-            })
-
-        trimmed_opportunities = []
-        for opp in (committed_opportunities or []):
-            trimmed_opportunities.append({
-                "opportunity_name": opp.get("opportunity_name"),
-                "category": opp.get("category"),
-                "status": opp.get("status"),
-                "deadline": opp.get("deadline"),
-                "expected_roi": opp.get("expected_roi"),
-            })
-
-        trimmed_previous_forecasts = []
-        for mem in (previous_df_memories or [])[:3]:
-            trimmed_previous_forecasts.append({
-                "created_at": mem.get("created_at"),
-                "headline": mem.get("content"),
-                "supporting_data": {
-                    "forecast_produced": mem.get("supporting_data", {}).get("forecast_produced"),
-                    "assumptions": mem.get("supporting_data", {}).get("assumptions"),
-                    "confidence": mem.get("supporting_data", {}).get("confidence"),
-                    "deviation_from_previous_forecast": mem.get("supporting_data", {}).get("deviation_from_previous_forecast"),
-                } if mem.get("supporting_data") else None
-            })
-
-        trimmed_opportunities_profile = dict(opportunities_profile) if opportunities_profile else {}
-        trimmed_opportunities_profile.pop("latest_demand_forecast", None)
-
-        flags = {
-            "weather_applicable": weather_applicable,
-            "item_tracking_enabled": item_tracking_enabled,
-        }
-
-        trimmed_business_profile = {
-            "user_id": business_profile.get("user_id"),
-            "business_type": business_profile.get("business_type"),
-            "onboarding_data": business_profile.get("onboarding_data", {})
-        }
-
-        ai_input = {
-            "requested_windows": requested_windows,
-            "business_profile": trimmed_business_profile,
-            "owner_observations": trimmed_observations,
-            "classifier_output": classifier_output,
-            "historical_actuals": {
-                "monthly_revenue": historical_revenue,
-            },
-            "forecast_metrics": metrics,
-            "opportunities_profile": trimmed_opportunities_profile,
-            "committed_opportunities": trimmed_opportunities,
-            "memory": {
-                "previous_forecasts": trimmed_previous_forecasts,
-                "dreaming_summary": living_summary_content,
-                "accuracy_history": accuracy_memories,
-            },
-            "peer_benchmarks": peer_benchmarks,
-            "business_location": {
-                "address": onboarding_data.get("address"),
-                "country": onboarding_data.get("country"),
-                "city": onboarding_data.get("city"),
-                "state": onboarding_data.get("state"),
-            },
-            "flags": {
-                "weather_applicable": weather_applicable,
-                "item_tracking_enabled": item_tracking_enabled,
-            },
-        }
-
-        # Serialize MongoDB BSON types (ObjectId, datetime, etc.)
-        serialized_ai_input = json.loads(json_util.dumps(ai_input))
-
-        # DEBUG PRINTS TO FIND THE LEAK
-        print(f"[DEBUG PAYLOAD SIZE] business_profile: {len(json.dumps(trimmed_business_profile, default=str))} chars")
-        print(f"[DEBUG PAYLOAD SIZE] owner_observations: {len(json.dumps(trimmed_observations, default=str))} chars")
-        print(f"[DEBUG PAYLOAD SIZE] classifier_output: {len(json.dumps(classifier_output, default=str))} chars")
-        print(f"[DEBUG PAYLOAD SIZE] opportunities_profile: {len(json.dumps(trimmed_opportunities_profile, default=str))} chars")
-        print(f"[DEBUG PAYLOAD SIZE] memory: {len(json.dumps(ai_input['memory'], default=str))} chars")
-        print(f"[DEBUG PAYLOAD SIZE] peer_benchmarks: {len(json.dumps(peer_benchmarks, default=str))} chars")
-        print(f"[DEBUG PAYLOAD SIZE] historical_actuals: {len(json.dumps(historical_revenue, default=str))} chars")
-        print(f"[DEBUG PAYLOAD SIZE] committed_opportunities: {len(json.dumps(trimmed_opportunities, default=str))} chars")
-        
-        # 1. Primary FORECAST mode (returns to UI)
-        agent_output = await _call_ai_agent(serialized_ai_input, user_id)
-
-        # 2. Schedule HANDOFF and downstream rescoring in background task
-        background_tasks.add_task(_run_downstream_tasks, serialized_ai_input, user_id, agent_output)
-
-        # Calculate deviation from previous forecast
-        deviation_text = "No previous forecast memory found for comparison."
-        if previous_df_memories:
-            try:
-                latest_prev = previous_df_memories[0]
-                prev_supporting = latest_prev.get("supporting_data") or {}
-                prev_windows = prev_supporting.get("windows") or []
-                if prev_windows and agent_output.get("windows"):
-                    prev_val = prev_windows[0].get("forecast", {}).get("expected", {}).get("value_text")
-                    curr_val = agent_output["windows"][0].get("forecast", {}).get("expected", {}).get("value_text")
-                    deviation_text = f"Previous expected value: {prev_val}. Current expected value: {curr_val}."
-            except Exception as ex:
-                deviation_text = f"Could not calculate deviation: {str(ex)}"
-
-        # Persist Demand Forecast memory
-        memory = MemoryFactory.create_memory(
-            user_id=user_id,
-            observation_type="outcome",
-            content=agent_output["windows"][0]["verdict"]["headline"] if agent_output.get("windows") else "Forecast Generated",
-            agent_name="demand_forecast",
-            session_id="forecast_generation",
-            confidence="medium",
-            tags=["demand_forecast", "forecast"],
-            path=f"/memories/customer_{user_id}/demand_forecast/latest.json",
-            supporting_data={
-                "tab_label": agent_output.get("tab_label"),
-                "demand_unit": agent_output.get("demand_unit"),
-                "windows": agent_output.get("windows"),
-                "forecast_produced": {
-                    "verdict": [w.get("verdict", {}).get("headline") for w in agent_output.get("windows", [])],
-                    "expected": [w.get("forecast", {}).get("expected", {}).get("value_text") for w in agent_output.get("windows", [])],
-                },
-                "assumptions": [w.get("forecast", {}).get("expected", {}).get("anchor") for w in agent_output.get("windows", [])],
-                "named_drivers": [d.get("name") for w in agent_output.get("windows", []) for d in w.get("drivers", [])],
-                "confidence": [w.get("forecast", {}).get("expected", {}).get("confidence") for w in agent_output.get("windows", [])],
-                "confidence_reasoning": [w.get("forecast", {}).get("expected", {}).get("confidence_reason") for w in agent_output.get("windows", [])],
-                "deviation_from_previous_forecast": deviation_text,
-            },
-        )
-
-        await customer_memory_service.create_memory(memory)
-
-        print("\n" + "=" * 60)
-        print(f"[DF ENDPOINT LIVE TEST LOG] Demand Forecast generation complete for user={user_id}.")
-        print("=" * 60 + "\n")
-
-        return {
-            "metrics": metrics,
-            "flags": flags,
-            "data": {
-                "historical_revenue": historical_revenue,
-                "forecast_series": metrics.get("forecast_series", []),
-            },
-            "agentOutput": agent_output,
-        }
-
-    except Exception as e:
-        from app.services.cost_guardrail_service import cost_guardrail_service
-        await cost_guardrail_service.refund_reserve(user_id, "demand_forecast")
-        if isinstance(e, HTTPException):
-            raise e
-        raise HTTPException(status_code=500, detail=str(e))

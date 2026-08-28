@@ -373,40 +373,85 @@ class ClaudeService:
                 tool_result_blocks = []
                 for t_call in tool_calls:
                     t_name = t_call.name
-                    t_input = t_call.input
+                    t_input = t_call.input if isinstance(t_call.input, dict) else {}
                     t_id = t_call.id
 
                     print(f"[CLAUDE TOOL EXECUTION Step {step}] Executing tool '{t_name}' with args: {t_input}")
                     tool_output_str = ""
                     try:
+                        # Resilient tool lookup (exact -> lowercase -> normalized match)
                         tool_obj = tool_map.get(t_name)
                         if not tool_obj:
+                            clean_t_name = t_name.lower().replace("_", "").replace("-", "")
                             for k, v in tool_map.items():
-                                if k == t_name or k in t_name or t_name in k:
+                                clean_k = str(k).lower().replace("_", "").replace("-", "")
+                                if clean_k == clean_t_name or clean_k in clean_t_name or clean_t_name in clean_k:
                                     tool_obj = v
                                     break
 
                         if tool_obj:
-                            if hasattr(tool_obj, "execute") and callable(getattr(tool_obj, "execute")):
+                            # 1. BetaAsyncFunctionTool / functions wrapping .func
+                            if hasattr(tool_obj, "func") and callable(getattr(tool_obj, "func")):
+                                res = tool_obj.func(**t_input)
+                                if inspect.isawaitable(res):
+                                    res = await res
+                                tool_output_str = json.dumps(res, default=str) if isinstance(res, (dict, list)) else str(res)
+                            # 2. Memory tools (LightSignalAsyncMemoryTool / LightSignalMemoryTool)
+                            elif hasattr(tool_obj, "view") or "memory" in t_name.lower():
+                                cmd_name = t_input.get("command", "view") if isinstance(t_input, dict) else "view"
+                                if not hasattr(tool_obj, cmd_name):
+                                    raise AttributeError(f"Memory tool does not support command '{cmd_name}'")
+                                method = getattr(tool_obj, cmd_name)
+                                from anthropic.types.beta import (
+                                    BetaMemoryTool20250818ViewCommand,
+                                    BetaMemoryTool20250818CreateCommand,
+                                    BetaMemoryTool20250818StrReplaceCommand,
+                                    BetaMemoryTool20250818InsertCommand,
+                                    BetaMemoryTool20250818DeleteCommand,
+                                    BetaMemoryTool20250818RenameCommand,
+                                )
+                                if cmd_name == "view":
+                                    cmd = BetaMemoryTool20250818ViewCommand(command="view", path=t_input.get("path", "/memories"), view_range=t_input.get("view_range"))
+                                elif cmd_name == "create":
+                                    cmd = BetaMemoryTool20250818CreateCommand(command="create", path=t_input.get("path", ""), file_text=t_input.get("file_text", t_input.get("content", "")))
+                                elif cmd_name == "str_replace":
+                                    cmd = BetaMemoryTool20250818StrReplaceCommand(command="str_replace", path=t_input.get("path", ""), old_str=t_input.get("old_str", ""), new_str=t_input.get("new_str", ""))
+                                elif cmd_name == "insert":
+                                    cmd = BetaMemoryTool20250818InsertCommand(command="insert", path=t_input.get("path", ""), insert_line=t_input.get("insert_line", 0), new_str=t_input.get("new_str", ""))
+                                elif cmd_name == "delete":
+                                    cmd = BetaMemoryTool20250818DeleteCommand(command="delete", path=t_input.get("path", ""))
+                                elif cmd_name == "rename":
+                                    cmd = BetaMemoryTool20250818RenameCommand(command="rename", old_path=t_input.get("old_path", ""), new_path=t_input.get("new_path", ""))
+                                else:
+                                    cmd = t_input
+                                res = method(cmd)
+                                if inspect.isawaitable(res):
+                                    res = await res
+                                tool_output_str = json.dumps(res, default=str) if isinstance(res, (dict, list)) else str(res)
+                            # 3. Direct execute / run / call
+                            elif hasattr(tool_obj, "execute") and callable(getattr(tool_obj, "execute")):
                                 res = tool_obj.execute(**t_input)
                                 if inspect.isawaitable(res):
                                     res = await res
-                                tool_output_str = str(res)
+                                tool_output_str = json.dumps(res, default=str) if isinstance(res, (dict, list)) else str(res)
                             elif hasattr(tool_obj, "run") and callable(getattr(tool_obj, "run")):
                                 res = tool_obj.run(**t_input)
                                 if inspect.isawaitable(res):
                                     res = await res
-                                tool_output_str = str(res)
+                                tool_output_str = json.dumps(res, default=str) if isinstance(res, (dict, list)) else str(res)
                             elif hasattr(tool_obj, "call") and callable(getattr(tool_obj, "call")):
-                                res = tool_obj.call(**t_input)
+                                try:
+                                    res = tool_obj.call(**t_input)
+                                except TypeError:
+                                    res = tool_obj(**t_input)
                                 if inspect.isawaitable(res):
                                     res = await res
-                                tool_output_str = str(res)
+                                tool_output_str = json.dumps(res, default=str) if isinstance(res, (dict, list)) else str(res)
                             elif callable(tool_obj):
                                 res = tool_obj(**t_input)
                                 if inspect.isawaitable(res):
                                     res = await res
-                                tool_output_str = str(res)
+                                tool_output_str = json.dumps(res, default=str) if isinstance(res, (dict, list)) else str(res)
                             else:
                                 tool_output_str = f"Tool '{t_name}' executed."
                         else:

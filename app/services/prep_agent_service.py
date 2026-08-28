@@ -14,18 +14,7 @@ def _stringify_ids(obj: Any) -> Any:
     return obj
 
 
-from pathlib import Path
-
-def _load_canonical_prompt(filename: str) -> str:
-    try:
-        base_dir = Path(__file__).resolve().parent.parent.parent
-        prompt_path = base_dir / "CANONICAL — FINAL SPECS ONLY" / "10_Agent_Prompts_CANON" / filename
-        if prompt_path.exists():
-            with open(prompt_path, "r", encoding="utf-8") as f:
-                return f.read()
-    except Exception as e:
-        print(f"Error loading canonical prompt {filename}: {e}")
-    return ""
+from app.utils.prompt_loader import load_canonical_prompt
 
 
 class PrepAgentService:
@@ -39,11 +28,7 @@ class PrepAgentService:
         business_profile: Dict[str, Any],
         classifier_output: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        system_prompt = _load_canonical_prompt("Opportunity_Prep_Agent_System_Prompt_v2_DF.txt")
-        if not system_prompt:
-            system_prompt = """You are the Opportunity Preparation Agent for LightSignal.
-Your job is to generate preparation guidance for a business opportunity (events, festivals, vendor spots, contracts, grants).
-Return STRICT JSON only containing checklist, judgment_prompts, and checkpoint_summary."""
+        system_prompt = load_canonical_prompt("Opportunity_Prep_Agent_System_Prompt_v2_DF.txt")
 
         clean_opportunity = _stringify_ids(opportunity or {})
         clean_profile = _stringify_ids(business_profile or {})
