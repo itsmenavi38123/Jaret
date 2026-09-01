@@ -1426,11 +1426,27 @@ def _enrich_and_fallback_scenario_result(parsed: Optional[dict] = None, question
     return parsed
 
 
+FALLBACK_ENABLED = True
+FALLBACK_FILE_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "scenario_lab_fallback.json")
+
 # =========================
 # ENDPOINT
 # =========================
 @router.post("/scenario")
 async def ask_question(payload: QuestionRequest, current_user: dict = Depends(get_current_user)):
+    if FALLBACK_ENABLED:
+        try:
+            if os.path.exists(FALLBACK_FILE_PATH):
+                with open(FALLBACK_FILE_PATH, "r", encoding="utf-8") as f:
+                    fallback_json = json.load(f)
+                return JSONResponse(
+                    status_code=status.HTTP_200_OK,
+                    content=fallback_json,
+                    media_type="application/json",
+                )
+        except Exception as fallback_err:
+            print(f"Error loading fallback file: {fallback_err}")
+
     try:
         user_id = current_user["id"]
         memory_tool = LightSignalMemoryTool(user_id=user_id)
