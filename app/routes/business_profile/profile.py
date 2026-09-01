@@ -22,15 +22,83 @@ class OwnerNoteCreate(BaseModel):
     text: str
 
 
+def _deep_merge_dict(base: dict, updates: dict) -> dict:
+    merged = dict(base or {})
+    for k, v in (updates or {}).items():
+        if isinstance(v, dict) and isinstance(merged.get(k), dict):
+            merged[k] = _deep_merge_dict(merged[k], v)
+        else:
+            merged[k] = v
+    return merged
+
+
+def _apply_partial_updates(existing_onboarding: dict, incoming: dict) -> dict:
+    merged = dict(existing_onboarding or {})
+    for k, v in (incoming or {}).items():
+        if k.startswith("section_") or k in ["business_basics", "financial_overview", "operations"]:
+            if isinstance(v, dict) and isinstance(merged.get(k), dict):
+                merged[k] = _deep_merge_dict(merged[k], v)
+            else:
+                merged[k] = v
+        elif isinstance(v, dict) and isinstance(merged.get(k), dict):
+            merged[k] = _deep_merge_dict(merged[k], v)
+        else:
+            # Direct field update (e.g. {"business_name": "New Name"})
+            field_updated = False
+            for sec_k, sec_v in merged.items():
+                if isinstance(sec_v, dict) and k in sec_v:
+                    sec_v[k] = v
+                    field_updated = True
+            if not field_updated:
+                merged[k] = v
+    return merged
+
+
+def _extract_address_string(onboarding_data: dict) -> str:
+    address_parts = []
+    hq = onboarding_data.get("headquarters")
+    city = onboarding_data.get("city")
+    state = onboarding_data.get("state")
+    if hq:
+        address_parts.append(hq)
+    if city:
+        address_parts.append(city)
+    if state:
+        address_parts.append(state)
+
+    if not address_parts:
+        s1 = (
+            onboarding_data.get("section_01_business_basics")
+            or onboarding_data.get("section_1_basics")
+            or onboarding_data.get("business_basics")
+            or {}
+        )
+        if isinstance(s1, dict):
+            locs = s1.get("locations")
+            if isinstance(locs, list) and len(locs) > 0 and isinstance(locs[0], dict):
+                first_loc = locs[0]
+                addr = first_loc.get("address")
+                c = first_loc.get("city")
+                s = first_loc.get("state")
+                if addr:
+                    address_parts.append(addr)
+                if c:
+                    address_parts.append(c)
+                if s:
+                    address_parts.append(s)
+            elif s1.get("headquarters"):
+                address_parts.append(s1.get("headquarters"))
+    return ", ".join(address_parts)
+
+
+# -------------------------------------------------------------
+# 1. POST /onboarding  -> Initial Creation / Full Upsert
+# -------------------------------------------------------------
 @router.post("/onboarding")
-@router.patch("/onboarding")
-@router.post("")
-@router.patch("")
-async def create_or_update_onboarding(
+async def create_onboarding(
     data: BusinessProfileCreate,
     current_user: Any = Depends(get_current_user)
 ):
-
     try:
         business_profiles = get_collection("business_profiles")
         opportunities_profiles = get_collection("opportunities_profiles")
@@ -42,41 +110,24 @@ async def create_or_update_onboarding(
 
         onboarding_data = data.onboarding_data.copy()
 
-        city = onboarding_data.get("city")
-        state = onboarding_data.get("state")
-        headquarters = onboarding_data.get("headquarters")
-
-        address_parts = []
-
-        if headquarters:
-            address_parts.append(headquarters)
-
-        if city:
-            address_parts.append(city)
-
-        if state:
-            address_parts.append(state)
-
-        full_address = ", ".join(address_parts)
-
+        full_address = _extract_address_string(onboarding_data)
         geo_data = {}
-
         try:
             if full_address:
                 geo_data = await mapbox_service.geocode_address(full_address)
-
         except Exception as geo_error:
             print(f"Mapbox geocode failed: {geo_error}")
 
-        onboarding_data["geo"] = {
-            "business_address": full_address,
-            "city": geo_data.get("city"),
-            "state": geo_data.get("state"),
-            "latitude": geo_data.get("lat"),
-            "longitude": geo_data.get("lng"),
-            "company_timezone": geo_data.get("timezone"),
-            "geocode_confidence": geo_data.get("geocode_confidence"),
-        }
+        if geo_data:
+            onboarding_data["geo"] = {
+                "business_address": full_address,
+                "city": geo_data.get("city"),
+                "state": geo_data.get("state"),
+                "latitude": geo_data.get("lat"),
+                "longitude": geo_data.get("lng"),
+                "company_timezone": geo_data.get("timezone"),
+                "geocode_confidence": geo_data.get("geocode_confidence"),
+            }
 
         opportunities_profile = await opportunities_profiles.find_one(
             {"user_id": user_id}
@@ -94,7 +145,6 @@ async def create_or_update_onboarding(
         now = _now_utc()
 
         if existing:
-
             await business_profiles.update_one(
                 {"user_id": user_id},
                 {
@@ -108,21 +158,8 @@ async def create_or_update_onboarding(
                 }
             )
 
-            await internal_event_bus.publish(
-                "business.profile_classified",
-                {
-                    "business_id": user_id,
-                    "business_classifications": classification_result["business_classifications"],
-                    "business_tags": classification_result["business_tags"],
-                    "proven_capabilities": classification_result["proven_capabilities"],
-                    "classified_at": now.isoformat(),
-                }
-            )
-
             message = "Onboarding data updated successfully"
-
         else:
-
             profile = BusinessProfile(
                 user_id=user_id,
                 onboarding_data=onboarding_data,
@@ -137,18 +174,22 @@ async def create_or_update_onboarding(
                 profile.dict(by_alias=True)
             )
 
-            await internal_event_bus.publish(
-                "business.profile_classified",
-                {
-                    "business_id": user_id,
-                    "business_classifications": classification_result["business_classifications"],
-                    "business_tags": classification_result["business_tags"],
-                    "proven_capabilities": classification_result["proven_capabilities"],
-                    "classified_at": now.isoformat(),
-                }
-            )
-
             message = "Onboarding data created successfully"
+
+        await internal_event_bus.publish(
+            "business.profile_classified",
+            {
+                "business_id": user_id,
+                "business_classifications": classification_result["business_classifications"],
+                "business_tags": classification_result["business_tags"],
+                "proven_capabilities": classification_result["proven_capabilities"],
+                "classified_at": now.isoformat(),
+            }
+        )
+
+        clean_sections = {k: v for k, v in onboarding_data.items() if k.startswith("section_")}
+        if not clean_sections:
+            clean_sections = onboarding_data
 
         return JSONResponse(
             status_code=status.HTTP_200_OK if existing else status.HTTP_201_CREATED,
@@ -158,10 +199,12 @@ async def create_or_update_onboarding(
                 "has_existing_data": bool(existing),
                 "data": {
                     "user_id": user_id,
-                    "onboarding_data": onboarding_data,
                     "business_classifications": classification_result["business_classifications"],
                     "business_tags": classification_result["business_tags"],
                     "proven_capabilities": classification_result["proven_capabilities"],
+                    "created_at": (existing.get("created_at") or now).isoformat() if hasattr(existing.get("created_at") or now, "isoformat") else str(existing.get("created_at") or now),
+                    "updated_at": now.isoformat(),
+                    "onboarding_data": clean_sections,
                 }
             }
         )
@@ -175,13 +218,15 @@ async def create_or_update_onboarding(
             }
         )
 
-@router.put("/onboarding")
-@router.put("")
-async def update_onboarding(
-    data: BusinessProfileUpdate,
+
+# -------------------------------------------------------------
+# 2. PATCH /onboarding -> Field-Level & Section-Wise Partial Update
+# -------------------------------------------------------------
+@router.patch("/onboarding")
+async def patch_onboarding(
+    payload: Dict[str, Any],
     current_user: Any = Depends(get_current_user)
 ):
-
     try:
         business_profiles = get_collection("business_profiles")
         opportunities_profiles = get_collection("opportunities_profiles")
@@ -191,9 +236,7 @@ async def update_onboarding(
         else:
             user_id = str(current_user)
 
-        existing = await business_profiles.find_one(
-            {"user_id": user_id}
-        )
+        existing = await business_profiles.find_one({"user_id": user_id})
 
         if not existing:
             return JSONResponse(
@@ -204,69 +247,43 @@ async def update_onboarding(
                 }
             )
 
-        onboarding_data = data.onboarding_data.copy()
+        existing_onboarding = existing.get("onboarding_data", {})
+        
+        # Support both wrapped {"onboarding_data": {...}} and direct {...}
+        incoming_data = payload.get("onboarding_data") if isinstance(payload.get("onboarding_data"), dict) else payload
 
-        city = onboarding_data.get("city")
-        state = onboarding_data.get("state")
-        headquarters = onboarding_data.get("headquarters")
+        # Smart merge: updates ONLY the specified fields/sections and preserves everything else
+        onboarding_data = _apply_partial_updates(existing_onboarding, incoming_data)
 
-        address_parts = []
-
-        if headquarters:
-            address_parts.append(headquarters)
-
-        if city:
-            address_parts.append(city)
-
-        if state:
-            address_parts.append(state)
-
-        full_address = ", ".join(address_parts)
-
+        full_address = _extract_address_string(onboarding_data)
         geo_data = {}
-
         try:
             if full_address:
                 geo_data = await mapbox_service.geocode_address(full_address)
-
         except Exception as geo_error:
             print(f"Mapbox geocode failed: {geo_error}")
 
-        onboarding_data["geo"] = {
-            "business_address": full_address,
-            "city": geo_data.get("city"),
-            "state": geo_data.get("state"),
-            "latitude": geo_data.get("lat"),
-            "longitude": geo_data.get("lng"),
-            "company_timezone": geo_data.get("timezone"),
-            "geocode_confidence": geo_data.get("geocode_confidence"),
-        }
+        if geo_data:
+            onboarding_data["geo"] = {
+                "business_address": full_address,
+                "city": geo_data.get("city"),
+                "state": geo_data.get("state"),
+                "latitude": geo_data.get("lat"),
+                "longitude": geo_data.get("lng"),
+                "company_timezone": geo_data.get("timezone"),
+                "geocode_confidence": geo_data.get("geocode_confidence"),
+            }
 
-        opportunities_profile = await opportunities_profiles.find_one(
-            {"user_id": user_id}
-        )
-
+        opportunities_profile = await opportunities_profiles.find_one({"user_id": user_id})
         classification_result = business_profile_classifier_service.classify_business(
             onboarding=onboarding_data,
             opportunities_profile=opportunities_profile,
         )
 
         now = _now_utc()
-        existing_onboarding = existing.get("onboarding_data", {})
-
-        previous_service_model = existing_onboarding.get("service_model")
-        previous_price_tier = existing_onboarding.get("price_tier")
-        previous_audience = existing_onboarding.get("market_focus")
-
-        new_service_model = onboarding_data.get("service_model")
-        new_price_tier = onboarding_data.get("price_tier")
-        new_audience = onboarding_data.get("market_focus")
-
-        profile_dimensions_changed = any([
-            previous_service_model != new_service_model,
-            previous_price_tier != new_price_tier,
-            previous_audience != new_audience,
-        ])
+        clean_sections = {k: v for k, v in onboarding_data.items() if k.startswith("section_")}
+        if not clean_sections:
+            clean_sections = onboarding_data
 
         await business_profiles.update_one(
             {"user_id": user_id},
@@ -280,17 +297,17 @@ async def update_onboarding(
                 }
             }
         )
-        if profile_dimensions_changed:
-            await internal_event_bus.publish(
-                "business.profile_classified",
-                {
-                    "business_id": user_id,
-                    "business_classifications": classification_result["business_classifications"],
-                    "business_tags": classification_result["business_tags"],
-                    "proven_capabilities": classification_result["proven_capabilities"],
-                    "classified_at": now.isoformat(),
-                }
-            )
+
+        await internal_event_bus.publish(
+            "business.profile_classified",
+            {
+                "business_id": user_id,
+                "business_classifications": classification_result["business_classifications"],
+                "business_tags": classification_result["business_tags"],
+                "proven_capabilities": classification_result["proven_capabilities"],
+                "classified_at": now.isoformat(),
+            }
+        )
 
         return JSONResponse(
             status_code=status.HTTP_200_OK,
@@ -299,10 +316,12 @@ async def update_onboarding(
                 "message": "Onboarding data updated successfully",
                 "data": {
                     "user_id": user_id,
-                    "onboarding_data": onboarding_data,
                     "business_classifications": classification_result["business_classifications"],
                     "business_tags": classification_result["business_tags"],
                     "proven_capabilities": classification_result["proven_capabilities"],
+                    "created_at": existing.get("created_at").isoformat() if hasattr(existing.get("created_at"), "isoformat") else str(existing.get("created_at") or ""),
+                    "updated_at": now.isoformat(),
+                    "onboarding_data": clean_sections,
                 }
             }
         )
@@ -316,16 +335,19 @@ async def update_onboarding(
             }
         )
 
+
+# -------------------------------------------------------------
+# 3. GET /onboarding   -> Fetch Full Clean Onboarding Profile
+# -------------------------------------------------------------
 @router.get("/onboarding")
-@router.get("")
 async def get_onboarding(
     current_user: Any = Depends(get_current_user)
 ):
     try:
         business_profiles = get_collection("business_profiles")
-        user_id = current_user.get("id") or current_user.get("_id")
-        email = current_user.get("email", "")
-        is_demo_flag = current_user.get("is_demo") or (email.startswith("demo-") and "@lightsignal.app" in email)
+        user_id = current_user.get("id") or current_user.get("_id") if isinstance(current_user, dict) else str(current_user)
+        email = current_user.get("email", "") if isinstance(current_user, dict) else ""
+        is_demo_flag = (current_user.get("is_demo") or (email.startswith("demo-") and "@lightsignal.app" in email)) if isinstance(current_user, dict) else False
         
         if not is_demo_flag:
             users_col = get_collection("users")
@@ -335,42 +357,23 @@ async def get_onboarding(
         else:
             login_label = current_user.get("login_label") or current_user.get("username") or (email.split("@")[0] if email else "demo-restaurant")
 
-        def _flatten_profile_dict(raw: dict) -> dict:
-            if not isinstance(raw, dict):
-                return {}
-            flat = dict(raw)
-            for section_key, section_val in raw.items():
-                if isinstance(section_val, dict) and (section_key.startswith("section_") or section_key in ["business_basics", "financial_overview", "operations"]):
-                    for k, v in section_val.items():
-                        if k not in flat:
-                            flat[k] = v
-            if "business_name" in flat and "company_name" not in flat:
-                flat["company_name"] = flat["business_name"]
-            if "company_name" in flat and "business_name" not in flat:
-                flat["business_name"] = flat["company_name"]
-            if "headquarters" in flat and "primary_location" not in flat:
-                flat["primary_location"] = flat["headquarters"]
-            if "address" in flat and "primary_location" not in flat:
-                flat["primary_location"] = flat["address"]
-            if "primary_industry" in flat and "industry" not in flat:
-                flat["industry"] = flat["primary_industry"]
-            return flat
-
         if is_demo_flag:
             from app.demo_data import get_demo_payload
             demo_payload = get_demo_payload(login_label or "demo-restaurant")
             if demo_payload and "business_profile" in demo_payload:
                 raw_bp = demo_payload["business_profile"]
-                flat_bp = _flatten_profile_dict(raw_bp)
+                sections_only = {
+                    k: v for k, v in raw_bp.items()
+                    if k.startswith("section_")
+                }
                 demo_data = {
                     "user_id": user_id,
-                    "onboarding_data": flat_bp,
                     "business_classifications": [demo_payload.get("account", {}).get("industry", "Restaurant")],
                     "business_tags": ["Demo"],
                     "proven_capabilities": [],
                     "created_at": datetime.now(timezone.utc).isoformat(),
                     "updated_at": datetime.now(timezone.utc).isoformat(),
-                    **flat_bp
+                    "onboarding_data": sections_only if sections_only else raw_bp
                 }
                 return JSONResponse(
                     status_code=status.HTTP_200_OK,
@@ -396,19 +399,21 @@ async def get_onboarding(
             )
 
         raw_ob = profile.get("onboarding_data", {})
-        flat_ob = _flatten_profile_dict(raw_ob)
+        sections_only = {
+            k: v for k, v in raw_ob.items()
+            if k.startswith("section_")
+        }
         created_val = profile.get("created_at")
         updated_val = profile.get("updated_at")
 
         response_data = {
             "user_id": profile["user_id"],
-            "onboarding_data": flat_ob,
             "business_classifications": profile.get("business_classifications", []),
             "business_tags": profile.get("business_tags", []),
             "proven_capabilities": profile.get("proven_capabilities", []),
             "created_at": created_val.isoformat() if hasattr(created_val, "isoformat") else str(created_val or ""),
             "updated_at": updated_val.isoformat() if hasattr(updated_val, "isoformat") else str(updated_val or ""),
-            **flat_ob
+            "onboarding_data": sections_only if sections_only else raw_ob
         }
 
         return JSONResponse(
