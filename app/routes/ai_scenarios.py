@@ -1,4 +1,7 @@
 # backend/app/routes/ai_scenarios.py
+import os
+import json
+from pathlib import Path
 from typing import Optional, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.encoders import jsonable_encoder
@@ -9,6 +12,11 @@ from app.db import get_collection
 from app.models.scenario_models import ScenarioRequest, ScenarioResponse
 from app.services.orchestrator_service import OrchestratorService
 
+# =========================================================================
+# FALLBACK TOGGLE: Set to True to return static JSON from scenario_lab_fallback.json
+# =========================================================================
+FALLBACK_ENABLED: bool = True
+FALLBACK_FILE_PATH = Path(__file__).parent.parent / "scenario_lab_fallback.json"
 
 router = APIRouter(tags=["ai-scenarios"])
 orchestrator = OrchestratorService()
@@ -29,13 +37,23 @@ async def scenario_planning_full(
     - Advisor recommendations
     - Visual data for charts
     - Math explanations
-    
-    Example queries:
-    - "Hire another HVAC tech at $65k"
-    - "Buy a new food truck for $80k"
-    - "Raise prices by 10%"
-    - "Open a second location in Tampa"
     """
+    # -------------------------------------------------------------
+    # FALLBACK RETURN (When AI credits exhausted / building UI)
+    # -------------------------------------------------------------
+    if FALLBACK_ENABLED:
+        try:
+            if FALLBACK_FILE_PATH.exists():
+                with open(FALLBACK_FILE_PATH, "r", encoding="utf-8") as f:
+                    fallback_data = json.load(f)
+                return JSONResponse(
+                    status_code=status.HTTP_200_OK,
+                    content=fallback_data,
+                    media_type="application/json",
+                )
+        except Exception as fallback_err:
+            print(f"Error reading fallback file: {fallback_err}")
+
     try:
         user_id = current_user["id"]
 
