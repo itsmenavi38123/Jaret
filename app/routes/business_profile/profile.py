@@ -56,7 +56,7 @@ def _apply_partial_updates(existing_onboarding: dict, incoming: dict) -> dict:
 
 def _extract_address_string(onboarding_data: dict) -> str:
     address_parts = []
-    hq = onboarding_data.get("headquarters")
+    hq = onboarding_data.get("headquarters") or onboarding_data.get("primary_location")
     city = onboarding_data.get("city")
     state = onboarding_data.get("state")
     if hq:
@@ -74,20 +74,21 @@ def _extract_address_string(onboarding_data: dict) -> str:
             or {}
         )
         if isinstance(s1, dict):
-            locs = s1.get("locations")
-            if isinstance(locs, list) and len(locs) > 0 and isinstance(locs[0], dict):
-                first_loc = locs[0]
-                addr = first_loc.get("address")
-                c = first_loc.get("city")
-                s = first_loc.get("state")
-                if addr:
-                    address_parts.append(addr)
-                if c:
-                    address_parts.append(c)
-                if s:
-                    address_parts.append(s)
-            elif s1.get("headquarters"):
-                address_parts.append(s1.get("headquarters"))
+            loc_str = s1.get("headquarters") or s1.get("primary_location") or s1.get("main_location") or s1.get("city_state")
+            if loc_str and isinstance(loc_str, str):
+                address_parts.append(loc_str)
+            elif isinstance(s1.get("locations"), list) and len(s1.get("locations")) > 0:
+                first_loc = s1["locations"][0]
+                if isinstance(first_loc, dict):
+                    addr = first_loc.get("address")
+                    c = first_loc.get("city")
+                    s = first_loc.get("state")
+                    if addr:
+                        address_parts.append(addr)
+                    if c:
+                        address_parts.append(c)
+                    if s:
+                        address_parts.append(s)
     return ", ".join(address_parts)
 
 
@@ -577,7 +578,7 @@ async def get_profile_classification(
     Get Business Profile Classifications & Proven Capabilities.
     """
     try:
-        user_id = current_user["id"]
+        user_id = current_user.get("id") or current_user.get("_id") if isinstance(current_user, dict) else str(current_user)
         users_col = get_collection("users")
         user_doc = await users_col.find_one({"id": user_id}) or await users_col.find_one({"_id": user_id}) or {}
         
@@ -600,6 +601,9 @@ async def get_profile_classification(
                     }
                 }
             )
+
+        business_profiles = get_collection("business_profiles")
+        profile = await business_profiles.find_one({"user_id": user_id})
 
         return JSONResponse(
             status_code=status.HTTP_200_OK,
