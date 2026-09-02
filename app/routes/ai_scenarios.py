@@ -15,7 +15,7 @@ from app.services.orchestrator_service import OrchestratorService
 # =========================================================================
 # FALLBACK TOGGLE: Set to True to return static JSON from scenario_lab_fallback.json
 # =========================================================================
-FALLBACK_ENABLED: bool = True
+FALLBACK_ENABLED: bool = False
 FALLBACK_FILE_PATH = Path(__file__).parent.parent / "scenario_lab_fallback.json"
 
 router = APIRouter(tags=["ai-scenarios"])

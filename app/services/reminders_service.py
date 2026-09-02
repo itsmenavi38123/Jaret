@@ -11,7 +11,6 @@ from app.models.reminders import Reminder, TaxCalendarEvent
 from app.services.quickbooks_token_service import quickbooks_token_service
 from app.services import quickbooks_service
 from app.services.quickbooks_service import token_has_expired
-from app.services.tax_calendar_service import tax_calendar_service
 from app.models.quickbooks.token import QuickBooksToken
 
 logger = logging.getLogger(__name__)
@@ -283,45 +282,8 @@ class RemindersService:
         user_id: str,
         now: datetime,
     ) -> List[Reminder]:
-        """Query tax calendar from database and return upcoming tax deadlines."""
-        try:
-            # Get upcoming tax events from database (next 60 days)
-            events = await tax_calendar_service.get_upcoming_events(days_ahead=60)
-            
-            reminders = []
-            for event in events:
-                try:
-                    due_date_str = event.get("due_date")
-                    if isinstance(due_date_str, str):
-                        due_date = datetime.fromisoformat(due_date_str.replace('Z', '+00:00'))
-                    else:
-                        due_date = due_date_str
-                    
-                    if not isinstance(due_date, datetime):
-                        continue
-                    
-                    days_until = (due_date.date() - now.date()).days
-                    
-                    reminders.append(
-                        Reminder(
-                            id=event.get("id"),
-                            label=f"{event.get('description')} due in {days_until} day{'s' if days_until != 1 else ''}",
-                            due_date=due_date,
-                            action_type="tax_payment",
-                            category="compliance",
-                            priority="high" if days_until <= 10 else "normal",
-                            days_until_due=days_until,
-                        )
-                    )
-                except Exception as e:
-                    logger.warning(f"Error processing tax event: {e}")
-                    continue
-            
-            return reminders
-            
-        except Exception as exc:
-            logger.exception(f"Error querying tax calendar: {exc}")
-            return []
+        """Tax calendar deprecated/removed."""
+        return []
 
     async def _ensure_valid_token(self, token: QuickBooksToken) -> QuickBooksToken:
         """Ensure token is valid, refresh if needed."""

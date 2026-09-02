@@ -295,9 +295,30 @@ class QuickBooksFinancialService:
         gross_profit_mtd = max(0.0, income_mtd - cogs_mtd)
         net_income_mtd = gross_profit_mtd - operating_expenses_mtd
 
-        cash_balance = round(monthly_base * 1.6 + net_income_mtd, 2)
-        burn_rate = round(monthly_base * 0.2, 2)
-        runway = round(cash_balance / burn_rate, 1) if burn_rate > 0 else 12.0
+        # Compute cash balance from actual transactions + starting profile cash
+        all_txs = await qbo_col.find({"user_id": user_id}).to_list(length=None)
+        all_fixed = await fixed_col.find({"user_id": user_id}).to_list(length=None)
+        starting_cash = float(profile.get("starting_cash") or profile.get("cash_on_hand") or profile.get("current_cash") or 0.0)
+
+        if all_txs or all_fixed:
+            total_inflows = sum(t.get("amount", 0) for t in all_txs if t.get("amount", 0) > 0)
+            total_outflows = sum(abs(t.get("amount", 0)) for t in all_txs if t.get("amount", 0) < 0) + sum(abs(f.get("amount", 0)) for f in all_fixed)
+            tx_cash = starting_cash + (total_inflows - total_outflows)
+            cash_balance = round(tx_cash if tx_cash > 0 else (float(profile.get("cash", 0.0)) or (monthly_base + net_income_mtd)), 2)
+        else:
+            cash_balance = round(float(profile.get("cash", 0.0)) or (monthly_base + net_income_mtd), 2)
+
+        # Compute monthly burn rate from actual expense outflows vs income (burn rate > 0 only when cash outflow exceeds inflow)
+        monthly_expenses = (cogs_mtd + operating_expenses_mtd) * (30.0 / max(today.day, 1))
+        monthly_income = income_mtd * (30.0 / max(today.day, 1))
+        monthly_net_burn = monthly_expenses - monthly_income
+
+        if monthly_net_burn > 0:
+            burn_rate = round(monthly_net_burn, 2)
+            runway = round(cash_balance / burn_rate, 1) if burn_rate > 0 else None
+        else:
+            burn_rate = 0.0
+            runway = None
 
         monthly_series = []
         for i in range(11, -1, -1):
@@ -345,7 +366,7 @@ class QuickBooksFinancialService:
             "forecast_series": self._build_forecast(monthly_series),
             "insights": [
                 {"category": "Margin", "title": "Strong Core Performance", "description": f"Gross margin holding healthy at {gross_margin_pct*100:.1f}%."},
-                {"category": "Cash", "title": "Solid Cash Runway", "description": f"Current cash reserves provide {runway:.1f} months of operating runway."}
+                {"category": "Cash", "title": "Solid Cash Runway", "description": f"Current cash reserves provide {runway:.1f} months of operating runway." if runway is not None else "Business is cash-flow positive with zero monthly burn."}
             ],
             "risks": [
                 {"category": "Working Capital", "title": "Monitor Receivables", "description": "Keep receivables under 30 days DSO."}
@@ -361,7 +382,7 @@ class QuickBooksFinancialService:
             "revenue_mtd": kpis.get("revenue_mtd", 50000.0),
             "net_margin_pct": kpis.get("net_margin_pct", 0.15),
             "cash": kpis.get("cash", 75000.0),
-            "runway_months": kpis.get("runway_months", 12.0),
+            "runway_months": kpis.get("runway_months", None),
             "ai_health_score": 82,
         }
 

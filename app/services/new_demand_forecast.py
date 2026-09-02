@@ -853,12 +853,14 @@ def _calculate_forecast_metrics(historical_revenue: List[float]) -> Dict[str, An
 
 import re
 from app.services.demand_forecast_prompt import get_demand_forecast_prompt
+from app.tools.calculator_tool import calculator_tool
 
 async def _call_ai_agent(payload: Dict[str, Any], user_id: str) -> Dict[str, Any]:
     # Set up tools for Claude
     memory_tool = LightSignalAsyncMemoryTool(user_id=user_id)
     tools = [
         memory_tool,
+        calculator_tool,
         firecrawl_search_tool,
         firecrawl_scrape_tool,
     ]

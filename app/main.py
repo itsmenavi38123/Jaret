@@ -20,7 +20,6 @@ from app.routes.xero.accounts import router as xero_accounts_router
 from app.routes.facebook import router as facebook_router
 from app.routes.financial_overview import router as financial_overview_router
 from app.routes.dashboard import router as dashboard_router
-from app.routes.tax_calendar import router as tax_calendar_router
 from app.routes.business_profile.profile import router as business_profile_router
 from app.routes.opportunities_profile import router as opportunities_profile_router
 from app.routes.opportunities import router as opportunities_router
@@ -28,7 +27,6 @@ from app.routes.ai_opportunities import router as ai_opportunities_router
 from app.routes.ai_scenarios import router as ai_scenarios_router
 from app.routes.ai_health import router as ai_health_router
 from app.services.new_demand_forecast import router as demand_forecast_router
-from app.routes.asset_management import router as asset_management_router
 from app.routes.admin import router as admin_router
 from app.routes.admin_auth import router as admin_auth_router
 from app.routes.integrations import router as integrations_router
@@ -108,7 +106,6 @@ app.include_router(xero_accounts_router, prefix="/xero")
 app.include_router(facebook_router, prefix="/facebook")
 app.include_router(financial_overview_router, prefix="/api")
 app.include_router(dashboard_router, prefix="/api")
-app.include_router(tax_calendar_router, prefix="/api")
 app.include_router(business_profile_router, prefix="/business-profile")
 app.include_router(opportunities_profile_router, prefix="/opportunities-profile")
 app.include_router(opportunities_router, prefix="/api/opportunities")
@@ -116,7 +113,6 @@ app.include_router(ai_opportunities_router, prefix="/api/ai/opportunities")
 app.include_router(ai_scenarios_router, prefix="/api/ai/scenarios")
 app.include_router(ai_health_router, prefix="/api/ai/health")
 app.include_router(demand_forecast_router, prefix="/api")
-app.include_router(asset_management_router, prefix="/api")
 app.include_router(integrations_router, prefix="/api")
 app.include_router(admin_router)
 app.include_router(admin_auth_router)

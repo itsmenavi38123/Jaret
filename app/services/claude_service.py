@@ -280,13 +280,25 @@ class ClaudeService:
         import copy
         import inspect
 
+        from app.tools.calculator_tool import calculator_tool
+
         model = model_override or self.text_model
         print(f"[CLAUDE] tool_runner (dynamic caching enabled) -> model={model}")
+
+        # Ensure calculator tool is always available for deterministic math
+        has_calc = any(
+            (isinstance(t, dict) and t.get("name") in ("calculate", "calculator")) or
+            (hasattr(t, "name") and getattr(t, "name") in ("calculate", "calculator"))
+            for t in (tools or [])
+        )
+        effective_tools = list(tools or [])
+        if not has_calc:
+            effective_tools.append(calculator_tool)
 
         # Map tools by name for execution during tool loop turns
         tool_map = {}
         formatted_tools = []
-        for t in tools:
+        for t in effective_tools:
             # Step 1: Extract API-compatible dictionary parameter for tool registration
             if isinstance(t, dict):
                 param = t

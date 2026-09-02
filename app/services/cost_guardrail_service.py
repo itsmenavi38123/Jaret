@@ -22,11 +22,11 @@ class CostGuardrailService:
         config = await self.settings_col.find_one({"_id": "site_config"}) or {}
         
         hard_ceiling = config.get("account_daily_hard_ceiling", 600)   # cents ($6.00)
-        soft_alert = config.get("account_daily_soft_alert", 600)      # cents ($6.00)
+        soft_alert = config.get("account_daily_soft_alert", 400)      # cents ($4.00)
         
         cap_manual_refresh = config.get("cap_manual_refresh", 3)
         cap_demand_forecast = config.get("cap_demand_forecast", 3)
-        cap_scenario_runs = config.get("cap_scenario_runs", 15)
+        cap_scenario_runs = config.get("cap_scenario_runs", 5)
         cap_dia_uploads = config.get("cap_dia_uploads", 50)
         
         cost_estimates = config.get("cost_estimates", {

@@ -210,10 +210,10 @@ async def create_indexes() -> None:
     defaults = {
         "landing_mode": "waitlist",
         "account_daily_hard_ceiling": 600,
-        "account_daily_soft_alert": 600,
+        "account_daily_soft_alert": 400,
         "cap_manual_refresh": 3,
         "cap_demand_forecast": 3,
-        "cap_scenario_runs": 15,
+        "cap_scenario_runs": 5,
         "cap_dia_uploads": 50,
         "cost_estimates": {
             "scout_ondemand": 15,

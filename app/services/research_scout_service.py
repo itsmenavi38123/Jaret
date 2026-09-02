@@ -16,6 +16,7 @@ from app.services.research_scout_tools import (
 )
 from app.services.research_scout_prompt import get_research_scout_prompt
 from app.services.lightsignal_memory_tool import LightSignalMemoryTool, LightSignalAsyncMemoryTool
+from app.tools.calculator_tool import calculator_tool
 
 class ResearchScoutService:
     """
@@ -280,6 +281,7 @@ class ResearchScoutService:
         memory_tool = LightSignalAsyncMemoryTool(user_id=user_id)
         tools = [
             memory_tool,
+            calculator_tool,
             firecrawl_search_tool,
             firecrawl_scrape_tool,
         ]
@@ -630,6 +632,7 @@ class ResearchScoutService:
 
         # Define tools
         tools = [
+            calculator_tool,
             firecrawl_search_tool,
             firecrawl_scrape_tool,
         ]
