@@ -934,7 +934,7 @@ def _enrich_and_fallback_scenario_result(parsed: Optional[dict] = None, question
     return parsed
 
 
-FALLBACK_ENABLED = True
+FALLBACK_ENABLED = False
 FALLBACK_FILE_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "scenario_lab_fallback.json")
 
 # =========================
