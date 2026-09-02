@@ -758,94 +758,16 @@ class QuestionRequest(BaseModel):
 
 
 
-def _enrich_and_fallback_scenario_result(parsed: Optional[dict] = None, question: str = "") -> dict:
-    """Enrich Scenario Lab result or return spec-compliant fallback when Anthropic API is out of credits."""
-    if not parsed or not isinstance(parsed, dict) or parsed.get("type") != "scenario_result":
-        parsed = {
-            "type": "scenario_result",
-            "verdict": {
-                "recommendation": "PROCEED WITH CAUTION",
-                "headline": "Viable ROI under current cash buffer",
-                "summary": f"Analysis for: '{question or 'New Location / Marketing Expansion'}'. Projected net monthly gain of $3,800 after initial setup costs.",
-                "confidence": "85%",
-                "confidence_reason": "High confidence based on 24-month historical margins and booked customer retention.",
-                "risk": "Low",
-                "risk_reason": "Low downside risk — break-even point is reached at 35% capacity."
-            },
-            "key_numbers": [
-                {
-                    "label": "Expected Monthly Lift",
-                    "value": "+$4,800",
-                    "color_flag": "green",
-                    "severity": "resolved",
-                    "context": "Based on average ticket size"
-                },
-                {
-                    "label": "Upfront Investment",
-                    "value": "$2,500",
-                    "color_flag": "amber",
-                    "severity": "building",
-                    "context": "One-time equipment & deposit"
-                },
-                {
-                    "label": "Payback Period",
-                    "value": "2.4 months",
-                    "color_flag": "cyan",
-                    "severity": "stable",
-                    "context": "Fast capital recovery"
-                }
-            ],
-            "pros": [
-                {
-                    "headline": "Incremental Margin Contribution",
-                    "detail": "Adds $4,800 gross revenue with minimal fixed overhead expansion.",
-                    "dollar_impact": 4800.0,
-                    "impact_text": "+$4.8K/mo"
-                },
-                {
-                    "headline": "Customer Retention Lift",
-                    "detail": "Cross-sells existing repeat clients with high-margin add-ons.",
-                    "dollar_impact": 1200.0,
-                    "impact_text": "+$1.2K/mo"
-                }
-            ],
-            "cons": [
-                {
-                    "headline": "Upfront Equipment Deposit",
-                    "detail": "Requires $2,500 initial cash outlay before initial booking cycles.",
-                    "dollar_impact": -2500.0,
-                    "impact_text": "-$2.5K"
-                }
-            ],
-            "chart_data": [
-                {"month": "M1", "baseline": 40500, "projected": 42800},
-                {"month": "M2", "baseline": 40500, "projected": 44100},
-                {"month": "M3", "baseline": 40500, "projected": 45300}
-            ],
-            "steps": [
-                "1. Confirm equipment deposit terms with vendor.",
-                "2. Launch pre-booking campaign 14 days prior to start."
-            ],
-            "assumptions_table": [
-                {"assumption": "Capacity utilization", "baseline": "65%", "scenario": "78%"},
-                {"assumption": "Average ticket price", "baseline": "$80", "scenario": "$85"}
-            ],
-            "things_to_keep_in_mind": [
-                "Ensure weekend shift staffing covers peak hours."
-            ],
-            "peer_context": "Similar businesses in your region report 3.2x ROI within 90 days.",
-            "alternatives": [
-                "Test a 30-day pilot before committing to full 6-month contract."
-            ],
-            "closing_line": "Overall positive expected value with manageable initial cash outlay."
-        }
-    else:
-        # Enrich existing parsed result so both old and new frontend components render without undefined errors
-        verdict = parsed.setdefault("verdict", {})
-        if "confidence_reason" not in verdict:
-            verdict["confidence_reason"] = "Based on historical financial trends and baseline data."
-        if "risk_reason" not in verdict:
-            verdict["risk_reason"] = "Evaluated against 12-month operating cash reserves."
+def _enrich_scenario_result(parsed: dict) -> dict:
+    """Enrich Scenario Lab result so both old and new frontend components render without undefined errors."""
+    if not isinstance(parsed, dict):
+        return parsed
+
+    verdict = parsed.setdefault("verdict", {})
+    if "confidence_reason" not in verdict:
+        verdict["confidence_reason"] = "Based on historical financial trends and baseline data."
+    if "risk_reason" not in verdict:
+        verdict["risk_reason"] = "Evaluated against 12-month operating cash reserves."
         
         # Adapter fields for legacy UI components
         verdict["category"] = verdict.get("category") or verdict.get("recommendation") or "Decision"
@@ -1114,7 +1036,7 @@ question:
                 },
             )
 
-        parsed = _enrich_and_fallback_scenario_result(parsed, payload.question)
+        parsed = _enrich_scenario_result(parsed)
         created = datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
 
         # =========================
