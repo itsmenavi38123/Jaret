@@ -322,86 +322,189 @@ DRIFTWOOD_COFFEE_PAYLOADS = {
 
     # 6. BUSINESS PROFILE PAYLOAD
     "business_profile": {
-        "section_1_basics": {
+        "section_01_business_basics": {
             "business_name": "Driftwood Coffee Roasters",
-            "legal_entity": "Driftwood Coffee Group LLC",
-            "year_founded": 2016,
             "headquarters": "Portland, OR (Alberta Arts District)",
-            "website": "https://driftwoodcoffeeroasters.com",
-            "operating_mode": "Multi-location Specialty Cafe & Wholesale Roastery"
+            "years_in_business": "5 to 10 years",
+            "timezone": "America/Los_Angeles",
+            "currency": "USD",
+            "legal_entity_type": "LLC",
+            "ein": "93-8765432",
+            "locations": [
+                {
+                    "name": "Alberta Flagship & Roastery",
+                    "address": "1422 NE Alberta St, Portland, OR 97211",
+                    "role": "Primary / Roastery",
+                    "status": "active"
+                },
+                {
+                    "name": "Division Street Satellite Cafe",
+                    "address": "3340 SE Division St, Portland, OR 97202",
+                    "role": "Satellite Cafe",
+                    "status": "active"
+                }
+            ]
         },
-        "section_2_ownership": {
-            "owner_name": "Sam Okafor",
-            "ownership_pct": 100.0,
-            "role": "Founder & Head Roaster",
-            "years_in_business": 10
+        "section_02_ownership_and_key_people": {
+            "ownership_breakdown": "Sam Okafor (100%)",
+            "decision_maker": "Sam Okafor, Founder & Head Roaster",
+            "bookkeeper_financial_handler": "Pacific Northwest Bookkeeping LLC",
+            "has_backup_operator": "Yes"
         },
-        "section_3_industry": {
-            "primary_industry": "Commercial Roasting & Retail Coffee Shops",
-            "naics_code": "311920",
-            "niche": "Direct-Trade Specialty Coffee & Multi-Cafe Retail"
+        "section_03_industry_and_model": {
+            "business_description": "Direct-trade micro-roastery and specialty coffee company operating an Alberta Arts flagship cafe, Division St satellite cafe, and DTC subscription service.",
+            "revenue_model_description": "Direct food sales at events, counter drink sales, bagged retail coffee, and wholesale cafe accounts.",
+            "target_market_type": "Both",
+            "business_stage": "Growing and adding capacity"
         },
-        "section_4_operations": {
-            "days_open_per_week": 7,
-            "operating_hours": "7:00 AM - 5:00 PM (Daily)",
-            "pos_system": "Square POS (Multi-Location Sync)",
-            "roasting_equipment": "1x Diedrich IR-12 Industrial Roaster"
+        "section_04_operations": {
+            "team_size": "Team of 11 to 25",
+            "payroll_type": "Mostly employees with some contractors",
+            "operating_hours": "Mon-Sun, 7am-5pm",
+            "growth_limiters": [
+                "Staff",
+                "Equipment",
+                "Time"
+            ],
+            "single_supplier_dependency": "We have key suppliers but alternatives exist",
+            "uses_pos_system": "Yes",
+            "space_ownership_status": "Multiple locations — varies",
+            "operational_software": [
+                "E-commerce platform",
+                "Inventory management",
+                "Payroll software"
+            ],
+            "recent_supplier_issues": "No",
+            "critical_materials_inputs": "Specialty green coffee beans, organic oat & whole milk, compostable takeaway packaging."
         },
-        "section_5_financial": {
-            "annual_revenue": 918000.0,
-            "gross_margin_pct": 68.0,
-            "net_margin_pct": 12.4,
-            "monthly_cash_flow": 9485.0,
-            "accounting_software": "QuickBooks Online"
+        "section_05_financial_overview": {
+            "accounting_system": "QuickBooks",
+            "connect_accounting_now": "Yes",
+            "fiscal_year_start": "January to December (all 12 months)",
+            "banks_and_lenders": "First Local Bank",
+            "business_loan_history": "Yes and currently paying it"
         },
-        "section_6_assets": {
-            "real_estate": "Leased Alberta Flagship & Division Satellite",
-            "equipment_value": 115000.0,
-            "inventory_valuation": 28000.0
+        "section_06_assets_and_equipment": {
+            "major_assets": "Diedrich IR-12 Industrial Roaster, 2x La Marzocco Linea PB Espresso Machines, Mahlkönig Grinders",
+            "asset_ownership_status": "Truck is leased, internal equipment is owned",
+            "asset_purchase_dates": "Roaster bought May 2019, espresso machines bought Aug 2022",
+            "asset_condition": "Good working condition, regular maintenance performed",
+            "leased_monthly_payment": "$500 to $2K"
         },
-        "section_7_customers": {
-            "customer_type": "B2C Cafe Guests & B2B Wholesale Accounts",
-            "average_ticket": 8.75,
-            "monthly_transacting_customers": 5140
+        "section_07_customers_and_market": {
+            "customer_distance": "Across the metro",
+            "strongest_seasons": [
+                "Spring",
+                "Summer",
+                "Fall"
+            ],
+            "customer_acquisition_channels": [
+                "Walk-by / drive-by",
+                "Word of mouth",
+                "Social media",
+                "Repeat regulars"
+            ],
+            "typical_customers_description": "Neighborhood coffee connoisseurs, creative remote workers, and specialty subscription members across the Pacific Northwest.",
+            "monthly_customer_volume": "5140",
+            "repeat_business_rate": "High",
+            "target_customer_types": "Corporate offices looking for weekly lunch catering.",
+            "customer_concentration": "No, spread across many",
+            "seasonality_level": "A little seasonal",
+            "customer_geographic_source": "Statewide / regional",
+            "opportunity_radius_miles": "25",
+            "max_travel_distance_miles": "75",
+            "local_opportunity_preference": "Open to nearby areas if high-value",
+            "geographic_service_areas": "Portland Metro, Willamette Valley, and National DTC Shipping",
+            "weather_impact": "High"
         },
-        "section_8_risk": {
-            "top_cost_exposure": "Green Coffee Market Inflation (+18%)",
-            "capacity_risk": "Division Satellite Operating Deficit (-$1.8K/mo)"
+        "section_08_risk_and_exposure": {
+            "carries_business_insurance": "Yes",
+            "critical_dependencies": "Green coffee import supply chains and Diedrich roaster maintenance",
+            "revenue_concentration": "No, spread across many",
+            "active_permits_licenses": "Multnomah County Health Dept Permit, City Business License, Food Handler",
+            "in_progress_permits_licenses": "Sidewalk cafe patio permit renewal",
+            "local_operating_restrictions": "Designated food zones, noise ordinances after 10 PM"
         },
-        "section_9_capacity": {
-            "roaster_capacity_kg_per_week": 500,
-            "current_roaster_utilization": 60.0,
-            "locations_count": 2
+        "section_09_capacity_and_constraints": {
+            "monthly_customer_capacity": "6500",
+            "could_handle_more_capacity": "Yes, we had plenty of room",
+            "current_busy_level": [
+                "Around capacity"
+            ],
+            "operational_slowdown_factors": [
+                "Labor",
+                "Equipment"
+            ],
+            "has_active_business_financing": "Yes"
         },
         "section_10_opportunity_readiness": {
-            "roaster_headroom": "40% available capacity for wholesale/DTC expansion",
-            "dtc_subscriptions": "Active (4% revenue share)"
-        },
-        "section_11_goals": {
-            "target_annual_revenue": 1100000.0,
-            "margin_target": 16.0,
-            "growth_focus": "DTC coffee subscriptions & Division location breakeven"
-        },
-        "section_12_pricing": {
-            "pricing_tier": "Specialty Premium",
-            "price_points": {"12oz_whole_bean": "$21", "espresso_drink": "$5.75", "wholesale_lb": "$11.50"}
-        },
-        "section_13_team": {
-            "full_time_staff": 6,
-            "part_time_staff": 8,
-            "key_personnel": "Head Roaster, Alberta Store Manager, Division Lead Barista"
-        },
-        "section_14_marketing": {
-            "primary_channels": "Instagram, Wholesale Tastings, Subscription Email Sequences",
-            "monthly_ad_budget": 800.0
-        },
-        "section_15_owner_prefs": {
+            "external_selling_experience": "Yes, regularly",
+            "commitment_type_preference": "Recurring",
+            "flex_production_capacity": "With some notice",
+            "brand_partnership_willingness": "Yes",
+            "public_visibility_comfort": "Very comfortable",
+            "available_weekly_time": "A few hours a week",
+            "upfront_spending_tolerance": "$500 to $2K",
             "risk_tolerance": "Moderate",
-            "funding_preference": "Reinvest cafe profits & equipment lease ($1,150/mo)"
+            "opportunity_nogo_filters": "Events with less than 200 expected attendees or >100 miles distance",
+            "ideal_partner_types": "Local breweries, festival organizers, corporate campus managers",
+            "win_definition_90_days": "Secure 2 recurring weekly brewery popup slots and 3 corporate catering gigs.",
+            "growth_focus_stage": "Actively growing",
+            "stretch_opportunity_permission": "Yes, show me those",
+            "opportunity_surfacing_frequency": "Only strong matches"
         },
-        "section_16_docs": {
-            "connected_systems": ["Square Multi-Location", "QuickBooks Online", "Shopify Subscriptions"],
-            "verification_status": "Verified"
+        "section_11_strategic_goals": {
+            "goals_12_month": "Increase net margins to 20% and grow DTC online coffee subscriptions.",
+            "goals_3_year": "Add a third roastery cafe hub in Eugene or Seattle and reach $1.5M ARR.",
+            "long_term_vision": "Build a recognized regional specialty coffee & roasting brand.",
+            "exit_strategy": "Pass on to key operator or sell brand to hospitality group in 8-10 years."
+        },
+        "section_12_pricing_and_revenue": {
+            "pricing_method": [
+                "Per unit",
+                "Per job"
+            ],
+            "typical_order_size": "$8.75 cafe drink / $21 whole bean / $450 wholesale",
+            "discounts_and_promotions": "10% discount on recurring monthly subscriptions.",
+            "customer_payment_methods": [
+                "Upfront",
+                "On delivery"
+            ]
+        },
+        "section_13_hiring_and_team_structure": {
+            "team_roles": "Head Roaster, Store Manager, Lead Barista, Production Assistant",
+            "planning_to_hire_12_months": "Yes",
+            "recruitment_channels": [
+                "Referrals",
+                "Social media",
+                "Job boards"
+            ],
+            "uses_contractors_freelancers": "Sometimes"
+        },
+        "section_14_sales_and_marketing": {
+            "sales_channels": [
+                "Word of mouth",
+                "Social media",
+                "Events",
+                "Online search"
+            ],
+            "delivery_methods": [
+                "In-person",
+                "Online",
+                "Retail store",
+                "Subscription"
+            ],
+            "tracks_leads_crm": "Spreadsheet",
+            "lead_conversion_rate": "35%",
+            "monthly_marketing_budget": "800"
+        },
+        "section_15_owner_goals_and_preferences": {
+            "current_primary_focus": [
+                "Profit",
+                "Growth"
+            ],
+            "day_to_day_involvement": "Very involved",
+            "financial_risk_tolerance": "Moderate"
         }
     },
 

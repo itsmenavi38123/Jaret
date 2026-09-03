@@ -320,86 +320,181 @@ VELVET_VINE_SALON_PAYLOADS = {
 
     # 6. BUSINESS PROFILE PAYLOAD
     "business_profile": {
-        "section_1_basics": {
+        "section_01_business_basics": {
             "business_name": "Velvet & Vine Salon",
-            "legal_entity": "Raman Beauty Concepts LLC",
-            "year_founded": 2019,
             "headquarters": "Chicago, IL (Logan Square)",
-            "website": "https://velvetandvinesalon.com",
-            "operating_mode": "Boutique Hair Salon & Personal Care"
+            "years_in_business": "5 to 10 years",
+            "timezone": "America/Chicago",
+            "currency": "USD",
+            "legal_entity_type": "LLC",
+            "ein": "36-5432109",
+            "locations": [
+                {
+                    "name": "Velvet & Vine Studio",
+                    "address": "2518 N Milwaukee Ave, Chicago, IL 60647",
+                    "role": "Primary Studio",
+                    "status": "active"
+                }
+            ]
         },
-        "section_2_ownership": {
-            "owner_name": "Priya Raman",
-            "ownership_pct": 100.0,
-            "role": "Founder & Creative Director",
-            "years_in_business": 7
+        "section_02_ownership_and_key_people": {
+            "ownership_breakdown": "Priya Raman (100%)",
+            "decision_maker": "Priya Raman, Founder & Creative Director",
+            "bookkeeper_financial_handler": "Windy City CPA Associates (External)",
+            "has_backup_operator": "Yes"
         },
-        "section_3_industry": {
-            "primary_industry": "Hair, Nail, & Skin Care Services",
-            "naics_code": "812112",
-            "niche": "Specialty Color & Organic Hair Treatment"
+        "section_03_industry_and_model": {
+            "business_description": "High-end boutique hair salon and organic scalp therapy studio offering balayage, precision cutting, and bridal hair styling.",
+            "revenue_model_description": "In-salon service appointments, retail organic hair products, and bridal package bookings.",
+            "target_market_type": "Both",
+            "business_stage": "Growing and adding capacity"
         },
-        "section_4_operations": {
-            "days_open_per_week": 5,
-            "operating_hours": "10:00 AM - 8:00 PM (Tue-Sat)",
-            "pos_system": "Square Appointments",
-            "salon_chairs": 8
+        "section_04_operations": {
+            "team_size": "Small team of 4 to 10",
+            "payroll_type": "Mostly employees with some contractors",
+            "operating_hours": "Tue-Sat 10am-8pm, Sun-Mon Closed",
+            "growth_limiters": [
+                "Staff",
+                "Equipment",
+                "Time"
+            ],
+            "single_supplier_dependency": "We have key suppliers but alternatives exist",
+            "uses_pos_system": "Yes",
+            "space_ownership_status": "Lease it",
+            "operational_software": [
+                "Booking or reservation system",
+                "Scheduling software",
+                "Payroll software"
+            ],
+            "recent_supplier_issues": "No",
+            "critical_materials_inputs": "Organic hair color formulations, salon treatment tonics, high-end styling tools."
         },
-        "section_5_financial": {
-            "annual_revenue": 486000.0,
-            "gross_margin_pct": 55.0,
-            "net_margin_pct": 16.2,
-            "monthly_cash_flow": 6560.0,
-            "accounting_software": "QuickBooks Online"
+        "section_05_financial_overview": {
+            "accounting_system": "QuickBooks",
+            "connect_accounting_now": "Yes",
+            "fiscal_year_start": "January to December (all 12 months)",
+            "banks_and_lenders": "First Local Bank",
+            "business_loan_history": "Yes and paid it off"
         },
-        "section_6_assets": {
-            "real_estate": "Leased salon space (1,600 sq ft)",
-            "equipment_value": 45000.0,
-            "inventory_valuation": 12500.0
+        "section_06_assets_and_equipment": {
+            "major_assets": "8x Belvedere Styling Chairs, 3x Shampoo Backwash Units, Takara Belmont Wash Stations",
+            "asset_ownership_status": "Truck is leased, internal equipment is owned",
+            "asset_purchase_dates": "Studio buildout 2019, wash stations refreshed 2022",
+            "asset_condition": "Good working condition, regular maintenance performed",
+            "leased_monthly_payment": "$500 to $2K"
         },
-        "section_7_customers": {
-            "customer_type": "B2C Repeat Neighborhood Clients",
-            "average_ticket": 145.0,
-            "monthly_transacting_customers": 280
+        "section_07_customers_and_market": {
+            "customer_distance": "Across the metro",
+            "strongest_seasons": [
+                "Spring",
+                "Summer",
+                "Fall"
+            ],
+            "customer_acquisition_channels": [
+                "Walk-by / drive-by",
+                "Word of mouth",
+                "Social media",
+                "Repeat regulars"
+            ],
+            "typical_customers_description": "Urban professionals, neighborhood residents, and regional brides seeking specialty organic color and styling.",
+            "monthly_customer_volume": "280",
+            "repeat_business_rate": "High",
+            "target_customer_types": "Corporate offices looking for weekly lunch catering.",
+            "customer_concentration": "No, spread across many",
+            "seasonality_level": "A little seasonal",
+            "customer_geographic_source": "Within 10–15 miles",
+            "opportunity_radius_miles": "25",
+            "max_travel_distance_miles": "75",
+            "local_opportunity_preference": "Open to nearby areas if high-value",
+            "geographic_service_areas": "Logan Square, Wicker Park, Bucktown, and Greater Chicago",
+            "weather_impact": "High"
         },
-        "section_8_risk": {
-            "top_cost_exposure": "Unconfirmed No-Show Cancellation Rate (11%)",
-            "capacity_risk": "Key-person senior colorist leave"
+        "section_08_risk_and_exposure": {
+            "carries_business_insurance": "Yes",
+            "critical_dependencies": "Licensed master cosmetologists and organic color supply availability",
+            "revenue_concentration": "No, spread across many",
+            "active_permits_licenses": "Illinois Cosmetology Salon License, City of Chicago Business License",
+            "in_progress_permits_licenses": "Salon sanitation certification renewal",
+            "local_operating_restrictions": "Designated food zones, noise ordinances after 10 PM"
         },
-        "section_9_capacity": {
-            "salon_chairs": 8,
-            "weekly_available_hours": 320,
-            "current_chair_utilization": 68.0
+        "section_09_capacity_and_constraints": {
+            "monthly_customer_capacity": "400",
+            "could_handle_more_capacity": "Yes, we had plenty of room",
+            "current_busy_level": [
+                "Around capacity"
+            ],
+            "operational_slowdown_factors": [
+                "Labor",
+                "Equipment"
+            ],
+            "has_active_business_financing": "No"
         },
         "section_10_opportunity_readiness": {
-            "bridal_services": "Active (High spring wedding demand)",
-            "retail_product_attach": "13% (Target 15%)"
+            "external_selling_experience": "Yes, regularly",
+            "commitment_type_preference": "Recurring",
+            "flex_production_capacity": "With some notice",
+            "brand_partnership_willingness": "Yes",
+            "public_visibility_comfort": "Very comfortable",
+            "available_weekly_time": "A few hours a week",
+            "upfront_spending_tolerance": "$500 to $2K",
+            "risk_tolerance": "Moderate",
+            "opportunity_nogo_filters": "Events with less than 200 expected attendees or >100 miles distance",
+            "ideal_partner_types": "Local breweries, festival organizers, corporate campus managers",
+            "win_definition_90_days": "Secure 2 recurring weekly brewery popup slots and 3 corporate catering gigs.",
+            "growth_focus_stage": "Actively growing",
+            "stretch_opportunity_permission": "Yes, show me those",
+            "opportunity_surfacing_frequency": "Only strong matches"
         },
-        "section_11_goals": {
-            "target_annual_revenue": 550000.0,
-            "margin_target": 18.0,
-            "growth_focus": "Bridal package marketing & retail attach expansion"
+        "section_11_strategic_goals": {
+            "goals_12_month": "Increase net margins to 20% and expand high-ticket bridal service packages.",
+            "goals_3_year": "Add a second location in West Loop and develop in-house organic product line.",
+            "long_term_vision": "Premier organic beauty and holistic personal care brand in the Midwest.",
+            "exit_strategy": "Pass on to key operator or sell brand to hospitality group in 8-10 years."
         },
-        "section_12_pricing": {
-            "pricing_tier": "Boutique Premium",
-            "price_points": {"balayage_color": "$240", "haircut_style": "$85", "treatment": "$65"}
+        "section_12_pricing_and_revenue": {
+            "pricing_method": [
+                "Per unit",
+                "Per job"
+            ],
+            "typical_order_size": "$145 styling ticket / $1,200 bridal package",
+            "discounts_and_promotions": "10% discount on recurring corporate weekly bookings.",
+            "customer_payment_methods": [
+                "Upfront",
+                "On delivery"
+            ]
         },
-        "section_13_team": {
-            "full_time_staff": 4,
-            "part_time_staff": 3,
-            "key_personnel": "Creative Director, Senior Colorist, Front Desk Manager"
+        "section_13_hiring_and_team_structure": {
+            "team_roles": "Creative Director, Senior Colorist, Stylists, Front Desk Manager, Apprentices",
+            "planning_to_hire_12_months": "Yes",
+            "recruitment_channels": [
+                "Referrals",
+                "Social media",
+                "Job boards"
+            ],
+            "uses_contractors_freelancers": "Sometimes"
         },
-        "section_14_marketing": {
-            "primary_channels": "Instagram, Square Loyalty SMS, Local Wedding Blogs",
-            "monthly_ad_budget": 500.0
+        "section_14_sales_and_marketing": {
+            "sales_channels": [
+                "Word of mouth",
+                "Social media",
+                "Online search",
+                "Referrals"
+            ],
+            "delivery_methods": [
+                "In-person",
+                "Retail store"
+            ],
+            "tracks_leads_crm": "Spreadsheet",
+            "lead_conversion_rate": "35%",
+            "monthly_marketing_budget": "500"
         },
-        "section_15_owner_prefs": {
-            "risk_tolerance": "Conservative",
-            "funding_preference": "Reinvest profits, zero debt"
-        },
-        "section_16_docs": {
-            "connected_systems": ["Square Appointments", "QuickBooks Online"],
-            "verification_status": "Verified"
+        "section_15_owner_goals_and_preferences": {
+            "current_primary_focus": [
+                "Profit",
+                "Growth"
+            ],
+            "day_to_day_involvement": "Very involved",
+            "financial_risk_tolerance": "Moderate"
         }
     },
 

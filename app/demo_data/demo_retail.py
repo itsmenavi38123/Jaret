@@ -320,86 +320,183 @@ MAIN_ST_GOODS_PAYLOADS = {
 
     # 6. BUSINESS PROFILE PAYLOAD
     "business_profile": {
-        "section_1_basics": {
+        "section_01_business_basics": {
             "business_name": "Main St Goods",
-            "legal_entity": "Whitfield Goods & Gifts LLC",
-            "year_founded": 2018,
             "headquarters": "Asheville, NC",
-            "website": "https://mainstgoods.com",
-            "operating_mode": "Boutique Retail Store & Online BOPIS"
+            "years_in_business": "5 to 10 years",
+            "timezone": "America/New_York",
+            "currency": "USD",
+            "legal_entity_type": "LLC",
+            "ein": "56-1234567",
+            "locations": [
+                {
+                    "name": "Main St Goods Boutique",
+                    "address": "48 N Lexington Ave, Asheville, NC 28801",
+                    "role": "Primary Retail Boutique",
+                    "status": "active"
+                }
+            ]
         },
-        "section_2_ownership": {
-            "owner_name": "Dana Whitfield",
-            "ownership_pct": 100.0,
-            "role": "Founder & General Manager",
-            "years_in_business": 8
+        "section_02_ownership_and_key_people": {
+            "ownership_breakdown": "Dana Whitfield (100%)",
+            "decision_maker": "Dana Whitfield, Founder & General Manager",
+            "bookkeeper_financial_handler": "Blue Ridge Accounting (External)",
+            "has_backup_operator": "Yes"
         },
-        "section_3_industry": {
-            "primary_industry": "Retail - Gift, Novelty, & Souvenir Shops",
-            "naics_code": "453220",
-            "niche": "Curated Local Artisan & Home Decor"
+        "section_03_industry_and_model": {
+            "business_description": "Curated independent retail gift boutique showcasing handmade regional crafts, home decor, ceramics, and gifts.",
+            "revenue_model_description": "Direct retail sales at boutique, buy-online-pickup-in-store, and pop-up events.",
+            "target_market_type": "Both",
+            "business_stage": "Growing and adding capacity"
         },
-        "section_4_operations": {
-            "days_open_per_week": 7,
-            "operating_hours": "10:00 AM - 7:00 PM (Mon-Sat), 11:00 AM - 5:00 PM (Sun)",
-            "pos_system": "Square Register",
-            "ecommerce_platform": "Shopify POS Sync"
+        "section_04_operations": {
+            "team_size": "Small team of 4 to 10",
+            "payroll_type": "Mostly employees with some contractors",
+            "operating_hours": "Mon-Sat 10am-7pm, Sun 11am-5pm",
+            "growth_limiters": [
+                "Staff",
+                "Equipment",
+                "Time"
+            ],
+            "single_supplier_dependency": "We have key suppliers but alternatives exist",
+            "uses_pos_system": "Yes",
+            "space_ownership_status": "Lease it",
+            "operational_software": [
+                "E-commerce platform",
+                "Inventory management",
+                "Payroll software"
+            ],
+            "recent_supplier_issues": "No",
+            "critical_materials_inputs": "Handmade pottery, local scented candles, bespoke stationery, custom gift wrapping."
         },
-        "section_5_financial": {
-            "annual_revenue": 410000.0,
-            "gross_margin_pct": 48.0,
-            "net_margin_pct": 11.8,
-            "monthly_cash_flow": 4035.0,
-            "accounting_software": "QuickBooks Online"
+        "section_05_financial_overview": {
+            "accounting_system": "QuickBooks",
+            "connect_accounting_now": "Yes",
+            "fiscal_year_start": "January to December (all 12 months)",
+            "banks_and_lenders": "First Local Bank",
+            "business_loan_history": "Yes and currently paying it"
         },
-        "section_6_assets": {
-            "real_estate": "Leased storefront on Main Street (1,200 sq ft)",
-            "equipment_value": 24000.0,
-            "inventory_valuation": 68000.0
+        "section_06_assets_and_equipment": {
+            "major_assets": "Custom Wood Display Fixtures, Square Register Terminals, Inventory Storage Racks",
+            "asset_ownership_status": "Truck is leased, internal equipment is owned",
+            "asset_purchase_dates": "Store fixtures custom installed 2018, POS upgraded 2021",
+            "asset_condition": "Good working condition, regular maintenance performed",
+            "leased_monthly_payment": "$500 to $2K"
         },
-        "section_7_customers": {
-            "customer_type": "B2C Tourists & Local Downtown Shoppers",
-            "average_ticket": 42.50,
-            "monthly_transacting_customers": 805
+        "section_07_customers_and_market": {
+            "customer_distance": "Across the metro",
+            "strongest_seasons": [
+                "Spring",
+                "Summer",
+                "Fall"
+            ],
+            "customer_acquisition_channels": [
+                "Walk-by / drive-by",
+                "Word of mouth",
+                "Social media",
+                "Repeat regulars"
+            ],
+            "typical_customers_description": "Tourists exploring downtown Asheville, regional weekend travelers, and loyal local residents buying artisan gifts.",
+            "monthly_customer_volume": "805",
+            "repeat_business_rate": "High",
+            "target_customer_types": "Corporate offices looking for weekly lunch catering.",
+            "customer_concentration": "No, spread across many",
+            "seasonality_level": "A little seasonal",
+            "customer_geographic_source": "Within 10–15 miles",
+            "opportunity_radius_miles": "25",
+            "max_travel_distance_miles": "75",
+            "local_opportunity_preference": "Open to nearby areas if high-value",
+            "geographic_service_areas": "Asheville Downtown, Buncombe County, and Regional North Carolina",
+            "weather_impact": "High"
         },
-        "section_8_risk": {
-            "top_cost_exposure": "Import Tariff Pass-Through on Home Decor (+9%)",
-            "capacity_risk": "Pre-season cash buffer squeeze ahead of Q4 tourist surge"
+        "section_08_risk_and_exposure": {
+            "carries_business_insurance": "Yes",
+            "critical_dependencies": "Downtown tourist foot traffic and key local artisan vendor consignments",
+            "revenue_concentration": "No, spread across many",
+            "active_permits_licenses": "City of Asheville Business License, NC Retail Sales Tax Registration",
+            "in_progress_permits_licenses": "A-Frame Sidewalk Sign Permit",
+            "local_operating_restrictions": "Designated food zones, noise ordinances after 10 PM"
         },
-        "section_9_capacity": {
-            "storefront_square_footage": 1200,
-            "max_daily_customer_capacity": 250,
-            "current_capacity_utilization": 65.0
+        "section_09_capacity_and_constraints": {
+            "monthly_customer_capacity": "1200",
+            "could_handle_more_capacity": "Yes, we had plenty of room",
+            "current_busy_level": [
+                "Around capacity"
+            ],
+            "operational_slowdown_factors": [
+                "Labor",
+                "Equipment"
+            ],
+            "has_active_business_financing": "Yes"
         },
         "section_10_opportunity_readiness": {
-            "bopis_integration": "Active (Shopify + Square)",
-            "artisan_partner_network": "34 local North Carolina makers"
-        },
-        "section_11_goals": {
-            "target_annual_revenue": 480000.0,
-            "margin_target": 15.0,
-            "growth_focus": "Q4 local maker pop-up market expansion"
-        },
-        "section_12_pricing": {
-            "pricing_tier": "Mid-Range",
-            "price_points": {"artisan_candle": "$28", "ceramic_vase": "$45", "greeting_card": "$6"}
-        },
-        "section_13_team": {
-            "full_time_staff": 2,
-            "part_time_staff": 3,
-            "key_personnel": "Store Manager, Inventory Specialist"
-        },
-        "section_14_marketing": {
-            "primary_channels": "Downtown Merchant Association, Instagram, Local Tourist Guides",
-            "monthly_ad_budget": 450.0
-        },
-        "section_15_owner_prefs": {
+            "external_selling_experience": "Yes, regularly",
+            "commitment_type_preference": "Recurring",
+            "flex_production_capacity": "With some notice",
+            "brand_partnership_willingness": "Yes",
+            "public_visibility_comfort": "Very comfortable",
+            "available_weekly_time": "A few hours a week",
+            "upfront_spending_tolerance": "$500 to $2K",
             "risk_tolerance": "Moderate",
-            "funding_preference": "SBA Microloan ($780/mo existing) & operational cash"
+            "opportunity_nogo_filters": "Events with less than 200 expected attendees or >100 miles distance",
+            "ideal_partner_types": "Local breweries, festival organizers, corporate campus managers",
+            "win_definition_90_days": "Secure 2 recurring weekly brewery popup slots and 3 corporate catering gigs.",
+            "growth_focus_stage": "Actively growing",
+            "stretch_opportunity_permission": "Yes, show me those",
+            "opportunity_surfacing_frequency": "Only strong matches"
         },
-        "section_16_docs": {
-            "connected_systems": ["Square POS", "Shopify", "QuickBooks Online"],
-            "verification_status": "Verified"
+        "section_11_strategic_goals": {
+            "goals_12_month": "Increase net margins to 20% and launch curated corporate gift boxes.",
+            "goals_3_year": "Add a second boutique location in Black Mountain and expand e-commerce sales.",
+            "long_term_vision": "Build a recognized regional boutique retail & handmade maker hub.",
+            "exit_strategy": "Pass on to key operator or sell brand to hospitality group in 8-10 years."
+        },
+        "section_12_pricing_and_revenue": {
+            "pricing_method": [
+                "Per unit",
+                "Per job"
+            ],
+            "typical_order_size": "$42.50 retail ticket / $120 gift box",
+            "discounts_and_promotions": "10% discount on recurring corporate weekly bookings.",
+            "customer_payment_methods": [
+                "Upfront",
+                "On delivery"
+            ]
+        },
+        "section_13_hiring_and_team_structure": {
+            "team_roles": "Store Manager, Retail Sales Associate, Inventory Specialist",
+            "planning_to_hire_12_months": "Yes",
+            "recruitment_channels": [
+                "Referrals",
+                "Social media",
+                "Job boards"
+            ],
+            "uses_contractors_freelancers": "Sometimes"
+        },
+        "section_14_sales_and_marketing": {
+            "sales_channels": [
+                "Word of mouth",
+                "Social media",
+                "Events",
+                "Online search"
+            ],
+            "delivery_methods": [
+                "In-person",
+                "Online",
+                "Retail store",
+                "Delivery"
+            ],
+            "tracks_leads_crm": "Spreadsheet",
+            "lead_conversion_rate": "35%",
+            "monthly_marketing_budget": "450"
+        },
+        "section_15_owner_goals_and_preferences": {
+            "current_primary_focus": [
+                "Profit",
+                "Growth"
+            ],
+            "day_to_day_involvement": "Very involved",
+            "financial_risk_tolerance": "Moderate"
         }
     },
 

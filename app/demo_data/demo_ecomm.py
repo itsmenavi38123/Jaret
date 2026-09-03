@@ -321,85 +321,182 @@ LAKESHORE_CANDLE_PAYLOADS = {
 
     # 6. BUSINESS PROFILE PAYLOAD
     "business_profile": {
-        "section_1_basics": {
+        "section_01_business_basics": {
             "business_name": "Lakeshore Candle Co.",
-            "legal_entity": "Kowalski Fragrance LLC",
-            "year_founded": 2020,
             "headquarters": "Grand Rapids, MI",
-            "website": "https://lakeshorecandleco.com",
-            "operating_mode": "DTC E-Commerce & Subscription Box"
+            "years_in_business": "3 to 5 years",
+            "timezone": "America/Detroit",
+            "currency": "USD",
+            "legal_entity_type": "LLC",
+            "ein": "38-1234567",
+            "locations": [
+                {
+                    "name": "Lakeshore Candle Studio & Fulfillment",
+                    "address": "1111 Godfrey Ave SW, Grand Rapids, MI 49503",
+                    "role": "Studio & Fulfillment Hub",
+                    "status": "active"
+                }
+            ]
         },
-        "section_2_ownership": {
-            "owner_name": "Erin Kowalski",
-            "ownership_pct": 100.0,
-            "role": "Founder & Brand Director",
-            "years_in_business": 6
+        "section_02_ownership_and_key_people": {
+            "ownership_breakdown": "Erin Kowalski (100%)",
+            "decision_maker": "Erin Kowalski, Founder & Brand Director",
+            "bookkeeper_financial_handler": "Lakeshore Accounting Group (External)",
+            "has_backup_operator": "Yes"
         },
-        "section_3_industry": {
-            "primary_industry": "Direct-to-Consumer E-Commerce & Home Goods",
-            "naics_code": "454110",
-            "niche": "Hand-Poured Soy Wax Candles & Home Fragrance"
+        "section_03_industry_and_model": {
+            "business_description": "Clean-burning soy wax candle studio and home fragrance DTC brand offering seasonal subscription boxes and custom corporate gift sets.",
+            "revenue_model_description": "E-commerce direct sales, quarterly subscription boxes, and wholesale gift shop accounts.",
+            "target_market_type": "Both",
+            "business_stage": "Growing and adding capacity"
         },
-        "section_4_operations": {
-            "days_open_per_week": 7,
-            "operating_hours": "24/7 E-Commerce Storefront",
-            "pos_system": "Shopify Plus",
-            "email_platform": "Klaviyo"
+        "section_04_operations": {
+            "team_size": "Small team of 4 to 10",
+            "payroll_type": "Mostly employees with some contractors",
+            "operating_hours": "24/7 E-Commerce Storefront, Studio 8am-5pm M-F",
+            "growth_limiters": [
+                "Staff",
+                "Equipment",
+                "Time"
+            ],
+            "single_supplier_dependency": "We have key suppliers but alternatives exist",
+            "uses_pos_system": "Yes",
+            "space_ownership_status": "Lease it",
+            "operational_software": [
+                "E-commerce platform",
+                "Email marketing",
+                "Payroll software"
+            ],
+            "recent_supplier_issues": "No",
+            "critical_materials_inputs": "100% natural Midwest soy wax, clean fragrance oils, cotton wicks, amber glass vessels."
         },
-        "section_5_financial": {
-            "annual_revenue": 348000.0,
-            "gross_margin_pct": 71.0,
-            "net_margin_pct": 14.2,
-            "monthly_cash_flow": 4118.0,
-            "accounting_software": "QuickBooks Online"
+        "section_05_financial_overview": {
+            "accounting_system": "QuickBooks",
+            "connect_accounting_now": "Yes",
+            "fiscal_year_start": "January to December (all 12 months)",
+            "banks_and_lenders": "First Local Bank",
+            "business_loan_history": "Yes and paid it off"
         },
-        "section_6_assets": {
-            "real_estate": "Leased studio workshop (1,500 sq ft)",
-            "equipment_value": 28000.0,
-            "inventory_valuation": 32000.0
+        "section_06_assets_and_equipment": {
+            "major_assets": "Coogar Industrial Wax Melter, Custom Pour Tables, Automatic Label Applicator, Warehouse Racking",
+            "asset_ownership_status": "Truck is leased, internal equipment is owned",
+            "asset_purchase_dates": "Wax melter installed 2021, labeling machine added 2023",
+            "asset_condition": "Good working condition, regular maintenance performed",
+            "leased_monthly_payment": "$500 to $2K"
         },
-        "section_7_customers": {
-            "customer_type": "B2C E-Commerce Shoppers",
-            "average_ticket": 52.0,
-            "monthly_transacting_customers": 558
+        "section_07_customers_and_market": {
+            "customer_distance": "Regional / beyond",
+            "strongest_seasons": [
+                "Fall",
+                "Winter",
+                "Spring"
+            ],
+            "customer_acquisition_channels": [
+                "Social media",
+                "Search / maps",
+                "Word of mouth",
+                "Repeat regulars"
+            ],
+            "typical_customers_description": "Eco-conscious home decor enthusiasts, lifestyle gift buyers, and recurring seasonal fragrance subscribers nationwide.",
+            "monthly_customer_volume": "558",
+            "repeat_business_rate": "High",
+            "target_customer_types": "Corporate offices looking for weekly lunch catering.",
+            "customer_concentration": "No, spread across many",
+            "seasonality_level": "A little seasonal",
+            "customer_geographic_source": "Nationwide / Global",
+            "opportunity_radius_miles": "25",
+            "max_travel_distance_miles": "75",
+            "local_opportunity_preference": "No restriction — open anywhere",
+            "geographic_service_areas": "Nationwide US & Canada Direct-to-Consumer",
+            "weather_impact": "None"
         },
-        "section_8_risk": {
-            "top_cost_exposure": "Meta Ad Acquisition CAC Increase (ROAS 2.4)",
-            "capacity_risk": "Fragrance oil supplier backorder"
+        "section_08_risk_and_exposure": {
+            "carries_business_insurance": "Yes",
+            "critical_dependencies": "Shopify uptime, Klaviyo deliverability, and key domestic soy wax supplier",
+            "revenue_concentration": "No, spread across many",
+            "active_permits_licenses": "State of Michigan Business License, Sales Tax Clearance",
+            "in_progress_permits_licenses": "USPTO trademark registration",
+            "local_operating_restrictions": "Designated food zones, noise ordinances after 10 PM"
         },
-        "section_9_capacity": {
-            "monthly_candle_pour_capacity": 4000,
-            "current_production_capacity_pct": 65.0
+        "section_09_capacity_and_constraints": {
+            "monthly_customer_capacity": "900",
+            "could_handle_more_capacity": "Yes, we had plenty of room",
+            "current_busy_level": [
+                "Around capacity"
+            ],
+            "operational_slowdown_factors": [
+                "Labor",
+                "Equipment"
+            ],
+            "has_active_business_financing": "No"
         },
         "section_10_opportunity_readiness": {
-            "subscription_engine": "Active (Recharge + Shopify)",
-            "email_subscribers_count": 14200
-        },
-        "section_11_goals": {
-            "target_annual_revenue": 450000.0,
-            "margin_target": 18.0,
-            "growth_focus": "Klaviyo email retention & Q4 holiday bundling"
-        },
-        "section_12_pricing": {
-            "pricing_tier": "DTC Premium",
-            "price_points": {"8oz_soy_candle": "$26", "diffuser": "$34", "trio_bundle": "$68"}
-        },
-        "section_13_team": {
-            "full_time_staff": 2,
-            "part_time_staff": 2,
-            "key_personnel": "Founder, Production Lead, Fulfillment Manager"
-        },
-        "section_14_marketing": {
-            "primary_channels": "Meta Ads (Instagram/FB), Klaviyo Email, Pinterest",
-            "monthly_ad_budget": 4200.0
-        },
-        "section_15_owner_prefs": {
+            "external_selling_experience": "Yes, regularly",
+            "commitment_type_preference": "Recurring",
+            "flex_production_capacity": "With some notice",
+            "brand_partnership_willingness": "Yes",
+            "public_visibility_comfort": "Very comfortable",
+            "available_weekly_time": "A few hours a week",
+            "upfront_spending_tolerance": "$500 to $2K",
             "risk_tolerance": "Moderate",
-            "funding_preference": "Reinvest profits, zero debt"
+            "opportunity_nogo_filters": "Events with less than 200 expected attendees or >100 miles distance",
+            "ideal_partner_types": "Local breweries, festival organizers, corporate campus managers",
+            "win_definition_90_days": "Secure 2 recurring weekly brewery popup slots and 3 corporate catering gigs.",
+            "growth_focus_stage": "Actively growing",
+            "stretch_opportunity_permission": "Yes, show me those",
+            "opportunity_surfacing_frequency": "Only strong matches"
         },
-        "section_16_docs": {
-            "connected_systems": ["Shopify Plus", "Klaviyo", "QuickBooks Online", "Meta Ads"],
-            "verification_status": "Verified"
+        "section_11_strategic_goals": {
+            "goals_12_month": "Increase net margins to 20% and scale quarterly subscription box members to 1,500.",
+            "goals_3_year": "Expand wholesale placement into 150 independent retail boutiques nationwide.",
+            "long_term_vision": "Nationally recognized eco-luxury home fragrance brand.",
+            "exit_strategy": "Pass on to key operator or sell brand to hospitality group in 8-10 years."
+        },
+        "section_12_pricing_and_revenue": {
+            "pricing_method": [
+                "Per unit",
+                "Subscription"
+            ],
+            "typical_order_size": "$52 DTC cart / $650 wholesale order",
+            "discounts_and_promotions": "10% discount on recurring corporate weekly bookings.",
+            "customer_payment_methods": [
+                "Upfront",
+                "Monthly"
+            ]
+        },
+        "section_13_hiring_and_team_structure": {
+            "team_roles": "Founder, Production Lead, Fulfillment Manager, Studio Assistant",
+            "planning_to_hire_12_months": "Yes",
+            "recruitment_channels": [
+                "Referrals",
+                "Social media",
+                "Job boards"
+            ],
+            "uses_contractors_freelancers": "Sometimes"
+        },
+        "section_14_sales_and_marketing": {
+            "sales_channels": [
+                "Online search",
+                "Social media",
+                "Ads",
+                "Word of mouth"
+            ],
+            "delivery_methods": [
+                "Online",
+                "Delivery",
+                "Subscription"
+            ],
+            "tracks_leads_crm": "Spreadsheet",
+            "lead_conversion_rate": "35%",
+            "monthly_marketing_budget": "4200"
+        },
+        "section_15_owner_goals_and_preferences": {
+            "current_primary_focus": [
+                "Profit",
+                "Growth"
+            ],
+            "day_to_day_involvement": "Very involved",
+            "financial_risk_tolerance": "Moderate"
         }
     },
 

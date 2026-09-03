@@ -320,86 +320,182 @@ IRONWOOD_PLUMBING_PAYLOADS = {
 
     # 6. BUSINESS PROFILE PAYLOAD
     "business_profile": {
-        "section_1_basics": {
+        "section_01_business_basics": {
             "business_name": "Ironwood Plumbing & Heating",
-            "legal_entity": "Boone Trade Services LLC",
-            "year_founded": 2010,
             "headquarters": "Columbus, OH",
-            "website": "https://ironwoodplumbing.com",
-            "operating_mode": "Residential & Commercial Trade Contractor"
+            "years_in_business": "More than 10 years",
+            "timezone": "America/New_York",
+            "currency": "USD",
+            "legal_entity_type": "LLC",
+            "ein": "31-9876543",
+            "locations": [
+                {
+                    "name": "Ironwood Central Workshop & Dispatch",
+                    "address": "845 N High St, Columbus, OH 43215",
+                    "role": "Central Workshop & Dispatch",
+                    "status": "active"
+                }
+            ]
         },
-        "section_2_ownership": {
-            "owner_name": "Marcus Boone",
-            "ownership_pct": 100.0,
-            "role": "Owner & Master Plumber",
-            "years_in_business": 16
+        "section_02_ownership_and_key_people": {
+            "ownership_breakdown": "Marcus Boone (100%)",
+            "decision_maker": "Marcus Boone, Owner & Master Plumber",
+            "bookkeeper_financial_handler": "Buckeye State CPA Group (External)",
+            "has_backup_operator": "Yes"
         },
-        "section_3_industry": {
-            "primary_industry": "Plumbing, Heating, & Air-Conditioning Contractors",
-            "naics_code": "238220",
-            "niche": "High-Value Residential Replacement & Commercial Service"
+        "section_03_industry_and_model": {
+            "business_description": "Licensed master plumbing, HVAC replacement, and trenchless sewer repair contracting service for residential and commercial clients.",
+            "revenue_model_description": "Hourly service tickets, fixed-price mechanical installations, commercial maintenance contracts, and trenchless sewer jobs.",
+            "target_market_type": "Both",
+            "business_stage": "Growing and adding capacity"
         },
-        "section_4_operations": {
-            "days_open_per_week": 6,
-            "operating_hours": "7:00 AM - 6:00 PM (Mon-Sat), Emergency 24/7",
-            "pos_system": "Jobber + QuickBooks Sync",
-            "vehicle_fleet": "7x Service Vans with Pipe Inspection Cameras"
+        "section_04_operations": {
+            "team_size": "Team of 11 to 25",
+            "payroll_type": "Mostly employees with some contractors",
+            "operating_hours": "Mon-Sat 7am-6pm, Emergency 24/7",
+            "growth_limiters": [
+                "Staff",
+                "Equipment",
+                "Time"
+            ],
+            "single_supplier_dependency": "We have key suppliers but alternatives exist",
+            "uses_pos_system": "Yes",
+            "space_ownership_status": "Own it",
+            "operational_software": [
+                "Scheduling software",
+                "Project management",
+                "Payroll software"
+            ],
+            "recent_supplier_issues": "No",
+            "critical_materials_inputs": "Commercial PVC piping, copper fittings, water heaters, heat pump units, refrigerant."
         },
-        "section_5_financial": {
-            "annual_revenue": 1380000.0,
-            "gross_margin_pct": 55.0,
-            "net_margin_pct": 18.5,
-            "monthly_cash_flow": 21275.0,
-            "accounting_software": "QuickBooks Online"
+        "section_05_financial_overview": {
+            "accounting_system": "QuickBooks",
+            "connect_accounting_now": "Yes",
+            "fiscal_year_start": "January to December (all 12 months)",
+            "banks_and_lenders": "First Local Bank",
+            "business_loan_history": "Yes and currently paying it"
         },
-        "section_6_assets": {
-            "real_estate": "Owned shop & storage yard (4,500 sq ft)",
-            "equipment_value": 185000.0,
-            "fleet_value": 140000.0
+        "section_06_assets_and_equipment": {
+            "major_assets": "7x Outfitted Ford Transit Vans, Trenchless Pipe Relining Machine, Ridgid Sewer Cameras, Shop Facility",
+            "asset_ownership_status": "Truck is leased, internal equipment is owned",
+            "asset_purchase_dates": "Trenchless rig acquired 2021, fleet updated 2020-2023",
+            "asset_condition": "Good working condition, regular maintenance performed",
+            "leased_monthly_payment": "$500 to $2K"
         },
-        "section_7_customers": {
-            "customer_type": "60% Residential Homeowners, 40% Commercial Property Managers",
-            "average_ticket": 485.0,
-            "monthly_transacting_customers": 235
+        "section_07_customers_and_market": {
+            "customer_distance": "Across the metro",
+            "strongest_seasons": [
+                "Spring",
+                "Summer",
+                "Fall"
+            ],
+            "customer_acquisition_channels": [
+                "Word of mouth",
+                "Search / maps",
+                "Social media",
+                "Repeat regulars"
+            ],
+            "typical_customers_description": "Residential homeowners needing emergency mechanical repairs and commercial property managers managing multifamily complexes.",
+            "monthly_customer_volume": "235",
+            "repeat_business_rate": "High",
+            "target_customer_types": "Corporate offices looking for weekly lunch catering.",
+            "customer_concentration": "No, spread across many",
+            "seasonality_level": "A little seasonal",
+            "customer_geographic_source": "Within 10–15 miles",
+            "opportunity_radius_miles": "25",
+            "max_travel_distance_miles": "75",
+            "local_opportunity_preference": "Open to nearby areas if high-value",
+            "geographic_service_areas": "Franklin County, Delaware County, and Greater Columbus Metro",
+            "weather_impact": "High"
         },
-        "section_8_risk": {
-            "top_cost_exposure": "Accounts Receivable Aging (68 days on key commercial account)",
-            "capacity_risk": "Licensed HVAC Technician shortage"
+        "section_08_risk_and_exposure": {
+            "carries_business_insurance": "Yes",
+            "critical_dependencies": "Licensed master plumber certification and commercial van fleet uptime",
+            "revenue_concentration": "No, spread across many",
+            "active_permits_licenses": "State of Ohio Master Plumber License, Class A HVAC Contractor License, City Bonding",
+            "in_progress_permits_licenses": "State backflow testing re-certification",
+            "local_operating_restrictions": "Designated food zones, noise ordinances after 10 PM"
         },
-        "section_9_capacity": {
-            "field_teams": 7,
-            "max_daily_calls": 35,
-            "current_capacity_utilization": 92.0
+        "section_09_capacity_and_constraints": {
+            "monthly_customer_capacity": "350",
+            "could_handle_more_capacity": "Yes, we had plenty of room",
+            "current_busy_level": [
+                "Around capacity"
+            ],
+            "operational_slowdown_factors": [
+                "Labor",
+                "Equipment"
+            ],
+            "has_active_business_financing": "Yes"
         },
         "section_10_opportunity_readiness": {
-            "trenchless_camera_equipment": "Fully Equipped (2 crews certified)",
-            "commercial_licensing": "Master Plumber & State HVAC Class A"
-        },
-        "section_11_goals": {
-            "target_annual_revenue": 1600000.0,
-            "margin_target": 20.0,
-            "growth_focus": "High-margin trenchless sewer replacement market"
-        },
-        "section_12_pricing": {
-            "pricing_tier": "Premium Trade Rates",
-            "price_points": {"hourly_service_rate": "$145/hr", "trenchless_job": "$18,500 avg", "water_heater_install": "$2,200"}
-        },
-        "section_13_team": {
-            "full_time_staff": 12,
-            "part_time_staff": 2,
-            "key_personnel": "Master Plumber, Dispatch Manager, Senior HVAC Tech"
-        },
-        "section_14_marketing": {
-            "primary_channels": "Local Google Guaranteed Ads, Fleet Vehicle Wraps, Property Management Referrals",
-            "monthly_ad_budget": 1800.0
-        },
-        "section_15_owner_prefs": {
+            "external_selling_experience": "Yes, regularly",
+            "commitment_type_preference": "Recurring",
+            "flex_production_capacity": "With some notice",
+            "brand_partnership_willingness": "Yes",
+            "public_visibility_comfort": "Very comfortable",
+            "available_weekly_time": "A few hours a week",
+            "upfront_spending_tolerance": "$500 to $2K",
             "risk_tolerance": "Moderate",
-            "funding_preference": "Reinvest cash flow, zero equipment debt"
+            "opportunity_nogo_filters": "Events with less than 200 expected attendees or >100 miles distance",
+            "ideal_partner_types": "Local breweries, festival organizers, corporate campus managers",
+            "win_definition_90_days": "Secure 2 recurring weekly brewery popup slots and 3 corporate catering gigs.",
+            "growth_focus_stage": "Actively growing",
+            "stretch_opportunity_permission": "Yes, show me those",
+            "opportunity_surfacing_frequency": "Only strong matches"
         },
-        "section_16_docs": {
-            "connected_systems": ["Jobber", "QuickBooks Online", "Google Local Services"],
-            "verification_status": "Verified"
+        "section_11_strategic_goals": {
+            "goals_12_month": "Increase net margins to 20% and expand municipal / commercial trenchless sewer contracts.",
+            "goals_3_year": "Scale fleet to 12 vans and establish dedicated commercial maintenance division.",
+            "long_term_vision": "Premier regional trade contractor across Central Ohio.",
+            "exit_strategy": "Pass on to key operator or sell brand to hospitality group in 8-10 years."
+        },
+        "section_12_pricing_and_revenue": {
+            "pricing_method": [
+                "Hourly",
+                "Per job"
+            ],
+            "typical_order_size": "$485 service call / $18,500 trenchless project",
+            "discounts_and_promotions": "10% discount on recurring corporate weekly bookings.",
+            "customer_payment_methods": [
+                "Upfront",
+                "Net-30",
+                "On delivery"
+            ]
+        },
+        "section_13_hiring_and_team_structure": {
+            "team_roles": "Master Plumber, Dispatch Manager, Senior HVAC Tech, Journeymen, Apprentices",
+            "planning_to_hire_12_months": "Yes",
+            "recruitment_channels": [
+                "Referrals",
+                "Social media",
+                "Job boards"
+            ],
+            "uses_contractors_freelancers": "Sometimes"
+        },
+        "section_14_sales_and_marketing": {
+            "sales_channels": [
+                "Word of mouth",
+                "Referrals",
+                "Social media",
+                "Ads"
+            ],
+            "delivery_methods": [
+                "In-person",
+                "Phone"
+            ],
+            "tracks_leads_crm": "Spreadsheet",
+            "lead_conversion_rate": "35%",
+            "monthly_marketing_budget": "1800"
+        },
+        "section_15_owner_goals_and_preferences": {
+            "current_primary_focus": [
+                "Profit",
+                "Growth"
+            ],
+            "day_to_day_involvement": "Very involved",
+            "financial_risk_tolerance": "Moderate"
         }
     },
 

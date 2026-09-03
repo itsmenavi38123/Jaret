@@ -590,14 +590,26 @@ async def get_profile_classification(
             from app.demo_data import get_demo_payload
             demo_payload = get_demo_payload(login_label or "demo-restaurant")
             bp = demo_payload.get("business_profile", {})
+            acc = demo_payload.get("account", {})
             return JSONResponse(
                 status_code=status.HTTP_200_OK,
                 content={
                     "success": True,
                     "data": {
-                        "business_classifications": [bp.get("section_3_industry", {}).get("primary_industry", "Small Business")],
-                        "business_tags": [bp.get("section_1_basics", {}).get("operating_mode", "General")],
-                        "proven_capabilities": bp.get("section_16_docs", {}).get("connected_systems", ["QuickBooks Connected"])
+                        "business_classifications": [
+                            bp.get("section_03_industry_and_model", {}).get("primary_industry")
+                            or bp.get("section_3_industry", {}).get("primary_industry")
+                            or acc.get("industry", "Small Business")
+                        ],
+                        "business_tags": [
+                            bp.get("section_01_business_basics", {}).get("operating_mode")
+                            or bp.get("section_1_basics", {}).get("operating_mode")
+                            or acc.get("business_model", "General")
+                        ],
+                        "proven_capabilities": (
+                            bp.get("section_16_uploads_and_docs", {}).get("connected_systems")
+                            or bp.get("section_16_docs", {}).get("connected_systems", ["QuickBooks Connected"])
+                        )
                     }
                 }
             )

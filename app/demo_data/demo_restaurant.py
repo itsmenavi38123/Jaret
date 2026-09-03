@@ -353,86 +353,181 @@ TONYS_BROOKLYN_PIZZA_PAYLOADS = {
 
     # 6. BUSINESS PROFILE PAYLOAD
     "business_profile": {
-        "section_1_basics": {
+        "section_01_business_basics": {
             "business_name": "Tony's Brooklyn Pizza",
-            "legal_entity": "Marchetti Pizza Group LLC",
-            "year_founded": 2012,
             "headquarters": "Park Slope, Brooklyn, NY",
-            "website": "https://tonysbrooklynpizza.com",
-            "operating_mode": "Dine-in, Takeout, & Corporate Catering"
+            "years_in_business": "More than 10 years",
+            "timezone": "America/New_York",
+            "currency": "USD",
+            "legal_entity_type": "LLC",
+            "ein": "11-2345678",
+            "locations": [
+                {
+                    "name": "Tony's Brooklyn Pizza - Flagship",
+                    "address": "284 5th Ave, Brooklyn, NY 11215",
+                    "role": "Primary Restaurant",
+                    "status": "active"
+                }
+            ]
         },
-        "section_2_ownership": {
-            "owner_name": "Tony Marchetti",
-            "ownership_pct": 100.0,
-            "role": "Founder & Head Pizzaiolo",
-            "years_in_business": 14
+        "section_02_ownership_and_key_people": {
+            "ownership_breakdown": "Tony Marchetti (100%)",
+            "decision_maker": "Tony Marchetti, Founder & Head Pizzaiolo",
+            "bookkeeper_financial_handler": "Brooklyn CPA Partners (External)",
+            "has_backup_operator": "Yes"
         },
-        "section_3_industry": {
-            "primary_industry": "Restaurants & Food Service",
-            "naics_code": "722511",
-            "niche": "Independent Artisanal Pizzeria"
+        "section_03_industry_and_model": {
+            "business_description": "Artisanal deck-oven NY style pizzeria serving dine-in, takeout, and corporate catering in Park Slope.",
+            "revenue_model_description": "Direct food sales at events, counter orders, catering orders, and delivery.",
+            "target_market_type": "Both",
+            "business_stage": "Growing and adding capacity"
         },
-        "section_4_operations": {
-            "days_open_per_week": 6,
-            "operating_hours": "11:30 AM - 10:00 PM (Tue-Sun)",
-            "pos_system": "Toast POS",
-            "kitchen_equipment": "3x Marsal SD-660 Deck Ovens"
+        "section_04_operations": {
+            "team_size": "Small team of 4 to 10",
+            "payroll_type": "Mostly employees with some contractors",
+            "operating_hours": "Tue-Sun, 11:30am-10pm",
+            "growth_limiters": [
+                "Staff",
+                "Equipment",
+                "Time"
+            ],
+            "single_supplier_dependency": "We have key suppliers but alternatives exist",
+            "uses_pos_system": "Yes",
+            "space_ownership_status": "Lease it",
+            "operational_software": [
+                "Booking or reservation system",
+                "Payroll software",
+                "Inventory management"
+            ],
+            "recent_supplier_issues": "No",
+            "critical_materials_inputs": "Whole milk low-moisture mozzarella, San Marzano tomatoes, high-gluten flour."
         },
-        "section_5_financial": {
-            "annual_revenue": 1060000.0,
-            "gross_margin_pct": 66.6,
-            "net_margin_pct": 13.2,
-            "monthly_cash_flow": 11650.0,
-            "accounting_software": "QuickBooks Online"
+        "section_05_financial_overview": {
+            "accounting_system": "QuickBooks",
+            "connect_accounting_now": "Yes",
+            "fiscal_year_start": "January to December (all 12 months)",
+            "banks_and_lenders": "First Local Bank",
+            "business_loan_history": "Yes and paid it off"
         },
-        "section_6_assets": {
-            "real_estate": "Leased commercial space (1,800 sq ft)",
-            "equipment_value": 85000.0,
-            "vehicle_fleet": "1x Ram ProMaster Delivery Van"
+        "section_06_assets_and_equipment": {
+            "major_assets": "3x Marsal Deck Ovens, Hobart 60qt Dough Mixer, Walk-in Cooler, Ram ProMaster Van",
+            "asset_ownership_status": "Truck is leased, internal equipment is owned",
+            "asset_purchase_dates": "Ovens bought Mar 2018, van leased Jan 2021",
+            "asset_condition": "Good working condition, regular maintenance performed",
+            "leased_monthly_payment": "$500 to $2K"
         },
-        "section_7_customers": {
-            "customer_type": "B2C Local Residents & B2B Corporate Catering",
-            "average_ticket": 31.0,
-            "monthly_transacting_customers": 2850
+        "section_07_customers_and_market": {
+            "customer_distance": "Across the metro",
+            "strongest_seasons": [
+                "Fall",
+                "Winter",
+                "Spring"
+            ],
+            "customer_acquisition_channels": [
+                "Walk-by / drive-by",
+                "Word of mouth",
+                "Social media",
+                "Repeat regulars"
+            ],
+            "typical_customers_description": "Park Slope families, downtown lunch workers, and local corporate offices ordering catering.",
+            "monthly_customer_volume": "2850",
+            "repeat_business_rate": "High",
+            "target_customer_types": "Corporate offices looking for weekly lunch catering.",
+            "customer_concentration": "No, spread across many",
+            "seasonality_level": "A little seasonal",
+            "customer_geographic_source": "Within 10–15 miles",
+            "opportunity_radius_miles": "25",
+            "max_travel_distance_miles": "75",
+            "local_opportunity_preference": "Open to nearby areas if high-value",
+            "geographic_service_areas": "Park Slope, Gowanus, Prospect Heights, Downtown Brooklyn",
+            "weather_impact": "High"
         },
-        "section_8_risk": {
-            "top_cost_exposure": "Mozzarella & Specialty Dairy Inflation (+14%)",
-            "capacity_risk": "Oven Throughput Bottleneck on Fri-Sat peak hours"
+        "section_08_risk_and_exposure": {
+            "carries_business_insurance": "Yes",
+            "critical_dependencies": "Local commissary kitchen and primary cheese distributor.",
+            "revenue_concentration": "No, spread across many",
+            "active_permits_licenses": "NYC Dept of Health Permit, City Business License, ServSafe",
+            "in_progress_permits_licenses": "Sidewalk cafe temporary renewal permit",
+            "local_operating_restrictions": "Designated food zones, noise ordinances after 10 PM"
         },
-        "section_9_capacity": {
-            "seating_capacity": 42,
-            "peak_dough_capacity_pies_per_hour": 60,
-            "current_peak_utilization": 100.0
+        "section_09_capacity_and_constraints": {
+            "monthly_customer_capacity": "3200",
+            "could_handle_more_capacity": "Yes, we had plenty of room",
+            "current_busy_level": [
+                "Around capacity"
+            ],
+            "operational_slowdown_factors": [
+                "Labor",
+                "Equipment"
+            ],
+            "has_active_business_financing": "No"
         },
         "section_10_opportunity_readiness": {
-            "catering_capacity": "High (can expand +$15K/mo with corporate accounts)",
-            "digital_order_share": 38.0
+            "external_selling_experience": "Yes, regularly",
+            "commitment_type_preference": "Recurring",
+            "flex_production_capacity": "With some notice",
+            "brand_partnership_willingness": "Yes",
+            "public_visibility_comfort": "Very comfortable",
+            "available_weekly_time": "A few hours a week",
+            "upfront_spending_tolerance": "$500 to $2K",
+            "risk_tolerance": "Moderate",
+            "opportunity_nogo_filters": "Events with less than 200 expected attendees or >100 miles distance",
+            "ideal_partner_types": "Local breweries, festival organizers, corporate campus managers",
+            "win_definition_90_days": "Secure 2 recurring weekly brewery popup slots and 3 corporate catering gigs.",
+            "growth_focus_stage": "Actively growing",
+            "stretch_opportunity_permission": "Yes, show me those",
+            "opportunity_surfacing_frequency": "Only strong matches"
         },
-        "section_11_goals": {
-            "target_annual_revenue": 1250000.0,
-            "margin_target": 16.0,
-            "growth_focus": "Corporate catering lunch contracts"
+        "section_11_strategic_goals": {
+            "goals_12_month": "Increase net margins to 20% and scale corporate lunch catering orders.",
+            "goals_3_year": "Add a second food truck or satellite hub and expand into neighboring areas.",
+            "long_term_vision": "Build a recognized regional mobile and storefront catering brand.",
+            "exit_strategy": "Pass on to key operator or sell brand to hospitality group in 8-10 years."
         },
-        "section_12_pricing": {
-            "pricing_tier": "Mid-Premium",
-            "price_points": {"large_pie": "$24-$29", "slice": "$4.50", "catering_tray": "$140"}
+        "section_12_pricing_and_revenue": {
+            "pricing_method": [
+                "Per unit",
+                "Per job"
+            ],
+            "typical_order_size": "$31 retail / $380 catering",
+            "discounts_and_promotions": "10% discount on recurring corporate weekly bookings.",
+            "customer_payment_methods": [
+                "Upfront",
+                "On delivery"
+            ]
         },
-        "section_13_team": {
-            "full_time_staff": 5,
-            "part_time_staff": 7,
-            "key_personnel": "Head Pizzaiolo, Kitchen Manager, Front of House Lead"
+        "section_13_hiring_and_team_structure": {
+            "team_roles": "Head Pizzaiolo, Prep Cook, Cashier/Server, Driver",
+            "planning_to_hire_12_months": "Yes",
+            "recruitment_channels": [
+                "Referrals",
+                "Social media",
+                "Walk-ins"
+            ],
+            "uses_contractors_freelancers": "Sometimes"
         },
-        "section_14_marketing": {
-            "primary_channels": "Local Instagram, Google Business Profile, Toast Loyalty",
-            "monthly_ad_budget": 650.0
+        "section_14_sales_and_marketing": {
+            "sales_channels": [
+                "Word of mouth",
+                "Social media",
+                "Events"
+            ],
+            "delivery_methods": [
+                "In-person",
+                "Online",
+                "Delivery"
+            ],
+            "tracks_leads_crm": "Spreadsheet",
+            "lead_conversion_rate": "35%",
+            "monthly_marketing_budget": "650"
         },
-        "section_15_owner_prefs": {
-            "risk_tolerance": "Conservative",
-            "funding_preference": "Reinvest cash flow, zero high-interest debt"
-        },
-        "section_16_docs": {
-            "connected_systems": ["Toast POS", "QuickBooks Online", "Google Business Profile"],
-            "verification_status": "Verified"
+        "section_15_owner_goals_and_preferences": {
+            "current_primary_focus": [
+                "Profit",
+                "Growth"
+            ],
+            "day_to_day_involvement": "Very involved",
+            "financial_risk_tolerance": "Moderate"
         }
     },
 
