@@ -240,8 +240,8 @@ async def _perform_qbo_request(method: str, url: str, access_token: str, **kwarg
                         detail="QuickBooks API rate limit exceeded. Please try again later.",
                     )
 
-            if response.status_code == 401:
-                raise QuickBooksUnauthorizedError("Access token expired or invalid")
+            if response.status_code in (401, 403):
+                raise QuickBooksUnauthorizedError(f"QuickBooks token invalid or environment mismatch: {response.text}")
 
             if response.status_code != 200:
 

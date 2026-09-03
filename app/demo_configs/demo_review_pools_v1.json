@@ -1,0 +1,94 @@
+{
+  "pools": {
+    "demo-restaurant": {
+      "5": [
+        "Best pizza in Brooklyn hands down! Crispy crust and perfect sauce.",
+        "Tony is always there greeting guests. Love the pepperoni square.",
+        "Consistently amazing pizza and friendly service every Friday night.",
+        "Our go-to neighborhood Italian spot. Catering was also fantastic."
+      ],
+      "4": [
+        "Great pizza, slightly crowded on Saturday night but worth the wait.",
+        "Classic Brooklyn slice. Crust is top notch.",
+        "Good food and quick takeout delivery."
+      ],
+      "3": [
+        "Pizza is good but waited 45 minutes for a table on Saturday.",
+        "Delivery took over an hour during the dinner rush.",
+        "Good slices but service felt a bit rushed tonight."
+      ]
+    },
+    "demo-retail": {
+      "5": [
+        "Such a charming boutique with unique local crafts and candles!",
+        "Dana helped me pick out the perfect birthday gift. Beautiful wrapping too.",
+        "Love shopping local here whenever I visit Asheville."
+      ],
+      "4": [
+        "Cute selection of home goods and gifts.",
+        "Lovely shop, great stationery and pottery."
+      ]
+    },
+    "demo-service": {
+      "5": [
+        "Marcus and his crew solved our heating issue in freezing weather quickly.",
+        "Honest, professional master plumbers. Cleaned up everything after.",
+        "Fair flat-rate pricing and arrived right on schedule."
+      ],
+      "4": [
+        "Good service and clear communication on repair options.",
+        "Prompt dispatch and polite technicians."
+      ],
+      "3": [
+        "Job was done well but took a bit longer than estimated."
+      ]
+    },
+    "demo-salon": {
+      "5": [
+        "Priya is a color genius! My balayage looks incredible.",
+        "Best organic hair salon in Chicago. Relaxing atmosphere.",
+        "Great haircut and love the non-toxic scalp treatment."
+      ],
+      "4": [
+        "Very skilled stylists and modern salon space.",
+        "Great blowout and nice ambiance."
+      ]
+    },
+    "demo-multi": {
+      "5": [
+        "Exceptional single-origin coffee. The Alberta cafe vibe is unbeatable.",
+        "Delicious cold brew and friendly baristas every morning.",
+        "Our office loves their wholesale roasted beans."
+      ],
+      "4": [
+        "Solid espresso and pastries at the Division location.",
+        "Great specialty coffee roaster in Portland."
+      ],
+      "3": [
+        "Great coffee but seating can be hard to find on weekend mornings."
+      ]
+    },
+    "demo-ecomm": {
+      "5": [
+        "These candles smell incredible and burn so clean!",
+        "Fast shipping and lovely eco-friendly packaging.",
+        "The seasonal subscription box exceeded expectations."
+      ],
+      "4": [
+        "Great scent throw and nice glass jars.",
+        "High quality soy candles."
+      ]
+    },
+    "demo-fitness": {
+      "5": [
+        "Carlos and the coaches bring unbelievable energy to every workout!",
+        "Challenging HIIT classes with great community support.",
+        "Clean studio, excellent functional equipment, and great music."
+      ],
+      "4": [
+        "Great group workouts and encouraging coaching staff.",
+        "Challenging conditioning classes."
+      ]
+    }
+  }
+}

@@ -115,7 +115,7 @@ docker-compose.yml
 
 secrets/
 *.json
-!app/scenario_lab_fallback.json
+!app/demo_configs/*.json
 
 .env
 

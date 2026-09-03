@@ -1,0 +1,130 @@
+{
+  "businesses": [
+    {
+      "business_id": "demo-multi",
+      "name": "Driftwood Coffee Roasters",
+      "vertical": "multi_location",
+      "monthly_revenue_base": 76500,
+      "weekly_curve": [0.13, 0.13, 0.13, 0.14, 0.17, 0.18, 0.12],
+      "seasonality": [0.95, 0.95, 1.00, 1.00, 1.00, 0.92, 0.88, 0.90, 1.00, 1.05, 1.10, 1.20],
+      "jitter_pct": 8.0,
+      "closed_days": [],
+      "streams": [
+        {
+          "id": "alberta_cafe",
+          "share": 0.44,
+          "tx_count": {"weekday": [220, 280], "weekend": [300, 360]},
+          "ticket_mix": [{"label": "Cafe Order", "share": 1.0, "avg": 9.40}]
+        },
+        {
+          "id": "division_cafe",
+          "share": 0.32,
+          "tx_count": {"weekday": [160, 200], "weekend": [200, 240]},
+          "ticket_mix": [{"label": "Cafe Order", "share": 1.0, "avg": 9.20}]
+        },
+        {
+          "id": "wholesale",
+          "share": 0.24,
+          "tx_count": {"per_week": [6, 10]},
+          "ticket_mix": [{"label": "Wholesale Bulk Coffee", "share": 1.0, "avg": 650.0}],
+          "ar_terms": {"stated_days": 15, "actual_days": [12, 28]}
+        }
+      ],
+      "fixed_events": [
+        {"label": "Rent - Alberta Flagship & Roastery", "day_of_month": 1, "amount": 6100.0},
+        {"label": "Rent - Division Satellite", "day_of_month": 1, "amount": 5300.0},
+        {"label": "Roaster Equipment Loan", "day_of_month": 10, "amount": 1150.0},
+        {"label": "Payroll - Biweekly", "cadence": "biweekly", "amount_pct_of_monthly_rev": 0.32}
+      ],
+      "anomalies": [
+        {"id": "A1", "wk": [2, 5], "effect": {"cogs_drift": 0.05}},
+        {"id": "A4", "wk": [10, 13], "effect": {"recurring_income_add": 2900.0}}
+      ],
+      "reviews": {
+        "Google": {"per_week": [3, 5], "star_dist": {"5": 0.75, "4": 0.2, "3": 0.05}}
+      }
+    },
+    {
+      "business_id": "demo-ecomm",
+      "name": "Lakeshore Candle Co.",
+      "vertical": "e-commerce",
+      "monthly_revenue_base": 29000,
+      "weekly_curve": [0.16, 0.15, 0.15, 0.15, 0.14, 0.12, 0.13],
+      "seasonality": [0.50, 0.55, 0.70, 0.75, 0.85, 0.80, 0.75, 0.85, 1.10, 1.40, 2.10, 1.90],
+      "jitter_pct": 8.0,
+      "closed_days": [],
+      "streams": [
+        {
+          "id": "shopify_dtc",
+          "share": 0.85,
+          "orders_per_day": {"baseline": [14, 22]},
+          "ticket_mix": [{"label": "Candle Order", "share": 1.0, "avg": 54.0}]
+        },
+        {
+          "id": "subscriptions",
+          "share": 0.15,
+          "orders_per_day": {"baseline": [2, 5]},
+          "ticket_mix": [{"label": "Quarterly Fragrance Box", "share": 1.0, "avg": 85.0}]
+        }
+      ],
+      "fixed_events": [
+        {"label": "Rent - Wealthy St Studio", "day_of_month": 1, "amount": 2800.0},
+        {"label": "Meta Ads Spend - Monthly Avg", "day_of_month": 15, "amount": 4200.0},
+        {"label": "Payroll - Biweekly", "cadence": "biweekly", "amount_pct_of_monthly_rev": 0.22}
+      ],
+      "anomalies": [
+        {"id": "A1", "wk": [3, 6], "effect": {"roas_slide": 0.7}},
+        {"id": "A2", "wk": [7, 8], "effect": {"shipping_hike": 0.06}}
+      ],
+      "reviews": {
+        "Google": {"per_week": [1, 2], "star_dist": {"5": 0.9, "4": 0.1}}
+      }
+    },
+    {
+      "business_id": "demo-fitness",
+      "name": "Southpoint Fitness Studio",
+      "vertical": "fitness",
+      "monthly_revenue_base": 44000,
+      "weekly_curve": [0.17, 0.17, 0.17, 0.17, 0.15, 0.10, 0.07],
+      "seasonality": [1.35, 1.15, 1.05, 1.00, 0.95, 0.85, 0.80, 0.85, 1.05, 1.05, 0.95, 0.90],
+      "jitter_pct": 8.0,
+      "closed_days": [],
+      "streams": [
+        {
+          "id": "memberships",
+          "share": 0.84,
+          "tx_count": {"weekday": [18, 26], "weekend": [10, 15]},
+          "ticket_mix": [
+            {"label": "Monthly Membership Charge", "share": 0.75, "avg": 159.0},
+            {"label": "8-Class Pack", "share": 0.25, "avg": 109.0}
+          ]
+        },
+        {
+          "id": "dropin_pt",
+          "share": 0.12,
+          "tx_count": {"weekday": [4, 8], "weekend": [3, 6]},
+          "ticket_mix": [
+            {"label": "Drop-in Pass", "share": 0.7, "avg": 24.0},
+            {"label": "Personal Coaching Session", "share": 0.3, "avg": 85.0}
+          ]
+        },
+        {
+          "id": "retail",
+          "share": 0.04,
+          "tx_count": {"weekday": [6, 12], "weekend": [4, 8]},
+          "ticket_mix": [{"label": "Energy Drink / Apparel", "share": 1.0, "avg": 18.0}]
+        }
+      ],
+      "fixed_events": [
+        {"label": "Rent - MacDill Ave Studio", "day_of_month": 1, "amount": 5400.0},
+        {"label": "Payroll - Biweekly Coaches", "cadence": "biweekly", "amount_pct_of_monthly_rev": 0.36}
+      ],
+      "anomalies": [
+        {"id": "A1", "wk": [3, 6], "effect": {"churn_creep": 0.023}}
+      ],
+      "reviews": {
+        "Google": {"per_week": [1, 3], "star_dist": {"5": 0.85, "4": 0.15}}
+      }
+    }
+  ]
+}

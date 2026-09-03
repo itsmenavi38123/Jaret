@@ -1,0 +1,1323 @@
+{
+  "demo-restaurant": {
+    "account": {
+      "login_label": "demo-restaurant",
+      "business_name": "Tony's Brooklyn Pizza",
+      "email": "demo-restaurant@lightsignal.app",
+      "industry": "Restaurant / Pizzeria",
+      "is_demo": true
+    },
+    "business_profile": {
+      "section_01_business_basics": {
+        "business_name": "Tony's Brooklyn Pizza",
+        "headquarters": "Park Slope, Brooklyn, NY",
+        "years_in_business": "More than 10 years",
+        "timezone": "America/New_York",
+        "currency": "USD",
+        "legal_entity_type": "LLC",
+        "ein": "11-2345678",
+        "locations": [
+          {
+            "name": "Tony's Brooklyn Pizza - Flagship",
+            "address": "284 5th Ave, Brooklyn, NY 11215",
+            "role": "Primary Restaurant",
+            "status": "active"
+          }
+        ]
+      },
+      "section_02_ownership_and_key_people": {
+        "ownership_breakdown": "Tony Marchetti (100%)",
+        "decision_maker": "Tony Marchetti, Founder & Head Pizzaiolo",
+        "bookkeeper_financial_handler": "Brooklyn CPA Partners (External)",
+        "has_backup_operator": "Yes"
+      },
+      "section_03_industry_and_model": {
+        "business_description": "Artisanal deck-oven NY style pizzeria serving dine-in, takeout, and corporate catering in Park Slope.",
+        "revenue_model_description": "Direct food sales at events, counter orders, catering orders, and delivery.",
+        "target_market_type": "Both",
+        "business_stage": "Growing and adding capacity"
+      },
+      "section_04_operations": {
+        "team_size": "Small team of 4 to 10",
+        "payroll_type": "Mostly employees with some contractors",
+        "operating_hours": "Tue-Sun, 11:30am-10pm",
+        "growth_limiters": [
+          "Staff",
+          "Equipment",
+          "Time"
+        ],
+        "single_supplier_dependency": "We have key suppliers but alternatives exist",
+        "uses_pos_system": "Yes",
+        "space_ownership_status": "Lease it",
+        "operational_software": [
+          "Booking or reservation system",
+          "Payroll software",
+          "Inventory management"
+        ],
+        "recent_supplier_issues": "No",
+        "critical_materials_inputs": "Whole milk low-moisture mozzarella, San Marzano tomatoes, high-gluten flour."
+      },
+      "section_05_financial_overview": {
+        "accounting_system": "QuickBooks",
+        "connect_accounting_now": "Yes",
+        "fiscal_year_start": "January to December (all 12 months)",
+        "banks_and_lenders": "First Local Bank",
+        "business_loan_history": "Yes and paid it off"
+      },
+      "section_06_assets_and_equipment": {
+        "major_assets": "3x Marsal Deck Ovens, Hobart 60qt Dough Mixer, Walk-in Cooler, Ram ProMaster Van",
+        "asset_ownership_status": "Truck is leased, internal equipment is owned",
+        "asset_purchase_dates": "Ovens bought Mar 2018, van leased Jan 2021",
+        "asset_condition": "Good working condition, regular maintenance performed",
+        "leased_monthly_payment": "$500 to $2K"
+      },
+      "section_07_customers_and_market": {
+        "customer_distance": "Across the metro",
+        "strongest_seasons": [
+          "Fall",
+          "Winter",
+          "Spring"
+        ],
+        "customer_acquisition_channels": [
+          "Walk-by / drive-by",
+          "Word of mouth",
+          "Social media",
+          "Repeat regulars"
+        ],
+        "typical_customers_description": "Park Slope families, downtown lunch workers, and local corporate offices ordering catering.",
+        "monthly_customer_volume": "2850",
+        "repeat_business_rate": "High",
+        "target_customer_types": "Corporate offices looking for weekly lunch catering.",
+        "customer_concentration": "No, spread across many",
+        "seasonality_level": "A little seasonal",
+        "customer_geographic_source": "Within 10\u201315 miles",
+        "opportunity_radius_miles": "25",
+        "max_travel_distance_miles": "75",
+        "local_opportunity_preference": "Open to nearby areas if high-value",
+        "geographic_service_areas": "Park Slope, Gowanus, Prospect Heights, Downtown Brooklyn",
+        "weather_impact": "High"
+      },
+      "section_08_risk_and_exposure": {
+        "carries_business_insurance": "Yes",
+        "critical_dependencies": "Local commissary kitchen and primary cheese distributor.",
+        "revenue_concentration": "No, spread across many",
+        "active_permits_licenses": "NYC Dept of Health Permit, City Business License, ServSafe",
+        "in_progress_permits_licenses": "Sidewalk cafe temporary renewal permit",
+        "local_operating_restrictions": "Designated food zones, noise ordinances after 10 PM"
+      },
+      "section_09_capacity_and_constraints": {
+        "monthly_customer_capacity": "3200",
+        "could_handle_more_capacity": "Yes, we had plenty of room",
+        "current_busy_level": [
+          "Around capacity"
+        ],
+        "operational_slowdown_factors": [
+          "Labor",
+          "Equipment"
+        ],
+        "has_active_business_financing": "No"
+      },
+      "section_10_opportunity_readiness": {
+        "external_selling_experience": "Yes, regularly",
+        "commitment_type_preference": "Recurring",
+        "flex_production_capacity": "With some notice",
+        "brand_partnership_willingness": "Yes",
+        "public_visibility_comfort": "Very comfortable",
+        "available_weekly_time": "A few hours a week",
+        "upfront_spending_tolerance": "$500 to $2K",
+        "risk_tolerance": "Moderate",
+        "opportunity_nogo_filters": "Events with less than 200 expected attendees or >100 miles distance",
+        "ideal_partner_types": "Local breweries, festival organizers, corporate campus managers",
+        "win_definition_90_days": "Secure 2 recurring weekly brewery popup slots and 3 corporate catering gigs.",
+        "growth_focus_stage": "Actively growing",
+        "stretch_opportunity_permission": "Yes, show me those",
+        "opportunity_surfacing_frequency": "Only strong matches"
+      },
+      "section_11_strategic_goals": {
+        "goals_12_month": "Increase net margins to 20% and scale corporate lunch catering orders.",
+        "goals_3_year": "Add a second food truck or satellite hub and expand into neighboring areas.",
+        "long_term_vision": "Build a recognized regional mobile and storefront catering brand.",
+        "exit_strategy": "Pass on to key operator or sell brand to hospitality group in 8-10 years."
+      },
+      "section_12_pricing_and_revenue": {
+        "pricing_method": [
+          "Per unit",
+          "Per job"
+        ],
+        "typical_order_size": "$31 retail / $380 catering",
+        "discounts_and_promotions": "10% discount on recurring corporate weekly bookings.",
+        "customer_payment_methods": [
+          "Upfront",
+          "On delivery"
+        ]
+      },
+      "section_13_hiring_and_team_structure": {
+        "team_roles": "Head Pizzaiolo, Prep Cook, Cashier/Server, Driver",
+        "planning_to_hire_12_months": "Yes",
+        "recruitment_channels": [
+          "Referrals",
+          "Social media",
+          "Walk-ins"
+        ],
+        "uses_contractors_freelancers": "Sometimes"
+      },
+      "section_14_sales_and_marketing": {
+        "sales_channels": [
+          "Word of mouth",
+          "Social media",
+          "Events"
+        ],
+        "delivery_methods": [
+          "In-person",
+          "Online",
+          "Delivery"
+        ],
+        "tracks_leads_crm": "Spreadsheet",
+        "lead_conversion_rate": "35%",
+        "monthly_marketing_budget": "650"
+      },
+      "section_15_owner_goals_and_preferences": {
+        "current_primary_focus": [
+          "Profit",
+          "Growth"
+        ],
+        "day_to_day_involvement": "Very involved",
+        "financial_risk_tolerance": "Moderate"
+      }
+    }
+  },
+  "demo-retail": {
+    "account": {
+      "login_label": "demo-retail",
+      "business_name": "Main St Goods",
+      "email": "demo-retail@lightsignal.app",
+      "industry": "Gift & Home Goods Retail",
+      "is_demo": true
+    },
+    "business_profile": {
+      "section_01_business_basics": {
+        "business_name": "Main St Goods",
+        "headquarters": "Asheville, NC",
+        "years_in_business": "5 to 10 years",
+        "timezone": "America/New_York",
+        "currency": "USD",
+        "legal_entity_type": "LLC",
+        "ein": "56-1234567",
+        "locations": [
+          {
+            "name": "Main St Goods Boutique",
+            "address": "48 N Lexington Ave, Asheville, NC 28801",
+            "role": "Primary Retail Boutique",
+            "status": "active"
+          }
+        ]
+      },
+      "section_02_ownership_and_key_people": {
+        "ownership_breakdown": "Dana Whitfield (100%)",
+        "decision_maker": "Dana Whitfield, Founder & General Manager",
+        "bookkeeper_financial_handler": "Blue Ridge Accounting (External)",
+        "has_backup_operator": "Yes"
+      },
+      "section_03_industry_and_model": {
+        "business_description": "Curated independent retail gift boutique showcasing handmade regional crafts, home decor, ceramics, and gifts.",
+        "revenue_model_description": "Direct retail sales at boutique, buy-online-pickup-in-store, and pop-up events.",
+        "target_market_type": "Both",
+        "business_stage": "Growing and adding capacity"
+      },
+      "section_04_operations": {
+        "team_size": "Small team of 4 to 10",
+        "payroll_type": "Mostly employees with some contractors",
+        "operating_hours": "Mon-Sat 10am-7pm, Sun 11am-5pm",
+        "growth_limiters": [
+          "Staff",
+          "Equipment",
+          "Time"
+        ],
+        "single_supplier_dependency": "We have key suppliers but alternatives exist",
+        "uses_pos_system": "Yes",
+        "space_ownership_status": "Lease it",
+        "operational_software": [
+          "E-commerce platform",
+          "Inventory management",
+          "Payroll software"
+        ],
+        "recent_supplier_issues": "No",
+        "critical_materials_inputs": "Handmade pottery, local scented candles, bespoke stationery, custom gift wrapping."
+      },
+      "section_05_financial_overview": {
+        "accounting_system": "QuickBooks",
+        "connect_accounting_now": "Yes",
+        "fiscal_year_start": "January to December (all 12 months)",
+        "banks_and_lenders": "First Local Bank",
+        "business_loan_history": "Yes and currently paying it"
+      },
+      "section_06_assets_and_equipment": {
+        "major_assets": "Custom Wood Display Fixtures, Square Register Terminals, Inventory Storage Racks",
+        "asset_ownership_status": "Truck is leased, internal equipment is owned",
+        "asset_purchase_dates": "Store fixtures custom installed 2018, POS upgraded 2021",
+        "asset_condition": "Good working condition, regular maintenance performed",
+        "leased_monthly_payment": "$500 to $2K"
+      },
+      "section_07_customers_and_market": {
+        "customer_distance": "Across the metro",
+        "strongest_seasons": [
+          "Spring",
+          "Summer",
+          "Fall"
+        ],
+        "customer_acquisition_channels": [
+          "Walk-by / drive-by",
+          "Word of mouth",
+          "Social media",
+          "Repeat regulars"
+        ],
+        "typical_customers_description": "Tourists exploring downtown Asheville, regional weekend travelers, and loyal local residents buying artisan gifts.",
+        "monthly_customer_volume": "805",
+        "repeat_business_rate": "High",
+        "target_customer_types": "Corporate offices looking for weekly lunch catering.",
+        "customer_concentration": "No, spread across many",
+        "seasonality_level": "A little seasonal",
+        "customer_geographic_source": "Within 10\u201315 miles",
+        "opportunity_radius_miles": "25",
+        "max_travel_distance_miles": "75",
+        "local_opportunity_preference": "Open to nearby areas if high-value",
+        "geographic_service_areas": "Asheville Downtown, Buncombe County, and Regional North Carolina",
+        "weather_impact": "High"
+      },
+      "section_08_risk_and_exposure": {
+        "carries_business_insurance": "Yes",
+        "critical_dependencies": "Downtown tourist foot traffic and key local artisan vendor consignments",
+        "revenue_concentration": "No, spread across many",
+        "active_permits_licenses": "City of Asheville Business License, NC Retail Sales Tax Registration",
+        "in_progress_permits_licenses": "A-Frame Sidewalk Sign Permit",
+        "local_operating_restrictions": "Designated food zones, noise ordinances after 10 PM"
+      },
+      "section_09_capacity_and_constraints": {
+        "monthly_customer_capacity": "1200",
+        "could_handle_more_capacity": "Yes, we had plenty of room",
+        "current_busy_level": [
+          "Around capacity"
+        ],
+        "operational_slowdown_factors": [
+          "Labor",
+          "Equipment"
+        ],
+        "has_active_business_financing": "Yes"
+      },
+      "section_10_opportunity_readiness": {
+        "external_selling_experience": "Yes, regularly",
+        "commitment_type_preference": "Recurring",
+        "flex_production_capacity": "With some notice",
+        "brand_partnership_willingness": "Yes",
+        "public_visibility_comfort": "Very comfortable",
+        "available_weekly_time": "A few hours a week",
+        "upfront_spending_tolerance": "$500 to $2K",
+        "risk_tolerance": "Moderate",
+        "opportunity_nogo_filters": "Events with less than 200 expected attendees or >100 miles distance",
+        "ideal_partner_types": "Local breweries, festival organizers, corporate campus managers",
+        "win_definition_90_days": "Secure 2 recurring weekly brewery popup slots and 3 corporate catering gigs.",
+        "growth_focus_stage": "Actively growing",
+        "stretch_opportunity_permission": "Yes, show me those",
+        "opportunity_surfacing_frequency": "Only strong matches"
+      },
+      "section_11_strategic_goals": {
+        "goals_12_month": "Increase net margins to 20% and launch curated corporate gift boxes.",
+        "goals_3_year": "Add a second boutique location in Black Mountain and expand e-commerce sales.",
+        "long_term_vision": "Build a recognized regional boutique retail & handmade maker hub.",
+        "exit_strategy": "Pass on to key operator or sell brand to hospitality group in 8-10 years."
+      },
+      "section_12_pricing_and_revenue": {
+        "pricing_method": [
+          "Per unit",
+          "Per job"
+        ],
+        "typical_order_size": "$42.50 retail ticket / $120 gift box",
+        "discounts_and_promotions": "10% discount on recurring corporate weekly bookings.",
+        "customer_payment_methods": [
+          "Upfront",
+          "On delivery"
+        ]
+      },
+      "section_13_hiring_and_team_structure": {
+        "team_roles": "Store Manager, Retail Sales Associate, Inventory Specialist",
+        "planning_to_hire_12_months": "Yes",
+        "recruitment_channels": [
+          "Referrals",
+          "Social media",
+          "Job boards"
+        ],
+        "uses_contractors_freelancers": "Sometimes"
+      },
+      "section_14_sales_and_marketing": {
+        "sales_channels": [
+          "Word of mouth",
+          "Social media",
+          "Events",
+          "Online search"
+        ],
+        "delivery_methods": [
+          "In-person",
+          "Online",
+          "Retail store",
+          "Delivery"
+        ],
+        "tracks_leads_crm": "Spreadsheet",
+        "lead_conversion_rate": "35%",
+        "monthly_marketing_budget": "450"
+      },
+      "section_15_owner_goals_and_preferences": {
+        "current_primary_focus": [
+          "Profit",
+          "Growth"
+        ],
+        "day_to_day_involvement": "Very involved",
+        "financial_risk_tolerance": "Moderate"
+      }
+    }
+  },
+  "demo-service": {
+    "account": {
+      "login_label": "demo-service",
+      "business_name": "Ironwood Plumbing & Heating",
+      "email": "demo-service@lightsignal.app",
+      "industry": "Residential Plumbing & Heating",
+      "is_demo": true
+    },
+    "business_profile": {
+      "section_01_business_basics": {
+        "business_name": "Ironwood Plumbing & Heating",
+        "headquarters": "Columbus, OH",
+        "years_in_business": "More than 10 years",
+        "timezone": "America/New_York",
+        "currency": "USD",
+        "legal_entity_type": "LLC",
+        "ein": "31-9876543",
+        "locations": [
+          {
+            "name": "Ironwood Central Workshop & Dispatch",
+            "address": "845 N High St, Columbus, OH 43215",
+            "role": "Central Workshop & Dispatch",
+            "status": "active"
+          }
+        ]
+      },
+      "section_02_ownership_and_key_people": {
+        "ownership_breakdown": "Marcus Boone (100%)",
+        "decision_maker": "Marcus Boone, Owner & Master Plumber",
+        "bookkeeper_financial_handler": "Buckeye State CPA Group (External)",
+        "has_backup_operator": "Yes"
+      },
+      "section_03_industry_and_model": {
+        "business_description": "Licensed master plumbing, HVAC replacement, and trenchless sewer repair contracting service for residential and commercial clients.",
+        "revenue_model_description": "Hourly service tickets, fixed-price mechanical installations, commercial maintenance contracts, and trenchless sewer jobs.",
+        "target_market_type": "Both",
+        "business_stage": "Growing and adding capacity"
+      },
+      "section_04_operations": {
+        "team_size": "Team of 11 to 25",
+        "payroll_type": "Mostly employees with some contractors",
+        "operating_hours": "Mon-Sat 7am-6pm, Emergency 24/7",
+        "growth_limiters": [
+          "Staff",
+          "Equipment",
+          "Time"
+        ],
+        "single_supplier_dependency": "We have key suppliers but alternatives exist",
+        "uses_pos_system": "Yes",
+        "space_ownership_status": "Own it",
+        "operational_software": [
+          "Scheduling software",
+          "Project management",
+          "Payroll software"
+        ],
+        "recent_supplier_issues": "No",
+        "critical_materials_inputs": "Commercial PVC piping, copper fittings, water heaters, heat pump units, refrigerant."
+      },
+      "section_05_financial_overview": {
+        "accounting_system": "QuickBooks",
+        "connect_accounting_now": "Yes",
+        "fiscal_year_start": "January to December (all 12 months)",
+        "banks_and_lenders": "First Local Bank",
+        "business_loan_history": "Yes and currently paying it"
+      },
+      "section_06_assets_and_equipment": {
+        "major_assets": "7x Outfitted Ford Transit Vans, Trenchless Pipe Relining Machine, Ridgid Sewer Cameras, Shop Facility",
+        "asset_ownership_status": "Truck is leased, internal equipment is owned",
+        "asset_purchase_dates": "Trenchless rig acquired 2021, fleet updated 2020-2023",
+        "asset_condition": "Good working condition, regular maintenance performed",
+        "leased_monthly_payment": "$500 to $2K"
+      },
+      "section_07_customers_and_market": {
+        "customer_distance": "Across the metro",
+        "strongest_seasons": [
+          "Spring",
+          "Summer",
+          "Fall"
+        ],
+        "customer_acquisition_channels": [
+          "Word of mouth",
+          "Search / maps",
+          "Social media",
+          "Repeat regulars"
+        ],
+        "typical_customers_description": "Residential homeowners needing emergency mechanical repairs and commercial property managers managing multifamily complexes.",
+        "monthly_customer_volume": "235",
+        "repeat_business_rate": "High",
+        "target_customer_types": "Corporate offices looking for weekly lunch catering.",
+        "customer_concentration": "No, spread across many",
+        "seasonality_level": "A little seasonal",
+        "customer_geographic_source": "Within 10\u201315 miles",
+        "opportunity_radius_miles": "25",
+        "max_travel_distance_miles": "75",
+        "local_opportunity_preference": "Open to nearby areas if high-value",
+        "geographic_service_areas": "Franklin County, Delaware County, and Greater Columbus Metro",
+        "weather_impact": "High"
+      },
+      "section_08_risk_and_exposure": {
+        "carries_business_insurance": "Yes",
+        "critical_dependencies": "Licensed master plumber certification and commercial van fleet uptime",
+        "revenue_concentration": "No, spread across many",
+        "active_permits_licenses": "State of Ohio Master Plumber License, Class A HVAC Contractor License, City Bonding",
+        "in_progress_permits_licenses": "State backflow testing re-certification",
+        "local_operating_restrictions": "Designated food zones, noise ordinances after 10 PM"
+      },
+      "section_09_capacity_and_constraints": {
+        "monthly_customer_capacity": "350",
+        "could_handle_more_capacity": "Yes, we had plenty of room",
+        "current_busy_level": [
+          "Around capacity"
+        ],
+        "operational_slowdown_factors": [
+          "Labor",
+          "Equipment"
+        ],
+        "has_active_business_financing": "Yes"
+      },
+      "section_10_opportunity_readiness": {
+        "external_selling_experience": "Yes, regularly",
+        "commitment_type_preference": "Recurring",
+        "flex_production_capacity": "With some notice",
+        "brand_partnership_willingness": "Yes",
+        "public_visibility_comfort": "Very comfortable",
+        "available_weekly_time": "A few hours a week",
+        "upfront_spending_tolerance": "$500 to $2K",
+        "risk_tolerance": "Moderate",
+        "opportunity_nogo_filters": "Events with less than 200 expected attendees or >100 miles distance",
+        "ideal_partner_types": "Local breweries, festival organizers, corporate campus managers",
+        "win_definition_90_days": "Secure 2 recurring weekly brewery popup slots and 3 corporate catering gigs.",
+        "growth_focus_stage": "Actively growing",
+        "stretch_opportunity_permission": "Yes, show me those",
+        "opportunity_surfacing_frequency": "Only strong matches"
+      },
+      "section_11_strategic_goals": {
+        "goals_12_month": "Increase net margins to 20% and expand municipal / commercial trenchless sewer contracts.",
+        "goals_3_year": "Scale fleet to 12 vans and establish dedicated commercial maintenance division.",
+        "long_term_vision": "Premier regional trade contractor across Central Ohio.",
+        "exit_strategy": "Pass on to key operator or sell brand to hospitality group in 8-10 years."
+      },
+      "section_12_pricing_and_revenue": {
+        "pricing_method": [
+          "Hourly",
+          "Per job"
+        ],
+        "typical_order_size": "$485 service call / $18,500 trenchless project",
+        "discounts_and_promotions": "10% discount on recurring corporate weekly bookings.",
+        "customer_payment_methods": [
+          "Upfront",
+          "Net-30",
+          "On delivery"
+        ]
+      },
+      "section_13_hiring_and_team_structure": {
+        "team_roles": "Master Plumber, Dispatch Manager, Senior HVAC Tech, Journeymen, Apprentices",
+        "planning_to_hire_12_months": "Yes",
+        "recruitment_channels": [
+          "Referrals",
+          "Social media",
+          "Job boards"
+        ],
+        "uses_contractors_freelancers": "Sometimes"
+      },
+      "section_14_sales_and_marketing": {
+        "sales_channels": [
+          "Word of mouth",
+          "Referrals",
+          "Social media",
+          "Ads"
+        ],
+        "delivery_methods": [
+          "In-person",
+          "Phone"
+        ],
+        "tracks_leads_crm": "Spreadsheet",
+        "lead_conversion_rate": "35%",
+        "monthly_marketing_budget": "1800"
+      },
+      "section_15_owner_goals_and_preferences": {
+        "current_primary_focus": [
+          "Profit",
+          "Growth"
+        ],
+        "day_to_day_involvement": "Very involved",
+        "financial_risk_tolerance": "Moderate"
+      }
+    }
+  },
+  "demo-salon": {
+    "account": {
+      "login_label": "demo-salon",
+      "business_name": "Velvet & Vine Salon",
+      "email": "demo-salon@lightsignal.app",
+      "industry": "Hair Salon & Color Specialty",
+      "is_demo": true
+    },
+    "business_profile": {
+      "section_01_business_basics": {
+        "business_name": "Velvet & Vine Salon",
+        "headquarters": "Chicago, IL (Logan Square)",
+        "years_in_business": "5 to 10 years",
+        "timezone": "America/Chicago",
+        "currency": "USD",
+        "legal_entity_type": "LLC",
+        "ein": "36-5432109",
+        "locations": [
+          {
+            "name": "Velvet & Vine Studio",
+            "address": "2518 N Milwaukee Ave, Chicago, IL 60647",
+            "role": "Primary Studio",
+            "status": "active"
+          }
+        ]
+      },
+      "section_02_ownership_and_key_people": {
+        "ownership_breakdown": "Priya Raman (100%)",
+        "decision_maker": "Priya Raman, Founder & Creative Director",
+        "bookkeeper_financial_handler": "Windy City CPA Associates (External)",
+        "has_backup_operator": "Yes"
+      },
+      "section_03_industry_and_model": {
+        "business_description": "High-end boutique hair salon and organic scalp therapy studio offering balayage, precision cutting, and bridal hair styling.",
+        "revenue_model_description": "In-salon service appointments, retail organic hair products, and bridal package bookings.",
+        "target_market_type": "Both",
+        "business_stage": "Growing and adding capacity"
+      },
+      "section_04_operations": {
+        "team_size": "Small team of 4 to 10",
+        "payroll_type": "Mostly employees with some contractors",
+        "operating_hours": "Tue-Sat 10am-8pm, Sun-Mon Closed",
+        "growth_limiters": [
+          "Staff",
+          "Equipment",
+          "Time"
+        ],
+        "single_supplier_dependency": "We have key suppliers but alternatives exist",
+        "uses_pos_system": "Yes",
+        "space_ownership_status": "Lease it",
+        "operational_software": [
+          "Booking or reservation system",
+          "Scheduling software",
+          "Payroll software"
+        ],
+        "recent_supplier_issues": "No",
+        "critical_materials_inputs": "Organic hair color formulations, salon treatment tonics, high-end styling tools."
+      },
+      "section_05_financial_overview": {
+        "accounting_system": "QuickBooks",
+        "connect_accounting_now": "Yes",
+        "fiscal_year_start": "January to December (all 12 months)",
+        "banks_and_lenders": "First Local Bank",
+        "business_loan_history": "Yes and paid it off"
+      },
+      "section_06_assets_and_equipment": {
+        "major_assets": "8x Belvedere Styling Chairs, 3x Shampoo Backwash Units, Takara Belmont Wash Stations",
+        "asset_ownership_status": "Truck is leased, internal equipment is owned",
+        "asset_purchase_dates": "Studio buildout 2019, wash stations refreshed 2022",
+        "asset_condition": "Good working condition, regular maintenance performed",
+        "leased_monthly_payment": "$500 to $2K"
+      },
+      "section_07_customers_and_market": {
+        "customer_distance": "Across the metro",
+        "strongest_seasons": [
+          "Spring",
+          "Summer",
+          "Fall"
+        ],
+        "customer_acquisition_channels": [
+          "Walk-by / drive-by",
+          "Word of mouth",
+          "Social media",
+          "Repeat regulars"
+        ],
+        "typical_customers_description": "Urban professionals, neighborhood residents, and regional brides seeking specialty organic color and styling.",
+        "monthly_customer_volume": "280",
+        "repeat_business_rate": "High",
+        "target_customer_types": "Corporate offices looking for weekly lunch catering.",
+        "customer_concentration": "No, spread across many",
+        "seasonality_level": "A little seasonal",
+        "customer_geographic_source": "Within 10\u201315 miles",
+        "opportunity_radius_miles": "25",
+        "max_travel_distance_miles": "75",
+        "local_opportunity_preference": "Open to nearby areas if high-value",
+        "geographic_service_areas": "Logan Square, Wicker Park, Bucktown, and Greater Chicago",
+        "weather_impact": "High"
+      },
+      "section_08_risk_and_exposure": {
+        "carries_business_insurance": "Yes",
+        "critical_dependencies": "Licensed master cosmetologists and organic color supply availability",
+        "revenue_concentration": "No, spread across many",
+        "active_permits_licenses": "Illinois Cosmetology Salon License, City of Chicago Business License",
+        "in_progress_permits_licenses": "Salon sanitation certification renewal",
+        "local_operating_restrictions": "Designated food zones, noise ordinances after 10 PM"
+      },
+      "section_09_capacity_and_constraints": {
+        "monthly_customer_capacity": "400",
+        "could_handle_more_capacity": "Yes, we had plenty of room",
+        "current_busy_level": [
+          "Around capacity"
+        ],
+        "operational_slowdown_factors": [
+          "Labor",
+          "Equipment"
+        ],
+        "has_active_business_financing": "No"
+      },
+      "section_10_opportunity_readiness": {
+        "external_selling_experience": "Yes, regularly",
+        "commitment_type_preference": "Recurring",
+        "flex_production_capacity": "With some notice",
+        "brand_partnership_willingness": "Yes",
+        "public_visibility_comfort": "Very comfortable",
+        "available_weekly_time": "A few hours a week",
+        "upfront_spending_tolerance": "$500 to $2K",
+        "risk_tolerance": "Moderate",
+        "opportunity_nogo_filters": "Events with less than 200 expected attendees or >100 miles distance",
+        "ideal_partner_types": "Local breweries, festival organizers, corporate campus managers",
+        "win_definition_90_days": "Secure 2 recurring weekly brewery popup slots and 3 corporate catering gigs.",
+        "growth_focus_stage": "Actively growing",
+        "stretch_opportunity_permission": "Yes, show me those",
+        "opportunity_surfacing_frequency": "Only strong matches"
+      },
+      "section_11_strategic_goals": {
+        "goals_12_month": "Increase net margins to 20% and expand high-ticket bridal service packages.",
+        "goals_3_year": "Add a second location in West Loop and develop in-house organic product line.",
+        "long_term_vision": "Premier organic beauty and holistic personal care brand in the Midwest.",
+        "exit_strategy": "Pass on to key operator or sell brand to hospitality group in 8-10 years."
+      },
+      "section_12_pricing_and_revenue": {
+        "pricing_method": [
+          "Per unit",
+          "Per job"
+        ],
+        "typical_order_size": "$145 styling ticket / $1,200 bridal package",
+        "discounts_and_promotions": "10% discount on recurring corporate weekly bookings.",
+        "customer_payment_methods": [
+          "Upfront",
+          "On delivery"
+        ]
+      },
+      "section_13_hiring_and_team_structure": {
+        "team_roles": "Creative Director, Senior Colorist, Stylists, Front Desk Manager, Apprentices",
+        "planning_to_hire_12_months": "Yes",
+        "recruitment_channels": [
+          "Referrals",
+          "Social media",
+          "Job boards"
+        ],
+        "uses_contractors_freelancers": "Sometimes"
+      },
+      "section_14_sales_and_marketing": {
+        "sales_channels": [
+          "Word of mouth",
+          "Social media",
+          "Online search",
+          "Referrals"
+        ],
+        "delivery_methods": [
+          "In-person",
+          "Retail store"
+        ],
+        "tracks_leads_crm": "Spreadsheet",
+        "lead_conversion_rate": "35%",
+        "monthly_marketing_budget": "500"
+      },
+      "section_15_owner_goals_and_preferences": {
+        "current_primary_focus": [
+          "Profit",
+          "Growth"
+        ],
+        "day_to_day_involvement": "Very involved",
+        "financial_risk_tolerance": "Moderate"
+      }
+    }
+  },
+  "demo-multi": {
+    "account": {
+      "login_label": "demo-multi",
+      "business_name": "Driftwood Coffee Roasters",
+      "email": "demo-multi@lightsignal.app",
+      "industry": "Multi-location Cafe & Wholesale Roastery",
+      "is_demo": true
+    },
+    "business_profile": {
+      "section_01_business_basics": {
+        "business_name": "Driftwood Coffee Roasters",
+        "headquarters": "Portland, OR (Alberta Arts District)",
+        "years_in_business": "5 to 10 years",
+        "timezone": "America/Los_Angeles",
+        "currency": "USD",
+        "legal_entity_type": "LLC",
+        "ein": "93-8765432",
+        "locations": [
+          {
+            "name": "Alberta Flagship & Roastery",
+            "address": "1422 NE Alberta St, Portland, OR 97211",
+            "role": "Primary / Roastery",
+            "status": "active"
+          },
+          {
+            "name": "Division Street Satellite Cafe",
+            "address": "3340 SE Division St, Portland, OR 97202",
+            "role": "Satellite Cafe",
+            "status": "active"
+          }
+        ]
+      },
+      "section_02_ownership_and_key_people": {
+        "ownership_breakdown": "Sam Okafor (100%)",
+        "decision_maker": "Sam Okafor, Founder & Head Roaster",
+        "bookkeeper_financial_handler": "Pacific Northwest Bookkeeping LLC",
+        "has_backup_operator": "Yes"
+      },
+      "section_03_industry_and_model": {
+        "business_description": "Direct-trade micro-roastery and specialty coffee company operating an Alberta Arts flagship cafe, Division St satellite cafe, and DTC subscription service.",
+        "revenue_model_description": "Direct food sales at events, counter drink sales, bagged retail coffee, and wholesale cafe accounts.",
+        "target_market_type": "Both",
+        "business_stage": "Growing and adding capacity"
+      },
+      "section_04_operations": {
+        "team_size": "Team of 11 to 25",
+        "payroll_type": "Mostly employees with some contractors",
+        "operating_hours": "Mon-Sun, 7am-5pm",
+        "growth_limiters": [
+          "Staff",
+          "Equipment",
+          "Time"
+        ],
+        "single_supplier_dependency": "We have key suppliers but alternatives exist",
+        "uses_pos_system": "Yes",
+        "space_ownership_status": "Multiple locations \u2014 varies",
+        "operational_software": [
+          "E-commerce platform",
+          "Inventory management",
+          "Payroll software"
+        ],
+        "recent_supplier_issues": "No",
+        "critical_materials_inputs": "Specialty green coffee beans, organic oat & whole milk, compostable takeaway packaging."
+      },
+      "section_05_financial_overview": {
+        "accounting_system": "QuickBooks",
+        "connect_accounting_now": "Yes",
+        "fiscal_year_start": "January to December (all 12 months)",
+        "banks_and_lenders": "First Local Bank",
+        "business_loan_history": "Yes and currently paying it"
+      },
+      "section_06_assets_and_equipment": {
+        "major_assets": "Diedrich IR-12 Industrial Roaster, 2x La Marzocco Linea PB Espresso Machines, Mahlk\u00f6nig Grinders",
+        "asset_ownership_status": "Truck is leased, internal equipment is owned",
+        "asset_purchase_dates": "Roaster bought May 2019, espresso machines bought Aug 2022",
+        "asset_condition": "Good working condition, regular maintenance performed",
+        "leased_monthly_payment": "$500 to $2K"
+      },
+      "section_07_customers_and_market": {
+        "customer_distance": "Across the metro",
+        "strongest_seasons": [
+          "Spring",
+          "Summer",
+          "Fall"
+        ],
+        "customer_acquisition_channels": [
+          "Walk-by / drive-by",
+          "Word of mouth",
+          "Social media",
+          "Repeat regulars"
+        ],
+        "typical_customers_description": "Neighborhood coffee connoisseurs, creative remote workers, and specialty subscription members across the Pacific Northwest.",
+        "monthly_customer_volume": "5140",
+        "repeat_business_rate": "High",
+        "target_customer_types": "Corporate offices looking for weekly lunch catering.",
+        "customer_concentration": "No, spread across many",
+        "seasonality_level": "A little seasonal",
+        "customer_geographic_source": "Statewide / regional",
+        "opportunity_radius_miles": "25",
+        "max_travel_distance_miles": "75",
+        "local_opportunity_preference": "Open to nearby areas if high-value",
+        "geographic_service_areas": "Portland Metro, Willamette Valley, and National DTC Shipping",
+        "weather_impact": "High"
+      },
+      "section_08_risk_and_exposure": {
+        "carries_business_insurance": "Yes",
+        "critical_dependencies": "Green coffee import supply chains and Diedrich roaster maintenance",
+        "revenue_concentration": "No, spread across many",
+        "active_permits_licenses": "Multnomah County Health Dept Permit, City Business License, Food Handler",
+        "in_progress_permits_licenses": "Sidewalk cafe patio permit renewal",
+        "local_operating_restrictions": "Designated food zones, noise ordinances after 10 PM"
+      },
+      "section_09_capacity_and_constraints": {
+        "monthly_customer_capacity": "6500",
+        "could_handle_more_capacity": "Yes, we had plenty of room",
+        "current_busy_level": [
+          "Around capacity"
+        ],
+        "operational_slowdown_factors": [
+          "Labor",
+          "Equipment"
+        ],
+        "has_active_business_financing": "Yes"
+      },
+      "section_10_opportunity_readiness": {
+        "external_selling_experience": "Yes, regularly",
+        "commitment_type_preference": "Recurring",
+        "flex_production_capacity": "With some notice",
+        "brand_partnership_willingness": "Yes",
+        "public_visibility_comfort": "Very comfortable",
+        "available_weekly_time": "A few hours a week",
+        "upfront_spending_tolerance": "$500 to $2K",
+        "risk_tolerance": "Moderate",
+        "opportunity_nogo_filters": "Events with less than 200 expected attendees or >100 miles distance",
+        "ideal_partner_types": "Local breweries, festival organizers, corporate campus managers",
+        "win_definition_90_days": "Secure 2 recurring weekly brewery popup slots and 3 corporate catering gigs.",
+        "growth_focus_stage": "Actively growing",
+        "stretch_opportunity_permission": "Yes, show me those",
+        "opportunity_surfacing_frequency": "Only strong matches"
+      },
+      "section_11_strategic_goals": {
+        "goals_12_month": "Increase net margins to 20% and grow DTC online coffee subscriptions.",
+        "goals_3_year": "Add a third roastery cafe hub in Eugene or Seattle and reach $1.5M ARR.",
+        "long_term_vision": "Build a recognized regional specialty coffee & roasting brand.",
+        "exit_strategy": "Pass on to key operator or sell brand to hospitality group in 8-10 years."
+      },
+      "section_12_pricing_and_revenue": {
+        "pricing_method": [
+          "Per unit",
+          "Per job"
+        ],
+        "typical_order_size": "$8.75 cafe drink / $21 whole bean / $450 wholesale",
+        "discounts_and_promotions": "10% discount on recurring monthly subscriptions.",
+        "customer_payment_methods": [
+          "Upfront",
+          "On delivery"
+        ]
+      },
+      "section_13_hiring_and_team_structure": {
+        "team_roles": "Head Roaster, Store Manager, Lead Barista, Production Assistant",
+        "planning_to_hire_12_months": "Yes",
+        "recruitment_channels": [
+          "Referrals",
+          "Social media",
+          "Job boards"
+        ],
+        "uses_contractors_freelancers": "Sometimes"
+      },
+      "section_14_sales_and_marketing": {
+        "sales_channels": [
+          "Word of mouth",
+          "Social media",
+          "Events",
+          "Online search"
+        ],
+        "delivery_methods": [
+          "In-person",
+          "Online",
+          "Retail store",
+          "Subscription"
+        ],
+        "tracks_leads_crm": "Spreadsheet",
+        "lead_conversion_rate": "35%",
+        "monthly_marketing_budget": "800"
+      },
+      "section_15_owner_goals_and_preferences": {
+        "current_primary_focus": [
+          "Profit",
+          "Growth"
+        ],
+        "day_to_day_involvement": "Very involved",
+        "financial_risk_tolerance": "Moderate"
+      }
+    }
+  },
+  "demo-ecomm": {
+    "account": {
+      "login_label": "demo-ecomm",
+      "business_name": "Lakeshore Candle Co.",
+      "email": "demo-ecomm@lightsignal.app",
+      "industry": "Shopify DTC Ecommerce",
+      "is_demo": true
+    },
+    "business_profile": {
+      "section_01_business_basics": {
+        "business_name": "Lakeshore Candle Co.",
+        "headquarters": "Grand Rapids, MI",
+        "years_in_business": "3 to 5 years",
+        "timezone": "America/Detroit",
+        "currency": "USD",
+        "legal_entity_type": "LLC",
+        "ein": "38-1234567",
+        "locations": [
+          {
+            "name": "Lakeshore Candle Studio & Fulfillment",
+            "address": "1111 Godfrey Ave SW, Grand Rapids, MI 49503",
+            "role": "Studio & Fulfillment Hub",
+            "status": "active"
+          }
+        ]
+      },
+      "section_02_ownership_and_key_people": {
+        "ownership_breakdown": "Erin Kowalski (100%)",
+        "decision_maker": "Erin Kowalski, Founder & Brand Director",
+        "bookkeeper_financial_handler": "Lakeshore Accounting Group (External)",
+        "has_backup_operator": "Yes"
+      },
+      "section_03_industry_and_model": {
+        "business_description": "Clean-burning soy wax candle studio and home fragrance DTC brand offering seasonal subscription boxes and custom corporate gift sets.",
+        "revenue_model_description": "E-commerce direct sales, quarterly subscription boxes, and wholesale gift shop accounts.",
+        "target_market_type": "Both",
+        "business_stage": "Growing and adding capacity"
+      },
+      "section_04_operations": {
+        "team_size": "Small team of 4 to 10",
+        "payroll_type": "Mostly employees with some contractors",
+        "operating_hours": "24/7 E-Commerce Storefront, Studio 8am-5pm M-F",
+        "growth_limiters": [
+          "Staff",
+          "Equipment",
+          "Time"
+        ],
+        "single_supplier_dependency": "We have key suppliers but alternatives exist",
+        "uses_pos_system": "Yes",
+        "space_ownership_status": "Lease it",
+        "operational_software": [
+          "E-commerce platform",
+          "Email marketing",
+          "Payroll software"
+        ],
+        "recent_supplier_issues": "No",
+        "critical_materials_inputs": "100% natural Midwest soy wax, clean fragrance oils, cotton wicks, amber glass vessels."
+      },
+      "section_05_financial_overview": {
+        "accounting_system": "QuickBooks",
+        "connect_accounting_now": "Yes",
+        "fiscal_year_start": "January to December (all 12 months)",
+        "banks_and_lenders": "First Local Bank",
+        "business_loan_history": "Yes and paid it off"
+      },
+      "section_06_assets_and_equipment": {
+        "major_assets": "Coogar Industrial Wax Melter, Custom Pour Tables, Automatic Label Applicator, Warehouse Racking",
+        "asset_ownership_status": "Truck is leased, internal equipment is owned",
+        "asset_purchase_dates": "Wax melter installed 2021, labeling machine added 2023",
+        "asset_condition": "Good working condition, regular maintenance performed",
+        "leased_monthly_payment": "$500 to $2K"
+      },
+      "section_07_customers_and_market": {
+        "customer_distance": "Regional / beyond",
+        "strongest_seasons": [
+          "Fall",
+          "Winter",
+          "Spring"
+        ],
+        "customer_acquisition_channels": [
+          "Social media",
+          "Search / maps",
+          "Word of mouth",
+          "Repeat regulars"
+        ],
+        "typical_customers_description": "Eco-conscious home decor enthusiasts, lifestyle gift buyers, and recurring seasonal fragrance subscribers nationwide.",
+        "monthly_customer_volume": "558",
+        "repeat_business_rate": "High",
+        "target_customer_types": "Corporate offices looking for weekly lunch catering.",
+        "customer_concentration": "No, spread across many",
+        "seasonality_level": "A little seasonal",
+        "customer_geographic_source": "Nationwide / Global",
+        "opportunity_radius_miles": "25",
+        "max_travel_distance_miles": "75",
+        "local_opportunity_preference": "No restriction \u2014 open anywhere",
+        "geographic_service_areas": "Nationwide US & Canada Direct-to-Consumer",
+        "weather_impact": "None"
+      },
+      "section_08_risk_and_exposure": {
+        "carries_business_insurance": "Yes",
+        "critical_dependencies": "Shopify uptime, Klaviyo deliverability, and key domestic soy wax supplier",
+        "revenue_concentration": "No, spread across many",
+        "active_permits_licenses": "State of Michigan Business License, Sales Tax Clearance",
+        "in_progress_permits_licenses": "USPTO trademark registration",
+        "local_operating_restrictions": "Designated food zones, noise ordinances after 10 PM"
+      },
+      "section_09_capacity_and_constraints": {
+        "monthly_customer_capacity": "900",
+        "could_handle_more_capacity": "Yes, we had plenty of room",
+        "current_busy_level": [
+          "Around capacity"
+        ],
+        "operational_slowdown_factors": [
+          "Labor",
+          "Equipment"
+        ],
+        "has_active_business_financing": "No"
+      },
+      "section_10_opportunity_readiness": {
+        "external_selling_experience": "Yes, regularly",
+        "commitment_type_preference": "Recurring",
+        "flex_production_capacity": "With some notice",
+        "brand_partnership_willingness": "Yes",
+        "public_visibility_comfort": "Very comfortable",
+        "available_weekly_time": "A few hours a week",
+        "upfront_spending_tolerance": "$500 to $2K",
+        "risk_tolerance": "Moderate",
+        "opportunity_nogo_filters": "Events with less than 200 expected attendees or >100 miles distance",
+        "ideal_partner_types": "Local breweries, festival organizers, corporate campus managers",
+        "win_definition_90_days": "Secure 2 recurring weekly brewery popup slots and 3 corporate catering gigs.",
+        "growth_focus_stage": "Actively growing",
+        "stretch_opportunity_permission": "Yes, show me those",
+        "opportunity_surfacing_frequency": "Only strong matches"
+      },
+      "section_11_strategic_goals": {
+        "goals_12_month": "Increase net margins to 20% and scale quarterly subscription box members to 1,500.",
+        "goals_3_year": "Expand wholesale placement into 150 independent retail boutiques nationwide.",
+        "long_term_vision": "Nationally recognized eco-luxury home fragrance brand.",
+        "exit_strategy": "Pass on to key operator or sell brand to hospitality group in 8-10 years."
+      },
+      "section_12_pricing_and_revenue": {
+        "pricing_method": [
+          "Per unit",
+          "Subscription"
+        ],
+        "typical_order_size": "$52 DTC cart / $650 wholesale order",
+        "discounts_and_promotions": "10% discount on recurring corporate weekly bookings.",
+        "customer_payment_methods": [
+          "Upfront",
+          "Monthly"
+        ]
+      },
+      "section_13_hiring_and_team_structure": {
+        "team_roles": "Founder, Production Lead, Fulfillment Manager, Studio Assistant",
+        "planning_to_hire_12_months": "Yes",
+        "recruitment_channels": [
+          "Referrals",
+          "Social media",
+          "Job boards"
+        ],
+        "uses_contractors_freelancers": "Sometimes"
+      },
+      "section_14_sales_and_marketing": {
+        "sales_channels": [
+          "Online search",
+          "Social media",
+          "Ads",
+          "Word of mouth"
+        ],
+        "delivery_methods": [
+          "Online",
+          "Delivery",
+          "Subscription"
+        ],
+        "tracks_leads_crm": "Spreadsheet",
+        "lead_conversion_rate": "35%",
+        "monthly_marketing_budget": "4200"
+      },
+      "section_15_owner_goals_and_preferences": {
+        "current_primary_focus": [
+          "Profit",
+          "Growth"
+        ],
+        "day_to_day_involvement": "Very involved",
+        "financial_risk_tolerance": "Moderate"
+      }
+    }
+  },
+  "demo-fitness": {
+    "account": {
+      "login_label": "demo-fitness",
+      "business_name": "Southpoint Fitness Studio",
+      "email": "demo-fitness@lightsignal.app",
+      "industry": "Group Fitness Studio",
+      "is_demo": true
+    },
+    "business_profile": {
+      "section_01_business_basics": {
+        "business_name": "Southpoint Fitness Studio",
+        "headquarters": "Tampa, FL (Ballast Point)",
+        "years_in_business": "3 to 5 years",
+        "timezone": "America/New_York",
+        "currency": "USD",
+        "legal_entity_type": "LLC",
+        "ein": "59-8765432",
+        "locations": [
+          {
+            "name": "Southpoint Training Facility",
+            "address": "3820 S MacDill Ave, Tampa, FL 33611",
+            "role": "Primary Facility",
+            "status": "active"
+          }
+        ]
+      },
+      "section_02_ownership_and_key_people": {
+        "ownership_breakdown": "Jess & Carlos Duarte (100%)",
+        "decision_maker": "Carlos Duarte, Co-Founder & Head Coach",
+        "bookkeeper_financial_handler": "Tampa Bay CPA Services (External)",
+        "has_backup_operator": "Yes"
+      },
+      "section_03_industry_and_model": {
+        "business_description": "Boutique functional strength, HIIT training, and semi-private athletic conditioning facility for urban professionals.",
+        "revenue_model_description": "Monthly recurring auto-renew memberships, multi-class packs, corporate wellness memberships, and personal coaching.",
+        "target_market_type": "Both",
+        "business_stage": "Growing and adding capacity"
+      },
+      "section_04_operations": {
+        "team_size": "Small team of 4 to 10",
+        "payroll_type": "Mostly employees with some contractors",
+        "operating_hours": "Mon-Fri 5:30am-7:30pm, Sat-Sun 7am-1pm",
+        "growth_limiters": [
+          "Staff",
+          "Equipment",
+          "Time"
+        ],
+        "single_supplier_dependency": "We have key suppliers but alternatives exist",
+        "uses_pos_system": "Yes",
+        "space_ownership_status": "Lease it",
+        "operational_software": [
+          "Booking or reservation system",
+          "Scheduling software",
+          "Payroll software"
+        ],
+        "recent_supplier_issues": "No",
+        "critical_materials_inputs": "Rogue fitness equipment, Concept2 rowers, functional turf, recovery gear."
+      },
+      "section_05_financial_overview": {
+        "accounting_system": "QuickBooks",
+        "connect_accounting_now": "Yes",
+        "fiscal_year_start": "January to December (all 12 months)",
+        "banks_and_lenders": "First Local Bank",
+        "business_loan_history": "Yes and paid it off"
+      },
+      "section_06_assets_and_equipment": {
+        "major_assets": "Rogue Monster Racks, Concept2 Rowers & SkiErgs, Dumbbell Sets up to 100lbs, Rubberized Impact Flooring",
+        "asset_ownership_status": "Truck is leased, internal equipment is owned",
+        "asset_purchase_dates": "Initial fitout 2021, rowers and specialty bars added 2023",
+        "asset_condition": "Good working condition, regular maintenance performed",
+        "leased_monthly_payment": "$500 to $2K"
+      },
+      "section_07_customers_and_market": {
+        "customer_distance": "Across the metro",
+        "strongest_seasons": [
+          "Spring",
+          "Summer",
+          "Fall"
+        ],
+        "customer_acquisition_channels": [
+          "Word of mouth",
+          "Social media",
+          "Repeat regulars",
+          "Search / maps"
+        ],
+        "typical_customers_description": "Neighborhood professionals, healthcare workers, and young parents seeking structured coaching and accountability.",
+        "monthly_customer_volume": "342",
+        "repeat_business_rate": "High",
+        "target_customer_types": "Corporate offices looking for weekly lunch catering.",
+        "customer_concentration": "No, spread across many",
+        "seasonality_level": "A little seasonal",
+        "customer_geographic_source": "Within 10\u201315 miles",
+        "opportunity_radius_miles": "25",
+        "max_travel_distance_miles": "75",
+        "local_opportunity_preference": "Open to nearby areas if high-value",
+        "geographic_service_areas": "Ballast Point, South Tampa, Hyde Park, and Downtown Tampa",
+        "weather_impact": "High"
+      },
+      "section_08_risk_and_exposure": {
+        "carries_business_insurance": "Yes",
+        "critical_dependencies": "Lead coach retention and Mindbody billing processing continuity",
+        "revenue_concentration": "No, spread across many",
+        "active_permits_licenses": "City of Tampa Business Tax Receipt, Certified Strength & Conditioning Specialist (CSCS)",
+        "in_progress_permits_licenses": "Outdoor boot camp park permit renewal",
+        "local_operating_restrictions": "Designated food zones, noise ordinances after 10 PM"
+      },
+      "section_09_capacity_and_constraints": {
+        "monthly_customer_capacity": "450",
+        "could_handle_more_capacity": "Yes, we had plenty of room",
+        "current_busy_level": [
+          "Around capacity"
+        ],
+        "operational_slowdown_factors": [
+          "Labor",
+          "Equipment"
+        ],
+        "has_active_business_financing": "No"
+      },
+      "section_10_opportunity_readiness": {
+        "external_selling_experience": "Yes, regularly",
+        "commitment_type_preference": "Recurring",
+        "flex_production_capacity": "With some notice",
+        "brand_partnership_willingness": "Yes",
+        "public_visibility_comfort": "Very comfortable",
+        "available_weekly_time": "A few hours a week",
+        "upfront_spending_tolerance": "$500 to $2K",
+        "risk_tolerance": "Moderate",
+        "opportunity_nogo_filters": "Events with less than 200 expected attendees or >100 miles distance",
+        "ideal_partner_types": "Local breweries, festival organizers, corporate campus managers",
+        "win_definition_90_days": "Secure 2 recurring weekly brewery popup slots and 3 corporate catering gigs.",
+        "growth_focus_stage": "Actively growing",
+        "stretch_opportunity_permission": "Yes, show me those",
+        "opportunity_surfacing_frequency": "Only strong matches"
+      },
+      "section_11_strategic_goals": {
+        "goals_12_month": "Increase net margins to 20% and launch B2B corporate wellness employee subsidy packages.",
+        "goals_3_year": "Add a second location in St. Petersburg and launch branded fitness retreats.",
+        "long_term_vision": "Premier functional fitness and wellness community across Tampa Bay.",
+        "exit_strategy": "Pass on to key operator or sell brand to hospitality group in 8-10 years."
+      },
+      "section_12_pricing_and_revenue": {
+        "pricing_method": [
+          "Subscription",
+          "Per unit"
+        ],
+        "typical_order_size": "$159 monthly membership / $450 personal coaching package",
+        "discounts_and_promotions": "10% discount on recurring corporate weekly bookings.",
+        "customer_payment_methods": [
+          "Upfront",
+          "Monthly"
+        ]
+      },
+      "section_13_hiring_and_team_structure": {
+        "team_roles": "Head Coach, Studio Manager, Group Fitness Instructors, Front Desk Associate",
+        "planning_to_hire_12_months": "Yes",
+        "recruitment_channels": [
+          "Referrals",
+          "Social media",
+          "Job boards"
+        ],
+        "uses_contractors_freelancers": "Sometimes"
+      },
+      "section_14_sales_and_marketing": {
+        "sales_channels": [
+          "Word of mouth",
+          "Social media",
+          "Referrals",
+          "Online search"
+        ],
+        "delivery_methods": [
+          "In-person",
+          "Subscription"
+        ],
+        "tracks_leads_crm": "Spreadsheet",
+        "lead_conversion_rate": "35%",
+        "monthly_marketing_budget": "600"
+      },
+      "section_15_owner_goals_and_preferences": {
+        "current_primary_focus": [
+          "Profit",
+          "Growth"
+        ],
+        "day_to_day_involvement": "Very involved",
+        "financial_risk_tolerance": "Moderate"
+      }
+    }
+  }
+}
