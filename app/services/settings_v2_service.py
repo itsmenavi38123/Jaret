@@ -38,9 +38,25 @@ class SettingsV2Service:
 
         doc.pop("_id", None)
 
-        users_col = get_collection("users")
-        user = await users_col.find_one({"id": user_id}) or await users_col.find_one({"_id": user_id})
-        doc["company_name"] = (user.get("business_name") if user else None) or "Velvet & Vine Salon"
+        # Retrieve real company name from business_profiles
+        business_profiles = get_collection("business_profiles")
+        bp = await business_profiles.find_one({"user_id": user_id})
+        biz_name = None
+        if bp:
+            ob = bp.get("onboarding_data", {})
+            sec1 = ob.get("section_01_business_basics")
+            if isinstance(sec1, dict):
+                biz_name = sec1.get("business_name")
+            if not biz_name:
+                biz_name = ob.get("business_name")
+        
+        if not biz_name:
+            users_col = get_collection("users")
+            user = await users_col.find_one({"id": user_id}) or await users_col.find_one({"_id": user_id})
+            if user:
+                biz_name = user.get("business_name") or user.get("company_name")
+
+        doc["company_name"] = biz_name or "My Business"
         return doc
 
     async def update_general_settings(self, user_id: str, updates: Dict[str, Any]) -> Dict[str, Any]:
@@ -211,41 +227,14 @@ class SettingsV2Service:
     # 3. SECURITY & TEAM & ADVISOR LINK
     # --------------------------------------------------------------------------
     async def get_sessions(self, user_id: str) -> List[Dict[str, Any]]:
-        is_demo, login_label = await self._resolve_demo_context(user_id)
-        if is_demo:
-            now = datetime.now(timezone.utc)
-            return [
-                {
-                    "session_id": "sess_demo_curr_01",
-                    "device": "iPad Pro 12.9 (Safari Mobile)",
-                    "ip_address": "72.229.28.185 (New York, NY)",
-                    "last_active": now.isoformat(),
-                    "is_current": True,
-                },
-                {
-                    "session_id": "sess_demo_rec_02",
-                    "device": "MacBook Pro 16 (Chrome 124)",
-                    "ip_address": "72.229.28.185 (New York, NY)",
-                    "last_active": (now - timedelta(hours=3, minutes=18)).isoformat(),
-                    "is_current": False,
-                },
-                {
-                    "session_id": "sess_demo_rec_03",
-                    "device": "Store Station POS Tablet / Android 13",
-                    "ip_address": "192.168.1.102 (Local Store Network)",
-                    "last_active": (now - timedelta(days=1, hours=2)).isoformat(),
-                    "is_current": False,
-                },
-            ]
-
         col = get_collection("user_sessions")
-        sessions = await col.find({"user_id": user_id}).to_list(length=20)
+        sessions = await col.find({"user_id": user_id, "is_active": {"$ne": False}}).sort("created_at", -1).to_list(length=20)
         formatted = []
         for s in sessions:
             formatted.append({
                 "session_id": str(s.get("_id", s.get("id"))),
-                "device": str(s.get("device_info", "")),
-                "ip_address": str(s.get("ip_address", "")),
+                "device": str(s.get("device_info", "Web Browser")),
+                "ip_address": str(s.get("ip_address", "127.0.0.1")),
                 "last_active": str(s.get("last_active", "")),
                 "is_current": bool(s.get("is_current", False)),
             })
@@ -253,16 +242,18 @@ class SettingsV2Service:
 
     async def revoke_all_sessions(self, user_id: str) -> Dict[str, Any]:
         col = get_collection("user_sessions")
-        result = await col.delete_many({"user_id": user_id, "is_current": {"$ne": True}})
+        result = await col.delete_many({"user_id": user_id})
         return {
+            "success": True,
             "user_id": user_id,
             "revoked_count": result.deleted_count,
+            "message": "Signed out of all devices successfully"
         }
 
     async def revoke_session(self, user_id: str, session_id: str) -> Dict[str, Any]:
         col = get_collection("user_sessions")
-        await col.delete_one({"user_id": user_id, "id": session_id})
-        return {"session_id": session_id, "status": "revoked"}
+        await col.delete_one({"user_id": user_id, "$or": [{"_id": session_id}, {"id": session_id}]})
+        return {"success": True, "session_id": session_id, "status": "revoked"}
 
     async def get_team_members(self, user_id: str) -> List[Dict[str, Any]]:
         is_demo, login_label = await self._resolve_demo_context(user_id)

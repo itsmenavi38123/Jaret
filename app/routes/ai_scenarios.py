@@ -12,12 +12,6 @@ from app.db import get_collection
 from app.models.scenario_models import ScenarioRequest, ScenarioResponse
 from app.services.orchestrator_service import OrchestratorService
 
-# =========================================================================
-# FALLBACK TOGGLE: Set to True to return static JSON from scenario_lab_fallback.json
-# =========================================================================
-FALLBACK_ENABLED: bool = False
-FALLBACK_FILE_PATH = Path(__file__).parent.parent / "scenario_lab_fallback.json"
-
 router = APIRouter(tags=["ai-scenarios"])
 orchestrator = OrchestratorService()
 
@@ -38,41 +32,8 @@ async def scenario_planning_full(
     - Visual data for charts
     - Math explanations
     """
-    # -------------------------------------------------------------
-    # FALLBACK RETURN (When AI credits exhausted / building UI)
-    # -------------------------------------------------------------
-    if FALLBACK_ENABLED:
-        try:
-            if FALLBACK_FILE_PATH.exists():
-                with open(FALLBACK_FILE_PATH, "r", encoding="utf-8") as f:
-                    fallback_data = json.load(f)
-                return JSONResponse(
-                    status_code=status.HTTP_200_OK,
-                    content=fallback_data,
-                    media_type="application/json",
-                )
-        except Exception as fallback_err:
-            print(f"Error reading fallback file: {fallback_err}")
-
     try:
         user_id = current_user["id"]
-
-        users_col = get_collection("users")
-        user_doc = await users_col.find_one({"id": user_id}) or await users_col.find_one({"_id": user_id}) or {}
-        
-        if user_doc.get("is_demo") or (user_doc.get("email", "").startswith("demo-") and "@lightsignal.app" in user_doc.get("email", "")):
-            login_label = user_doc.get("login_label") or user_doc.get("username")
-            if not login_label and user_doc.get("email"):
-                login_label = user_doc.get("email").split("@")[0]
-            
-            from app.demo_data import get_demo_payload
-            demo_payload = get_demo_payload(login_label or "demo-restaurant")
-            if demo_payload and "scenarios" in demo_payload:
-                return JSONResponse(
-                    status_code=status.HTTP_200_OK,
-                    content=jsonable_encoder(demo_payload["scenarios"]),
-                    media_type="application/json",
-                )
 
         from app.services.cost_guardrail_service import cost_guardrail_service
         allowed, reason = await cost_guardrail_service.check_and_reserve(user_id, "scenario_run")

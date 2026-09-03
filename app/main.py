@@ -1,12 +1,14 @@
-# backend/app/main.py
 import os
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, status
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 from app.db import create_indexes, close_client
 import asyncio
 from contextlib import suppress
 from datetime import datetime
+from slowapi.errors import RateLimitExceeded
+from app.limiter import limiter
 load_dotenv()
 
 from app.services.scout_scheduler_service import ScoutSchedulerService
@@ -43,7 +45,19 @@ app = FastAPI(
     title=os.getenv("APP_NAME", "FastAPI Backend"),
     description="A FastAPI backend project",
     version=os.getenv("APP_VERSION", "1.0.0"),
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
 )
+
+app.state.limiter = limiter
+
+@app.exception_handler(RateLimitExceeded)
+async def custom_rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    return JSONResponse(
+        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+        content={"detail": "Rate limit exceeded. Please try again later."}
+    )
 
 # CORS lockdown
 allowed_origins_env = os.getenv("ALLOWED_ORIGINS")

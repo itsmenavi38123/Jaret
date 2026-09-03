@@ -7,7 +7,7 @@ from jose import jwt
 from app.services.facebook_token_service import facebook_token_service
 from app.services.facebook_service import facebook_service
 from app.models.facebook.token import FacebookTokenCreate
-from app.routes.auth.auth import get_current_user
+from app.routes.auth.auth import get_current_user, check_demo_write_guard
 from app.db import get_collection
 from app.config import JWT_SECRET, JWT_ALGORITHM
 
@@ -168,6 +168,7 @@ async def correct_learning(
     """
     Corrects an AI storefront/location learning, updating the business profile and suppressing the old read.
     """
+    check_demo_write_guard(current_user)
     user_id = current_user["id"]
     collection = get_collection("customer_memory")
     
@@ -215,6 +216,7 @@ async def dismiss_learning(
     """
     Dismisses an AI storefront/location learning, suppressing the read.
     """
+    check_demo_write_guard(current_user)
     user_id = current_user["id"]
     collection = get_collection("customer_memory")
     

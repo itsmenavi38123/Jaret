@@ -321,6 +321,27 @@ class BusinessHealthEngineService:
         calc_values = financial_overview.get("calculation_values", {}) if isinstance(financial_overview.get("calculation_values"), dict) else {}
         real_data_metrics = financial_overview.get("Real Data Metrics", {}) if isinstance(financial_overview.get("Real Data Metrics"), dict) else {}
 
+        # If no real financial data or KPIs exist, return genuine not-ready state (never fabricate scores/advice)
+        if not kpis and not liquidity and not real_data_metrics:
+            return {
+                "overall": {
+                    "score": None,
+                    "label": "Not ready",
+                    "status": "not_ready",
+                    "category_scores": {}
+                },
+                "financial_health": {"score": None, "label": "Not ready", "metrics": []},
+                "operational_health": {"score": None, "label": "Not ready", "metrics": []},
+                "risk_health": {"score": None, "label": "Not ready", "metrics": []},
+                "growth_health": {"score": None, "label": "Not ready", "metrics": []},
+                "customer_health": {"score": None, "label": "Not ready", "metrics": []},
+                "financial_signals": {"hero_signal": None, "swipe_signals": [], "items": [], "signal_count": 0},
+                "drivers": [],
+                "watch_areas": [],
+                "active_alerts": [],
+                "meta": {"status": "not_ready", "message": "Connect your accounting system to generate Business Health scores"}
+            }
+
         metrics = {}
         metrics.update(kpis)
         metrics.update(liquidity)

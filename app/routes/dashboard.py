@@ -330,34 +330,6 @@ async def ask_dashboard_advisor(
         )
     except Exception as exc:
         await cost_guardrail_service.refund_reserve(user_id, "dashboard_ask")
-        users_col = get_collection("users")
-        user_doc = await users_col.find_one({"id": user_id}) or await users_col.find_one({"_id": user_id}) or {}
-        is_demo_flag = user_doc.get("is_demo") or (user_doc.get("email", "").startswith("demo-") and "@lightsignal.app" in user_doc.get("email", ""))
-        
-        if is_demo_flag:
-            from app.demo_data import get_demo_payload
-            login_label = user_doc.get("login_label") or user_doc.get("username") or (user_doc.get("email", "").split("@")[0] if user_doc.get("email") else "demo-restaurant")
-            demo_payload = get_demo_payload(login_label or "demo-restaurant")
-            if demo_payload and "dashboard" in demo_payload:
-                from uuid import uuid4
-                demo_reply = demo_payload["dashboard"].get("summary") or "Demo advisor response."
-                return JSONResponse(
-                    status_code=status.HTTP_200_OK,
-                    content={
-                        "success": True,
-                        "data": {
-                            "chat_id": body.chat_id or str(uuid4()),
-                            "question": body.question,
-                            "answer": demo_reply,
-                            "reply": demo_reply,
-                            "headline": "Demo Advisor",
-                            "key_takeaways": [],
-                            "action_items": [],
-                            "created_at": datetime.utcnow().isoformat()
-                        }
-                    }
-                )
-
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to generate Ask AI Advisor response: {exc}",
@@ -426,4 +398,4 @@ async def get_dashboard_chat_thread(
     return JSONResponse(
         status_code=status.HTTP_200_OK,
         content={"success": True, "data": chat},
-    )
+    )

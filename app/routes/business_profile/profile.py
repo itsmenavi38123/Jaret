@@ -8,18 +8,189 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from app.db import get_collection
-from app.routes.auth.auth import get_current_user
+from app.routes.auth.auth import get_current_user, check_demo_write_guard
 from app.models.business_profile import BusinessProfile, BusinessProfileCreate, BusinessProfileUpdate
 from app.config import _now_utc
 from app.services.mapbox_service import MapboxService
 from app.services.business_profile_classifier_service import business_profile_classifier_service
 from app.services.internal_event_bus import internal_event_bus
 
+import re
+import math
+
 router = APIRouter(tags=["business_profile"])
 mapbox_service = MapboxService()
 
 class OwnerNoteCreate(BaseModel):
     text: str
+
+
+NUMERIC_FIELD_KEYS = {
+    "jobs_per_month", "estimated_jobs_per_month", "monthly_jobs", "jobs_monthly",
+    "typical_invoice_size", "typical_job_size", "average_invoice_size", "average_job_value", "avg_job_size", "avg_invoice_amount",
+    "percent_of_leads", "lead_conversion_pct", "pct_of_leads", "leads_converted_pct", "pct_leads", "percentage_of_leads",
+    "radius_miles", "mileage", "annual_mileage", "max_travel_radius_miles", "fleet_mileage", "travel_radius", "service_radius", "estimated_annual_mileage", "average_mileage_per_vehicle",
+    "headcount", "employees_count", "square_footage", "sqft", "annual_revenue", "monthly_revenue",
+    "capacity_utilization_pct", "hourly_rate", "fixed_expenses_monthly", "labor_cost_hourly"
+}
+
+def _clean_numeric_field(val: Any, key_name: str = "") -> Any:
+    """
+    Safely sanitizes and validates numeric fields.
+    1. Prevents mangling sentences into corrupted exponential garbage (e.g. 215e118500200385).
+    2. Cleans currency ($), commas (,), and percent (%) symbols.
+    3. If invalid text or sentence is entered without clear numeric value, returns None instead of corrupted garbage.
+    4. Clamps percentage values between 0 and 100.
+    """
+    if val is None or val == "":
+        return None
+    if isinstance(val, (int, float)):
+        if math.isnan(val) or math.isinf(val):
+            return None
+        # Reject astronomical garbage numbers produced by client-side regex mangling
+        if val > 1e11:
+            return None
+        if "pct" in key_name or "percent" in key_name:
+            return max(0.0, min(100.0, float(val)))
+        return val
+    if isinstance(val, str):
+        val_str = val.strip()
+        # Corrupted client-side scientific exponent pattern (e.g. 215e118500200385)
+        if re.search(r'\d+e\d{4,}', val_str, re.IGNORECASE):
+            return None
+        # Strip currency symbols, commas, percent signs
+        cleaned = re.sub(r'[\$,%]', '', val_str).strip()
+        try:
+            num = float(cleaned)
+            if math.isnan(num) or math.isinf(num) or num > 1e11:
+                return None
+            if "pct" in key_name or "percent" in key_name:
+                num = max(0.0, min(100.0, num))
+            return int(num) if num.is_integer() else num
+        except ValueError:
+            # If someone typed "500 jobs", extract only the clean numeric prefix
+            match = re.search(r'^\d+(\.\d+)?', cleaned)
+            if match:
+                try:
+                    num = float(match.group(0))
+                    if num > 1e11:
+                        return None
+                    if "pct" in key_name or "percent" in key_name:
+                        num = max(0.0, min(100.0, num))
+                    return int(num) if num.is_integer() else num
+                except Exception:
+                    return None
+            return None
+    return None
+
+
+def _sanitize_numeric_fields_in_dict(data: Any) -> Any:
+    if isinstance(data, dict):
+        cleaned = {}
+        for k, v in data.items():
+            if k in NUMERIC_FIELD_KEYS:
+                cleaned[k] = _clean_numeric_field(v, key_name=k)
+            elif isinstance(v, (dict, list)):
+                cleaned[k] = _sanitize_numeric_fields_in_dict(v)
+            else:
+                cleaned[k] = v
+        return cleaned
+    elif isinstance(data, list):
+        return [_sanitize_numeric_fields_in_dict(item) for item in data]
+    return data
+
+
+async def _geocode_and_enrich_locations(onboarding_data: dict) -> dict:
+    """
+    Enriches each location entry in section_01_business_basics.locations and top-level
+    with geocoded coordinates (lat, lng), city, state, timezone and status: 'geocoded'
+    so the UI card never hangs on 'Geocoding...' forever.
+    """
+    sec1 = onboarding_data.get("section_01_business_basics")
+    if isinstance(sec1, dict):
+        locs = sec1.get("locations")
+        if isinstance(locs, list):
+            enriched_locs = []
+            for idx, loc in enumerate(locs):
+                if isinstance(loc, dict):
+                    loc_copy = dict(loc)
+                    if not loc_copy.get("id"):
+                        loc_copy["id"] = f"loc_{idx+1}_{uuid.uuid4().hex[:8]}"
+                    has_coords = loc_copy.get("latitude") is not None and loc_copy.get("longitude") is not None
+                    if not has_coords or loc_copy.get("status") not in ["geocoded", "ready"]:
+                        addr = loc_copy.get("address") or loc_copy.get("street") or ""
+                        c = loc_copy.get("city") or ""
+                        s = loc_copy.get("state") or ""
+                        z = loc_copy.get("zip") or loc_copy.get("zip_code") or ""
+                        full_loc_addr = ", ".join(p for p in [addr, c, s, z] if p)
+                        if full_loc_addr:
+                            try:
+                                geo = await mapbox_service.geocode_address(full_loc_addr)
+                                if geo and geo.get("lat") is not None and geo.get("lng") is not None:
+                                    loc_copy["latitude"] = geo.get("lat")
+                                    loc_copy["longitude"] = geo.get("lng")
+                                    loc_copy["city"] = loc_copy.get("city") or geo.get("city")
+                                    loc_copy["state"] = loc_copy.get("state") or geo.get("state")
+                                    loc_copy["timezone"] = geo.get("timezone")
+                                    loc_copy["status"] = "geocoded"
+                                    loc_copy["geocode_status"] = "geocoded"
+                                else:
+                                    loc_copy["status"] = "geocoded"
+                                    loc_copy["geocode_status"] = "saved"
+                            except Exception:
+                                loc_copy["status"] = "geocoded"
+                                loc_copy["geocode_status"] = "saved"
+                        else:
+                            loc_copy["status"] = "geocoded"
+                    else:
+                        loc_copy["status"] = "geocoded"
+                        loc_copy["geocode_status"] = "geocoded"
+                    enriched_locs.append(loc_copy)
+                else:
+                    enriched_locs.append(loc)
+            sec1["locations"] = enriched_locs
+
+    root_locs = onboarding_data.get("locations")
+    if isinstance(root_locs, list):
+        enriched_root_locs = []
+        for idx, loc in enumerate(root_locs):
+            if isinstance(loc, dict):
+                loc_copy = dict(loc)
+                if not loc_copy.get("id"):
+                    loc_copy["id"] = f"loc_{idx+1}_{uuid.uuid4().hex[:8]}"
+                has_coords = loc_copy.get("latitude") is not None and loc_copy.get("longitude") is not None
+                if not has_coords or loc_copy.get("status") not in ["geocoded", "ready"]:
+                    addr = loc_copy.get("address") or loc_copy.get("street") or ""
+                    c = loc_copy.get("city") or ""
+                    s = loc_copy.get("state") or ""
+                    z = loc_copy.get("zip") or loc_copy.get("zip_code") or ""
+                    full_loc_addr = ", ".join(p for p in [addr, c, s, z] if p)
+                    if full_loc_addr:
+                        try:
+                            geo = await mapbox_service.geocode_address(full_loc_addr)
+                            if geo and geo.get("lat") is not None and geo.get("lng") is not None:
+                                loc_copy["latitude"] = geo.get("lat")
+                                loc_copy["longitude"] = geo.get("lng")
+                                loc_copy["city"] = loc_copy.get("city") or geo.get("city")
+                                loc_copy["state"] = loc_copy.get("state") or geo.get("state")
+                                loc_copy["timezone"] = geo.get("timezone")
+                                loc_copy["status"] = "geocoded"
+                                loc_copy["geocode_status"] = "geocoded"
+                            else:
+                                loc_copy["status"] = "geocoded"
+                                loc_copy["geocode_status"] = "saved"
+                        except Exception:
+                            loc_copy["status"] = "geocoded"
+                    else:
+                        loc_copy["status"] = "geocoded"
+                else:
+                    loc_copy["status"] = "geocoded"
+                enriched_root_locs.append(loc_copy)
+            else:
+                enriched_root_locs.append(loc)
+        onboarding_data["locations"] = enriched_root_locs
+
+    return onboarding_data
 
 
 def _deep_merge_dict(base: dict, updates: dict) -> dict:
@@ -67,12 +238,7 @@ def _extract_address_string(onboarding_data: dict) -> str:
         address_parts.append(state)
 
     if not address_parts:
-        s1 = (
-            onboarding_data.get("section_01_business_basics")
-            or onboarding_data.get("section_1_basics")
-            or onboarding_data.get("business_basics")
-            or {}
-        )
+        s1 = onboarding_data.get("section_01_business_basics") or {}
         if isinstance(s1, dict):
             loc_str = s1.get("headquarters") or s1.get("primary_location") or s1.get("main_location") or s1.get("city_state")
             if loc_str and isinstance(loc_str, str):
@@ -100,6 +266,7 @@ async def create_onboarding(
     data: BusinessProfileCreate,
     current_user: Any = Depends(get_current_user)
 ):
+    check_demo_write_guard(current_user)
     try:
         business_profiles = get_collection("business_profiles")
         opportunities_profiles = get_collection("opportunities_profiles")
@@ -109,7 +276,17 @@ async def create_onboarding(
         else:
             user_id = str(current_user)
 
-        onboarding_data = data.onboarding_data.copy()
+        existing = await business_profiles.find_one({"user_id": user_id})
+        existing_onboarding = existing.get("onboarding_data", {}) if existing else {}
+
+        raw_incoming = data.onboarding_data.copy() if hasattr(data, "onboarding_data") else {}
+        incoming_data = _sanitize_numeric_fields_in_dict(raw_incoming)
+
+        # Smart-merge over existing profile so all other sections are preserved
+        onboarding_data = _apply_partial_updates(existing_onboarding, incoming_data)
+
+        # Geocode individual locations in section 1
+        onboarding_data = await _geocode_and_enrich_locations(onboarding_data)
 
         full_address = _extract_address_string(onboarding_data)
         geo_data = {}
@@ -137,10 +314,6 @@ async def create_onboarding(
         classification_result = business_profile_classifier_service.classify_business(
             onboarding=onboarding_data,
             opportunities_profile=opportunities_profile,
-        )
-
-        existing = await business_profiles.find_one(
-            {"user_id": user_id}
         )
 
         now = _now_utc()
@@ -228,6 +401,7 @@ async def patch_onboarding(
     payload: Dict[str, Any],
     current_user: Any = Depends(get_current_user)
 ):
+    check_demo_write_guard(current_user)
     try:
         business_profiles = get_collection("business_profiles")
         opportunities_profiles = get_collection("opportunities_profiles")
@@ -251,10 +425,14 @@ async def patch_onboarding(
         existing_onboarding = existing.get("onboarding_data", {})
         
         # Support both wrapped {"onboarding_data": {...}} and direct {...}
-        incoming_data = payload.get("onboarding_data") if isinstance(payload.get("onboarding_data"), dict) else payload
+        raw_incoming = payload.get("onboarding_data") if isinstance(payload.get("onboarding_data"), dict) else payload
+        incoming_data = _sanitize_numeric_fields_in_dict(raw_incoming)
 
         # Smart merge: updates ONLY the specified fields/sections and preserves everything else
         onboarding_data = _apply_partial_updates(existing_onboarding, incoming_data)
+
+        # Geocode individual locations in section 1
+        onboarding_data = await _geocode_and_enrich_locations(onboarding_data)
 
         full_address = _extract_address_string(onboarding_data)
         geo_data = {}
@@ -347,44 +525,6 @@ async def get_onboarding(
     try:
         business_profiles = get_collection("business_profiles")
         user_id = current_user.get("id") or current_user.get("_id") if isinstance(current_user, dict) else str(current_user)
-        email = current_user.get("email", "") if isinstance(current_user, dict) else ""
-        is_demo_flag = (current_user.get("is_demo") or (email.startswith("demo-") and "@lightsignal.app" in email)) if isinstance(current_user, dict) else False
-        
-        if not is_demo_flag:
-            users_col = get_collection("users")
-            user_doc = await users_col.find_one({"id": user_id}) or await users_col.find_one({"_id": user_id}) or {}
-            is_demo_flag = user_doc.get("is_demo") or (user_doc.get("email", "").startswith("demo-") and "@lightsignal.app" in user_doc.get("email", ""))
-            login_label = user_doc.get("login_label") or user_doc.get("username") or (user_doc.get("email", "").split("@")[0] if user_doc.get("email") else "demo-restaurant")
-        else:
-            login_label = current_user.get("login_label") or current_user.get("username") or (email.split("@")[0] if email else "demo-restaurant")
-
-        if is_demo_flag:
-            from app.demo_data import get_demo_payload
-            demo_payload = get_demo_payload(login_label or "demo-restaurant")
-            if demo_payload and "business_profile" in demo_payload:
-                raw_bp = demo_payload["business_profile"]
-                sections_only = {
-                    k: v for k, v in raw_bp.items()
-                    if k.startswith("section_")
-                }
-                demo_data = {
-                    "user_id": user_id,
-                    "business_classifications": [demo_payload.get("account", {}).get("industry", "Restaurant")],
-                    "business_tags": ["Demo"],
-                    "proven_capabilities": [],
-                    "created_at": datetime.now(timezone.utc).isoformat(),
-                    "updated_at": datetime.now(timezone.utc).isoformat(),
-                    "onboarding_data": sections_only if sections_only else raw_bp
-                }
-                return JSONResponse(
-                    status_code=status.HTTP_200_OK,
-                    content={
-                        "success": True,
-                        "has_existing_data": True,
-                        "data": demo_data
-                    }
-                )
-
         profile = await business_profiles.find_one(
             {"user_id": user_id}
         )
@@ -446,63 +586,53 @@ async def get_profile_richness(
     """
     try:
         user_id = current_user["id"]
-        users_col = get_collection("users")
-        user_doc = await users_col.find_one({"id": user_id}) or await users_col.find_one({"_id": user_id}) or {}
-        
-        # Demo users are 100% complete
-        if user_doc.get("is_demo") or (user_doc.get("email", "").startswith("demo-") and "@lightsignal.app" in user_doc.get("email", "")):
-            return JSONResponse(
-                status_code=status.HTTP_200_OK,
-                content={
-                    "success": True,
-                    "data": {
-                        "score": 1.0,
-                        "band": "We know your business",
-                        "ever_reached_sharp": True,
-                        "sections_complete": 16,
-                        "total_sections": 16
-                    }
-                }
-            )
-
         business_profiles = get_collection("business_profiles")
         profile = await business_profiles.find_one({"user_id": user_id})
         
         onboarding_data = profile.get("onboarding_data", {}) if profile else {}
         
-        # Calculate filled sections out of 16 using alias groups
-        section_aliases = [
-            ["section_01_business_basics", "section_1_basics", "section_1_business_basics", "business_basics"],
-            ["section_02_ownership_and_key_people", "section_2_ownership", "ownership_and_key_people"],
-            ["section_03_industry_and_model", "section_3_industry", "industry_and_model"],
-            ["section_04_operations", "section_4_operations", "operations"],
-            ["section_05_financial_overview", "section_5_financial", "financial_overview"],
-            ["section_06_assets_and_equipment", "section_6_assets", "assets_and_equipment"],
-            ["section_07_customers_and_market", "section_7_customers", "customers_and_market"],
-            ["section_08_risk_and_exposure", "section_8_risk", "risk_and_exposure"],
-            ["section_09_capacity_and_constraints", "section_9_capacity", "capacity_and_constraints"],
-            ["section_10_opportunity_readiness", "section_10_opportunity_readiness", "opportunity_readiness"],
-            ["section_11_strategic_goals", "section_11_goals", "strategic_goals"],
-            ["section_12_pricing_and_revenue", "section_12_pricing", "pricing_and_revenue"],
-            ["section_13_hiring_and_team_structure", "section_13_team", "hiring_and_team_structure"],
-            ["section_14_sales_and_marketing", "section_14_marketing", "sales_and_marketing"],
-            ["section_15_owner_goals_and_preferences", "section_15_owner_prefs", "owner_goals_and_preferences"],
-            ["section_16_uploads_and_docs", "section_16_docs", "uploads_and_docs"]
+        # Canonical 16 sections
+        canonical_sections = [
+            "section_01_business_basics",
+            "section_02_ownership_and_key_people",
+            "section_03_industry_and_model",
+            "section_04_operations",
+            "section_05_financial_overview",
+            "section_06_assets_and_equipment",
+            "section_07_customers_and_market",
+            "section_08_risk_and_exposure",
+            "section_09_capacity_and_constraints",
+            "section_10_opportunity_readiness",
+            "section_11_strategic_goals",
+            "section_12_pricing_and_revenue",
+            "section_13_hiring_and_team_structure",
+            "section_14_sales_and_marketing",
+            "section_15_owner_goals_and_preferences",
+            "section_16_uploads_and_docs",
         ]
         
         complete_count = 0
-        for group in section_aliases:
-            found = False
-            for s in group:
-                if s in onboarding_data and onboarding_data[s]:
-                    if isinstance(onboarding_data[s], dict) and len(onboarding_data[s]) > 0:
-                        found = True
-                        break
-                    elif not isinstance(onboarding_data[s], dict):
-                        found = True
-                        break
-            if found:
+        for s in canonical_sections[:15]:
+            sec = onboarding_data.get(s)
+            if sec and (not isinstance(sec, dict) or len(sec) > 0):
                 complete_count += 1
+        
+        # Check Section 16 (Uploads & Documents / Connected Systems)
+        sec_16 = onboarding_data.get("section_16_uploads_and_docs")
+        section_16_complete = bool(sec_16 and (not isinstance(sec_16, dict) or len(sec_16) > 0))
+        
+        if not section_16_complete:
+            docs_col = get_collection("documents")
+            has_docs = (await docs_col.count_documents({"uploaded_by": user_id})) > 0 if docs_col is not None else False
+            
+            qb_col = get_collection("quickbooks_tokens")
+            has_qb = (await qb_col.count_documents({"user_id": user_id})) > 0 if qb_col is not None else False
+            
+            if has_docs or has_qb or (profile and profile.get("proven_capabilities")):
+                section_16_complete = True
+        
+        if section_16_complete:
+            complete_count += 1
         
         # Fallback to top-level onboarding fields if structured sections not used yet
         if complete_count == 0 and onboarding_data:
@@ -548,17 +678,6 @@ async def get_profile_teaser(
     Hides when score >= 0.50 per spec §2.
     """
     try:
-        user_id = current_user["id"]
-        users_col = get_collection("users")
-        user_doc = await users_col.find_one({"id": user_id}) or await users_col.find_one({"_id": user_id}) or {}
-        
-        # Demo users and sharp profiles suppress teasers
-        if user_doc.get("is_demo") or (user_doc.get("email", "").startswith("demo-") and "@lightsignal.app" in user_doc.get("email", "")):
-            return JSONResponse(
-                status_code=status.HTTP_200_OK,
-                content={"success": True, "data": {"show": False, "teaser": None}}
-            )
-
         return JSONResponse(
             status_code=status.HTTP_200_OK,
             content={"success": True, "data": {"show": False, "teaser": None}}
@@ -579,41 +698,6 @@ async def get_profile_classification(
     """
     try:
         user_id = current_user.get("id") or current_user.get("_id") if isinstance(current_user, dict) else str(current_user)
-        users_col = get_collection("users")
-        user_doc = await users_col.find_one({"id": user_id}) or await users_col.find_one({"_id": user_id}) or {}
-        
-        if user_doc.get("is_demo") or (user_doc.get("email", "").startswith("demo-") and "@lightsignal.app" in user_doc.get("email", "")):
-            login_label = user_doc.get("login_label") or user_doc.get("username")
-            if not login_label and user_doc.get("email"):
-                login_label = user_doc.get("email").split("@")[0]
-            
-            from app.demo_data import get_demo_payload
-            demo_payload = get_demo_payload(login_label or "demo-restaurant")
-            bp = demo_payload.get("business_profile", {})
-            acc = demo_payload.get("account", {})
-            return JSONResponse(
-                status_code=status.HTTP_200_OK,
-                content={
-                    "success": True,
-                    "data": {
-                        "business_classifications": [
-                            bp.get("section_03_industry_and_model", {}).get("primary_industry")
-                            or bp.get("section_3_industry", {}).get("primary_industry")
-                            or acc.get("industry", "Small Business")
-                        ],
-                        "business_tags": [
-                            bp.get("section_01_business_basics", {}).get("operating_mode")
-                            or bp.get("section_1_basics", {}).get("operating_mode")
-                            or acc.get("business_model", "General")
-                        ],
-                        "proven_capabilities": (
-                            bp.get("section_16_uploads_and_docs", {}).get("connected_systems")
-                            or bp.get("section_16_docs", {}).get("connected_systems", ["QuickBooks Connected"])
-                        )
-                    }
-                }
-            )
-
         business_profiles = get_collection("business_profiles")
         profile = await business_profiles.find_one({"user_id": user_id})
 
@@ -640,6 +724,7 @@ async def confirm_classification(
     current_user: dict = Depends(get_current_user)
 ):
     """Confirm business classification per spec."""
+    check_demo_write_guard(current_user)
     return {"success": True, "message": "Classification confirmed successfully"}
 
 
@@ -650,6 +735,7 @@ async def correct_classification(
     current_user: dict = Depends(get_current_user)
 ):
     """Correct business classification dimension per spec."""
+    check_demo_write_guard(current_user)
     user_id = current_user.get("id") or current_user.get("_id")
     col = get_collection("business_profiles")
     await col.update_one(
@@ -666,58 +752,36 @@ async def save_owner_note(
     current_user: dict = Depends(get_current_user)
 ):
     """
-    Save an Owner Note to the Business Profile.
-    Per UI screenshot 'BUSINESS PROFILE - OWNER NOTES'.
+    Save an Owner Note into dedicated owner_notes collection.
+    Completely isolated from onboarding_data so profile updates never overwrite notes.
     """
+    check_demo_write_guard(current_user)
     try:
         user_id = current_user.get("id") or current_user.get("_id")
-        business_profiles = get_collection("business_profiles")
-        
-        profile = await business_profiles.find_one({"user_id": user_id})
+        notes_coll = get_collection("owner_notes")
         now = _now_utc()
         
-        note_entry = {
-            "id": str(uuid.uuid4()),
+        note_id = str(uuid.uuid4())
+        note_doc = {
+            "_id": note_id,
+            "id": note_id,
+            "user_id": user_id,
             "timestamp": now.isoformat(),
-            "text": note.text.strip()
+            "text": note.text.strip(),
+            "created_at": now
         }
-        
-        if profile:
-            onboarding_data = profile.get("onboarding_data", {})
-            obs_list = onboarding_data.get("owner_observations", [])
-            if not isinstance(obs_list, list):
-                obs_list = []
-            obs_list.insert(0, note_entry)
-            onboarding_data["owner_observations"] = obs_list
-            
-            await business_profiles.update_one(
-                {"user_id": user_id},
-                {
-                    "$set": {
-                        "onboarding_data": onboarding_data,
-                        "updated_at": now
-                    }
-                }
-            )
-        else:
-            onboarding_data = {"owner_observations": [note_entry]}
-            new_profile = BusinessProfile(
-                user_id=user_id,
-                onboarding_data=onboarding_data,
-                business_classifications=[],
-                business_tags=[],
-                proven_capabilities=[],
-                created_at=now,
-                updated_at=now
-            )
-            await business_profiles.insert_one(new_profile.dict(by_alias=True))
+        await notes_coll.insert_one(note_doc)
             
         return JSONResponse(
             status_code=status.HTTP_201_CREATED,
             content={
                 "success": True,
                 "message": "Note saved successfully",
-                "data": note_entry
+                "data": {
+                    "id": note_id,
+                    "timestamp": now.isoformat(),
+                    "text": note.text.strip()
+                }
             }
         )
     except Exception as e:
@@ -732,25 +796,40 @@ async def get_owner_notes(
     current_user: dict = Depends(get_current_user)
 ):
     """
-    Get all Owner Notes for the Business Profile.
+    Get all Owner Notes from dedicated owner_notes collection.
     """
     try:
         user_id = current_user.get("id") or current_user.get("_id")
-        business_profiles = get_collection("business_profiles")
+        notes_coll = get_collection("owner_notes")
         
-        profile = await business_profiles.find_one({"user_id": user_id})
-        onboarding_data = profile.get("onboarding_data", {}) if profile else {}
-        
-        obs_list = onboarding_data.get("owner_observations", [])
-        if not isinstance(obs_list, list):
-            obs_list = []
+        cursor = notes_coll.find({"user_id": user_id}).sort("created_at", -1)
+        notes = []
+        async for doc in cursor:
+            ts = doc.get("timestamp")
+            if not ts:
+                created = doc.get("created_at")
+                ts = created.isoformat() if hasattr(created, "isoformat") else str(created or "")
+            notes.append({
+                "id": str(doc.get("id", doc.get("_id"))),
+                "timestamp": ts,
+                "text": doc.get("text", "")
+            })
+            
+        # Fallback to check legacy profile.onboarding_data.owner_observations if collection has none
+        if not notes:
+            business_profiles = get_collection("business_profiles")
+            profile = await business_profiles.find_one({"user_id": user_id})
+            if profile:
+                obs_list = profile.get("onboarding_data", {}).get("owner_observations", [])
+                if isinstance(obs_list, list) and obs_list:
+                    notes = obs_list
             
         return JSONResponse(
             status_code=status.HTTP_200_OK,
             content={
                 "success": True,
-                "count": len(obs_list),
-                "data": obs_list
+                "count": len(notes),
+                "data": notes
             }
         )
     except Exception as e:
@@ -766,37 +845,27 @@ async def delete_owner_note(
     current_user: dict = Depends(get_current_user)
 ):
     """
-    Remove an Owner Note by ID.
+    Remove an Owner Note by ID from dedicated owner_notes collection.
     """
+    check_demo_write_guard(current_user)
     try:
         user_id = current_user.get("id") or current_user.get("_id")
+        notes_coll = get_collection("owner_notes")
+        await notes_coll.delete_one({"_id": note_id, "user_id": user_id})
+        await notes_coll.delete_one({"id": note_id, "user_id": user_id})
+        
+        # Also clean from legacy profile if present
         business_profiles = get_collection("business_profiles")
-        
         profile = await business_profiles.find_one({"user_id": user_id})
-        if not profile:
-            return JSONResponse(
-                status_code=status.HTTP_404_NOT_FOUND,
-                content={"success": False, "error": "Profile not found"}
-            )
-            
-        onboarding_data = profile.get("onboarding_data", {})
-        obs_list = onboarding_data.get("owner_observations", [])
-        if not isinstance(obs_list, list):
-            obs_list = []
-            
-        updated_list = [n for n in obs_list if n.get("id") != note_id]
-        onboarding_data["owner_observations"] = updated_list
-        
-        now = _now_utc()
-        await business_profiles.update_one(
-            {"user_id": user_id},
-            {
-                "$set": {
-                    "onboarding_data": onboarding_data,
-                    "updated_at": now
-                }
-            }
-        )
+        if profile:
+            onboarding_data = profile.get("onboarding_data", {})
+            obs_list = onboarding_data.get("owner_observations", [])
+            if isinstance(obs_list, list) and any(n.get("id") == note_id for n in obs_list):
+                updated_list = [n for n in obs_list if n.get("id") != note_id]
+                await business_profiles.update_one(
+                    {"user_id": user_id},
+                    {"$set": {"onboarding_data.owner_observations": updated_list, "updated_at": _now_utc()}}
+                )
         
         return JSONResponse(
             status_code=status.HTTP_200_OK,

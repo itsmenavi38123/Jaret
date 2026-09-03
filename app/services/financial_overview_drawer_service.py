@@ -38,8 +38,19 @@ class FinancialOverviewDrawerService:
         except Exception as e:
             print(f"[WARN] Drawer AI explain fallback activated due to API error: {e}")
 
-        # Fallback Drawer Payload Structure matching FO v2 Drawer Spec
-        kpi_name = payload.get("kpi_name") or "KPI Detail"
+        # Human-friendly display mapping
+        kpi_raw = payload.get("kpi_name") or "KPI Detail"
+        kpi_map = {
+            "revenue_mtd": "Revenue (Month-to-Date)",
+            "gross_margin_pct": "Gross Margin",
+            "net_margin_pct": "Net Margin",
+            "cash_flow_mtd": "Cash Flow (Month-to-Date)",
+            "runway_months": "Cash Runway",
+            "current_ratio": "Current Ratio",
+            "quick_ratio": "Quick Ratio",
+            "ccc_days": "Cash Conversion Cycle",
+        }
+        kpi_name = kpi_map.get(kpi_raw, kpi_raw.replace("_", " ").title())
         current_val = payload.get("current_value") or "--"
         prior_val = payload.get("prior_value") or "--"
         
@@ -49,6 +60,7 @@ class FinancialOverviewDrawerService:
             "current_value": str(current_val),
             "prior_value": str(prior_val),
             "status": "at_average",
+            "status_label": "At Average",
             "verdict": f"Your {kpi_name} currently stands at {current_val}, operating within normal benchmark boundaries.",
             "historical_trend": [
                 {"month": "M-4", "value": current_val},

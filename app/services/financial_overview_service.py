@@ -31,6 +31,25 @@ class FinancialOverviewService:
             )
         )
 
+        if not financial_overview:
+            return {
+                "connected": False,
+                "profitability_banner": None,
+                "financial_signals": {
+                    "hero_signal": None,
+                    "swipe_signals": [],
+                    "items": [],
+                    "signal_count": 0
+                },
+                "kpi_tiles": [],
+                "expense_breakdown": [],
+                "meta": {
+                    "connected": False,
+                    "is_demo": False,
+                    "message": "Connect your accounting system to view financial overview"
+                }
+            }
+
         try:
             business_health = (
                 await business_health_engine_service.generate_business_health(
@@ -93,11 +112,41 @@ class FinancialOverviewService:
 
         # Build clean Insights Mode & Profitability Banner objects
         insights_data = financial_overview_insights if isinstance(financial_overview_insights, dict) else {}
-        profitability_banner = insights_data.get("profitability_banner") or {
-            "status": "at_average",
-            "headline": "Financial trends stable this period",
-            "supporting_text": "All core financial metrics within normal operational bounds."
-        }
+        profitability_banner = insights_data.get("profitability_banner")
+        
+        if not profitability_banner:
+            kpis_data = financial_overview.get("kpis", {}) if isinstance(financial_overview, dict) else {}
+            net_margin = kpis_data.get("net_margin_pct")
+            rev_mtd = kpis_data.get("revenue_mtd")
+            
+            if net_margin is not None or (rev_mtd is not None and rev_mtd > 0):
+                nm_val = float(net_margin or 0.0)
+                if nm_val >= 0.15:
+                    profitability_banner = {
+                        "status": "above_average",
+                        "headline": f"Profitable — Net margin at {nm_val * 100:.1f}%",
+                        "supporting_text": "Financial performance is healthy and exceeding standard operating targets."
+                    }
+                elif nm_val >= 0.05:
+                    profitability_banner = {
+                        "status": "at_average",
+                        "headline": f"Profitable — Net margin at {nm_val * 100:.1f}%",
+                        "supporting_text": "Financial performance is stable within normal operating bounds."
+                    }
+                elif nm_val >= 0.0:
+                    profitability_banner = {
+                        "status": "below_average",
+                        "headline": f"Near break-even — Net margin at {nm_val * 100:.1f}%",
+                        "supporting_text": "Profitability is tight this period; monitor operating expenses closely."
+                    }
+                else:
+                    profitability_banner = {
+                        "status": "critical",
+                        "headline": f"Operating at a net loss ({nm_val * 100:.1f}%)",
+                        "supporting_text": "Operating expenses currently exceed revenue for this reporting period."
+                    }
+            else:
+                profitability_banner = None
 
         items = insights_data.get("items") or insights_data.get("insights") or []
         hero_signal = items[0] if items else (financial_signals.get("hero_signal") if isinstance(financial_signals, dict) else None)

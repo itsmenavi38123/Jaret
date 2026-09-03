@@ -7,7 +7,7 @@ from app.db import get_collection
 from app.routes.auth.auth import hash_password
 from app.services.demo_generator_service import demo_generator_service
 
-CONFIG_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "Demo Accounts")
+CONFIG_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "demo_configs")
 
 DEMO_ACCOUNTS_MAP = [
     {
@@ -70,6 +70,11 @@ class DemoAccountService:
         profiles_col = get_collection("business_profiles")
 
         configs = demo_generator_service.load_configs()
+        seed_profiles_path = os.path.join(CONFIG_DIR, "demo_profiles_seed.json")
+        seed_profiles = {}
+        if os.path.exists(seed_profiles_path):
+            with open(seed_profiles_path, "r", encoding="utf-8") as f:
+                seed_profiles = json.load(f)
 
         for demo in DEMO_ACCOUNTS_MAP:
             biz_id = demo["biz_id"]
@@ -189,6 +194,9 @@ class DemoAccountService:
             # Load business profile verbatim from config if present
             biz_config = configs.get(biz_id, {})
             meta_profile = profile_metas.get(biz_id, {})
+            
+            raw_bp = seed_profiles.get(biz_id, {}).get("business_profile", {})
+
             profile_doc = {
                 "user_id": user_id,
                 "business_id": biz_id,
@@ -199,15 +207,41 @@ class DemoAccountService:
                 "woman_owned": meta_profile.get("woman_owned", False),
                 "veteran_owned": meta_profile.get("veteran_owned", False),
                 "minority_owned": meta_profile.get("minority_owned", False),
-                "locations": meta_profile.get("locations", []),
+                "business_classifications": [meta_profile.get("industry", "Small Business")],
+                "business_tags": ["Demo"],
+                "proven_capabilities": [],
+                "locations": raw_bp.get("section_01_business_basics", {}).get("locations", meta_profile.get("locations", [])),
                 "goals": meta_profile.get("goals", {}),
                 "bottlenecks": [meta_profile.get("bottleneck")] if meta_profile.get("bottleneck") else [],
                 "is_demo": True,
+                "onboarding_data": raw_bp,
+                "created_at": datetime.utcnow(),
                 "updated_at": datetime.utcnow()
             }
             await profiles_col.update_one(
                 {"user_id": user_id},
                 {"$set": profile_doc},
+                upsert=True
+            )
+
+            # Seed active QuickBooks token record in MongoDB
+            qb_col = get_collection("quickbooks_tokens")
+            await qb_col.update_one(
+                {"user_id": user_id},
+                {
+                    "$set": {
+                        "user_id": user_id,
+                        "realm_id": f"demo_realm_{biz_id}",
+                        "access_token": f"demo_access_token_{biz_id}",
+                        "refresh_token": f"demo_refresh_token_{biz_id}",
+                        "token_type": "bearer",
+                        "expires_in": 3600,
+                        "x_refresh_token_expires_in": 8726400,
+                        "is_active": True,
+                        "created_at": datetime.utcnow(),
+                        "updated_at": datetime.utcnow()
+                    }
+                },
                 upsert=True
             )
 

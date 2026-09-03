@@ -148,26 +148,6 @@ async def get_business_health_full(
     try:
         user_id = current_user["id"]
         
-        # Check if demo user
-        from app.db import get_collection
-        users_col = get_collection("users")
-        user_doc = await users_col.find_one({"id": user_id}) or await users_col.find_one({"_id": user_id}) or {}
-        
-        if user_doc.get("is_demo") or (user_doc.get("email", "").startswith("demo-") and "@lightsignal.app" in user_doc.get("email", "")):
-            login_label = user_doc.get("login_label") or user_doc.get("username")
-            if not login_label and user_doc.get("email"):
-                login_label = user_doc.get("email").split("@")[0]
-            
-            from app.demo_data import get_demo_payload
-            demo_payload = get_demo_payload(login_label or "demo-restaurant")
-            if demo_payload and "business_health" in demo_payload:
-                raw_bh = demo_payload["business_health"]
-                if "overall" not in raw_bh:
-                    v6_bh = _normalize_demo_business_health_v6(raw_bh, login_label)
-                else:
-                    v6_bh = raw_bh
-                return JSONResponse(status_code=200, content={"success": True, "data": v6_bh, **v6_bh})
-
         # 1. Fetch Real Financial Data from QuickBooks
         qs = quickbooks_financial_service
         
@@ -178,6 +158,35 @@ async def get_business_health_full(
         except Exception:
             financial_overview = {}
         kpis = financial_overview.get("kpis", {})
+
+        if not financial_overview or not kpis:
+            return JSONResponse(
+                status_code=status.HTTP_200_OK,
+                content=jsonable_encoder({
+                    "success": True,
+                    "connected": False,
+                    "status": "not_ready",
+                    "data": {
+                        "overall": {
+                            "score": None,
+                            "label": "Not ready",
+                            "status": "not_ready",
+                        },
+                        "categories": {
+                            "financial_health": {"score": None, "label": "Not ready", "summary": "Connect financial data to calculate"},
+                            "operational_health": {"score": None, "label": "Not ready", "summary": "Connect operational data to calculate"},
+                            "risk_health": {"score": None, "label": "Not ready", "summary": "Connect risk data to calculate"},
+                            "growth_health": {"score": None, "label": "Not ready", "summary": "Connect growth data to calculate"},
+                            "customer_health": {"score": None, "label": "Not ready", "summary": "Connect customer data to calculate"},
+                        },
+                        "drivers": [],
+                        "drags": [],
+                        "watch_areas": [],
+                        "active_alerts": [],
+                        "message": "Connect your accounting system to generate Business Health scores.",
+                    }
+                })
+            )
         
         # Extract Real Metrics
         revenue_mtd = kpis.get("revenue_mtd", 0.0)
@@ -784,9 +793,10 @@ async def get_business_health_full(
             }
         )
 
-        ai_summary = business_health_ai.get(
-            "ai_summary",
-            "Business health insights generated successfully."
+        ai_summary = business_health_ai.get("ai_summary") or (
+            f"Overall business health score is {overall_score}/100 across core financial, operational, and customer metrics."
+            if overall_score is not None
+            else ""
         )
         
         # 8.a Data Gap Guidance
@@ -997,51 +1007,7 @@ async def list_business_health_snapshots(
         user_id = str(current_user)
         email = ""
 
-    is_demo_flag = (isinstance(current_user, dict) and current_user.get("is_demo")) or (email.startswith("demo-") and "@lightsignal.app" in email)
-    if not is_demo_flag:
-        users_col = get_collection("users")
-        user_doc = await users_col.find_one({"id": user_id}) or await users_col.find_one({"_id": user_id}) or {}
-        is_demo_flag = user_doc.get("is_demo") or (user_doc.get("email", "").startswith("demo-") and "@lightsignal.app" in user_doc.get("email", ""))
-        login_label = user_doc.get("login_label") or user_doc.get("username") or (user_doc.get("email", "").split("@")[0] if user_doc.get("email") else "demo-restaurant")
-    else:
-        login_label = current_user.get("login_label") or current_user.get("username") or (email.split("@")[0] if email else "demo-restaurant")
-
-    # Demo users: return demo snapshot dropdown list
-    if is_demo_flag:
-        from app.demo_data import get_demo_payload
-        demo_payload = get_demo_payload(login_label or "demo-restaurant")
-        raw_bh = (demo_payload.get("business_health") if demo_payload else {}) or {}
-        current_score = raw_bh.get("overall_score", 82)
-        now = datetime.utcnow()
-        items = [
-            {
-                "snapshot_id": "snap_demo_curr",
-                "score": current_score,
-                "label": "Above Average",
-                "created_at": now.isoformat(),
-            },
-            {
-                "snapshot_id": "snap_demo_prev1",
-                "score": current_score - 4,
-                "label": "Above Average",
-                "created_at": (now - timedelta(days=30)).isoformat(),
-            },
-            {
-                "snapshot_id": "snap_demo_prev2",
-                "score": current_score - 7,
-                "label": "At Average",
-                "created_at": (now - timedelta(days=60)).isoformat(),
-            }
-        ]
-        return JSONResponse(
-            status_code=status.HTTP_200_OK,
-            content=jsonable_encoder({
-                "success": True,
-                "data": items,
-            })
-        )
-
-    # Normal users: fetch from MongoDB
+    # Fetch snapshots from MongoDB
     col = get_collection("business_health_snapshots")
     docs = await col.find({"user_id": user_id}).sort("created_at", -1).limit(limit).to_list(length=limit)
     
@@ -1083,82 +1049,7 @@ async def get_business_health_snapshot_detail(
         user_id = str(current_user)
         email = ""
 
-    is_demo_flag = (isinstance(current_user, dict) and current_user.get("is_demo")) or (email.startswith("demo-") and "@lightsignal.app" in email)
-    if not is_demo_flag:
-        users_col = get_collection("users")
-        user_doc = await users_col.find_one({"id": user_id}) or await users_col.find_one({"_id": user_id}) or {}
-        is_demo_flag = user_doc.get("is_demo") or (user_doc.get("email", "").startswith("demo-") and "@lightsignal.app" in user_doc.get("email", ""))
-        login_label = user_doc.get("login_label") or user_doc.get("username") or (user_doc.get("email", "").split("@")[0] if user_doc.get("email") else "demo-restaurant")
-    else:
-        login_label = current_user.get("login_label") or current_user.get("username") or (email.split("@")[0] if email else "demo-restaurant")
-
-    # Demo users: return spec-compliant demo snapshot payload
-    if is_demo_flag:
-        from app.demo_data import get_demo_payload
-        demo_payload = get_demo_payload(login_label or "demo-restaurant")
-        raw_bh = (demo_payload.get("business_health") if demo_payload else {}) or {}
-        if "overall" not in raw_bh:
-            v6_bh = _normalize_demo_business_health_v6(raw_bh, login_label)
-        else:
-            v6_bh = raw_bh
-
-        base_overall = v6_bh.get("overall", {})
-        prior_score = base_overall.get("score", 82) - 4
-        prior_overall = {
-            "score": prior_score,
-            "label": "above_average" if prior_score >= 75 else "at_average",
-            "peer_avg": base_overall.get("peer_avg", 71),
-            "ai_confidence": 0.86,
-            "data_completeness": 86,
-            "incomplete_data": False,
-            "as_of": (datetime.utcnow() - timedelta(days=30)).date().isoformat()
-        }
-
-        prior_categories = {
-            "financial": {"score": 79, "label": "above_average", "prior_score": None, "peer_avg": 72, "missing": []},
-            "operational": {"score": 72, "label": "at_average", "prior_score": None, "peer_avg": 70, "missing": []},
-            "customer": {"score": 78, "label": "above_average", "prior_score": None, "peer_avg": 75, "missing": []},
-            "risk": {"score": 85, "label": "top_tier", "prior_score": None, "peer_avg": 68, "missing": []},
-            "growth": {"score": 76, "label": "above_average", "prior_score": None, "peer_avg": 69, "missing": []},
-            "financial_health": {"score": 79, "label": "above_average", "prior_score": None, "peer_avg": 72, "missing": []},
-            "operational_health": {"score": 72, "label": "at_average", "prior_score": None, "peer_avg": 70, "missing": []},
-            "customer_health": {"score": 78, "label": "above_average", "prior_score": None, "peer_avg": 75, "missing": []},
-            "risk_health": {"score": 85, "label": "top_tier", "prior_score": None, "peer_avg": 68, "missing": []},
-            "growth_health": {"score": 76, "label": "above_average", "prior_score": None, "peer_avg": 69, "missing": []},
-        }
-
-        snapshot_res = {
-            **v6_bh,
-            "overall": prior_overall,
-            "categories": prior_categories,
-            "financial_health": prior_categories["financial"],
-            "operational_health": prior_categories["operational"],
-            "customer_health": prior_categories["customer"],
-            "risk_health": prior_categories["risk"],
-            "growth_health": prior_categories["growth"],
-            "ai_summary": "Prior operating snapshot reflected solid margin retention and steady order velocity.",
-        }
-
-        return JSONResponse(
-            status_code=status.HTTP_200_OK,
-            content=jsonable_encoder({
-                "success": True,
-                "data": snapshot_res,
-                "overall": prior_overall,
-                "categories": prior_categories,
-                "financial_health": prior_categories["financial"],
-                "operational_health": prior_categories["operational"],
-                "customer_health": prior_categories["customer"],
-                "risk_health": prior_categories["risk"],
-                "growth_health": prior_categories["growth"],
-                "active_alerts": v6_bh.get("active_alerts", []),
-                "watch_areas": v6_bh.get("watch_areas", []),
-                "drivers_display": v6_bh.get("drivers_display", []),
-                "ai_summary": snapshot_res["ai_summary"],
-            })
-        )
-
-    # Normal users: fetch from DB
+    # Fetch snapshot from DB
     col = get_collection("business_health_snapshots")
     doc = None
 

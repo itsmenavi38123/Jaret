@@ -21,6 +21,7 @@ from datetime import timezone
 
 router = APIRouter(tags=["auth"])
 api_router = APIRouter(tags=["auth"])
+from app.limiter import limiter
 
 from app.services.stripe_service import StripeService
 
@@ -133,9 +134,44 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
     users = get_collection("users")
     user_doc = await users.find_one({"_id": user_id})
     if not user_doc:
+        user_doc = await users.find_one({"id": user_id})
+    if not user_doc:
         raise credentials_exception
 
-    return {"id": user_doc["_id"], "email": user_doc["email"]}
+    return {
+        "id": user_doc.get("id", user_doc["_id"]),
+        "_id": user_doc.get("_id"),
+        "email": user_doc["email"],
+        "is_demo": bool(user_doc.get("is_demo")),
+        "role": user_doc.get("role", "user")
+    }
+
+
+def check_demo_write_guard(current_user: Any):
+    """
+    Blocks state-mutating writes on demo accounts.
+    Returns HTTP 403 Forbidden with detail 'Demo accounts are read-only'.
+    """
+    is_demo = False
+    if isinstance(current_user, dict):
+        is_demo = bool(current_user.get("is_demo"))
+        email = current_user.get("email", "")
+        if not is_demo and email.startswith("demo-") and "@lightsignal.app" in email:
+            is_demo = True
+    elif isinstance(current_user, str):
+        if current_user.startswith("usr_demo-") or current_user.startswith("demo-"):
+            is_demo = True
+
+    if is_demo:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Demo accounts are read-only"
+        )
+
+
+async def require_non_demo_user(current_user: dict = Depends(get_current_user)) -> dict:
+    check_demo_write_guard(current_user)
+    return current_user
 
 
 async def _connection_statuses(user_doc: Dict[str, Any]) -> Dict[str, bool]:
@@ -226,6 +262,7 @@ async def get_current_user_details(current_user: dict = Depends(get_current_user
 # Routes
 # -----------------------
 @router.post("/register")
+@limiter.limit("3/minute")
 async def register(user: UserCreate, request: Request):
     try:
         body = await request.json()
@@ -355,7 +392,8 @@ async def register(user: UserCreate, request: Request):
 
 
 @router.post("/login")
-async def login(credentials: UserLogin):
+@limiter.limit("5/minute")
+async def login(credentials: UserLogin, request: Request):
     try:
         users = get_collection("users")
         user_doc = await users.find_one({"email": credentials.email})
@@ -390,11 +428,47 @@ async def login(credentials: UserLogin):
             {"$set": {"last_active": _now_utc()}}
         )
 
-        # Log login event for session tracking
-        login_logs = get_collection("login_logs")
-        await login_logs.insert_one({
+        # Record real session in user_sessions for settings tracking
+        user_sessions = get_collection("user_sessions")
+        client_ip = request.headers.get("x-forwarded-for") or (request.client.host if request.client else "127.0.0.1")
+        if client_ip and "," in client_ip:
+            client_ip = client_ip.split(",")[0].strip()
+        ua = request.headers.get("user-agent", "")
+        browser = "Chrome" if "Chrome" in ua else ("Safari" if "Safari" in ua else ("Edge" if "Edg" in ua else ("Firefox" if "Firefox" in ua else "Browser")))
+        os_name = "Desktop"
+        if "Windows" in ua:
+            os_name = "Windows"
+        elif "Macintosh" in ua or "Mac OS" in ua:
+            os_name = "macOS"
+        elif "iPhone" in ua:
+            os_name = "iPhone"
+        elif "iPad" in ua:
+            os_name = "iPad"
+        elif "Android" in ua:
+            os_name = "Android"
+        elif "Linux" in ua:
+            os_name = "Linux"
+        device_label = f"{browser} on {os_name}"
+
+        session_id = f"sess_{uuid4().hex[:16]}"
+        now = _now_utc()
+
+        # Mark previous sessions as not current
+        await user_sessions.update_many(
+            {"user_id": user_doc["_id"]},
+            {"$set": {"is_current": False}}
+        )
+
+        await user_sessions.insert_one({
+            "_id": session_id,
+            "id": session_id,
             "user_id": user_doc["_id"],
-            "login_time": _now_utc()
+            "device_info": device_label,
+            "ip_address": client_ip or "127.0.0.1",
+            "last_active": now.isoformat(),
+            "created_at": now,
+            "is_current": True,
+            "is_active": True
         })
 
         # Check if user has existing business profile
@@ -665,7 +739,8 @@ async def create_password_reset_token(user_id: str) -> str:
 
 
 @router.post("/forgot-password")
-async def forgot_password(payload: ForgotPasswordRequest):
+@limiter.limit("3/minute")
+async def forgot_password(payload: ForgotPasswordRequest, request: Request):
     """
     Sends a password reset link to the user's email if an account exists.
     Always returns a generic success message to avoid leaking whether the email is registered.
@@ -751,7 +826,8 @@ async def verify_reset_password_token(token: str):
 
 
 @router.post("/reset-password")
-async def reset_password(payload: ResetPasswordRequest):
+@limiter.limit("3/minute")
+async def reset_password(payload: ResetPasswordRequest, request: Request):
     """
     Verifies a password reset token and sets the new password.
     The token is single-use: it is marked used as part of a successful reset
@@ -898,6 +974,7 @@ async def setup_password(
         )
 
 @api_router.post("/signup")
+@limiter.limit("3/minute")
 async def signup(payload: SignupRequest, request: Request, background_tasks: BackgroundTasks):
     try:
         users = get_collection("users")
@@ -984,6 +1061,7 @@ async def signup(payload: SignupRequest, request: Request, background_tasks: Bac
         )
 
 @api_router.post("/signup/mobile")
+@limiter.limit("3/minute")
 async def signup_mobile(payload: SignupRequest, request: Request, background_tasks: BackgroundTasks):
     try:
         users = get_collection("users")

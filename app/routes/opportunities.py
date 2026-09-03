@@ -11,7 +11,7 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from math import ceil
 
-from app.routes.auth.auth import get_current_user
+from app.routes.auth.auth import get_current_user, check_demo_write_guard
 from app.db import get_collection
 from app.services.research_scout_service import ResearchScoutService
 from app.services.quickbooks_financial_service import quickbooks_financial_service
@@ -69,28 +69,7 @@ async def get_opportunities_overview(
 
         user_id = current_user.get("id") or current_user.get("_id")
         email = current_user.get("email", "")
-        is_demo_flag = current_user.get("is_demo") or (email.startswith("demo-") and "@lightsignal.app" in email)
         
-        if not is_demo_flag:
-            users_col = get_collection("users")
-            user_doc = await users_col.find_one({"id": user_id}) or await users_col.find_one({"_id": user_id}) or {}
-            is_demo_flag = user_doc.get("is_demo") or (user_doc.get("email", "").startswith("demo-") and "@lightsignal.app" in user_doc.get("email", ""))
-            login_label = user_doc.get("login_label") or user_doc.get("username") or (user_doc.get("email", "").split("@")[0] if user_doc.get("email") else "demo-restaurant")
-        else:
-            login_label = current_user.get("login_label") or current_user.get("username") or (email.split("@")[0] if email else "demo-restaurant")
-
-        if is_demo_flag:
-            from app.demo_data import get_demo_payload
-            demo_payload = get_demo_payload(login_label or "demo-restaurant")
-            if demo_payload and "opportunities" in demo_payload:
-                return JSONResponse(
-                    status_code=status.HTTP_200_OK,
-                    content={
-                        "success": True,
-                        "data": demo_payload["opportunities"]
-                    }
-                )
-
         # Fetch profiles
         business_profiles = get_collection("business_profiles")
         business_profile = await business_profiles.find_one({"user_id": user_id})
@@ -499,7 +478,7 @@ async def save_opportunity(
     opportunity_data: OpportunityCreate,
     current_user: dict = Depends(get_current_user),
 ):
-
+    check_demo_write_guard(current_user)
     try:
 
         user_id = current_user["id"]
@@ -519,45 +498,40 @@ async def save_opportunity(
 
         company_latitude = company_geo.get("latitude")
         company_longitude = company_geo.get("longitude")
-
-        geo = await mapbox_service.build_opportunity_geo(
-            location_text=opportunity_data.location_text,
-            company_latitude=company_latitude,
-            company_longitude=company_longitude,
-            start_date=opportunity_data.start_date,
-            opportunity_type=opportunity_data.opportunity_type,
-        )
+        company_address = company_geo.get("business_address")
+        company_city = company_geo.get("city")
+        company_state = company_geo.get("state")
 
         opportunity = Opportunity(
             user_id=user_id,
-            geo=geo,
-            **opportunity_data.dict()
+            company_latitude=company_latitude,
+            company_longitude=company_longitude,
+            company_address=company_address,
+            company_city=company_city,
+            company_state=company_state,
+            **opportunity_data.dict(),
         )
 
         opportunities_collection = get_collection("opportunities")
-
-        await opportunities_collection.insert_one(
+        result = await opportunities_collection.insert_one(
             opportunity.dict(by_alias=True)
         )
 
+        created = await opportunities_collection.find_one(
+            {"_id": result.inserted_id}
+        )
+        data = {k: v for k, v in created.items() if k != "_id"}
+        data["_id"] = str(created["_id"])
+
         return JSONResponse(
             status_code=status.HTTP_201_CREATED,
-            content={
-                "message": "Opportunity saved successfully",
-                "opportunity_id": opportunity.id
-            },
+            content={"message": "Opportunity saved successfully", "data": jsonable_encoder(data)},
         )
 
     except Exception as e:
-
-        import traceback
-        traceback.print_exc()
-
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content={
-                "error": str(e)
-            },
+            content={"error": str(e)},
         )
     
 @router.get("/saved")
@@ -856,27 +830,11 @@ def _enrich_scenario_result(parsed: dict) -> dict:
     return parsed
 
 
-FALLBACK_ENABLED = True
-FALLBACK_FILE_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "scenario_lab_fallback.json")
-
 # =========================
 # ENDPOINT
 # =========================
 @router.post("/scenario")
 async def ask_question(payload: QuestionRequest, current_user: dict = Depends(get_current_user)):
-    if FALLBACK_ENABLED:
-        try:
-            if os.path.exists(FALLBACK_FILE_PATH):
-                with open(FALLBACK_FILE_PATH, "r", encoding="utf-8") as f:
-                    fallback_json = json.load(f)
-                return JSONResponse(
-                    status_code=status.HTTP_200_OK,
-                    content=fallback_json,
-                    media_type="application/json",
-                )
-        except Exception as fallback_err:
-            print(f"Error loading fallback file: {fallback_err}")
-
     try:
         user_id = current_user["id"]
         memory_tool = LightSignalMemoryTool(user_id=user_id)
@@ -1185,97 +1143,6 @@ async def get_opportunity_prep(
             user_id = str(current_user)
             email = ""
 
-        is_demo_flag = (isinstance(current_user, dict) and current_user.get("is_demo")) or (email.startswith("demo-") and "@lightsignal.app" in email)
-        if not is_demo_flag:
-            users_col = get_collection("users")
-            user_doc = await users_col.find_one({"id": user_id}) or await users_col.find_one({"_id": user_id}) or {}
-            is_demo_flag = user_doc.get("is_demo") or (user_doc.get("email", "").startswith("demo-") and "@lightsignal.app" in user_doc.get("email", ""))
-
-        # Demo users: return deterministic spec-compliant prep guidance with no AI calls
-        if is_demo_flag:
-            fallback_prep = {
-                "opportunity_id": opportunity_id,
-                "checklist": [
-                    {
-                        "task_id": "chk_1",
-                        "label": "Confirm staffing schedule and shift coverage",
-                        "title": "Confirm staffing schedule and shift coverage",
-                        "phase": "2_3_weeks_before",
-                        "deadline_date": (datetime.utcnow() + timedelta(days=7)).strftime("%Y-%m-%d"),
-                        "priority": "critical",
-                        "is_urgent": True,
-                        "addresses": "operational",
-                        "completed": False
-                    },
-                    {
-                        "task_id": "chk_2",
-                        "label": "Review inventory stock levels and supplier lead times",
-                        "title": "Review inventory stock levels and supplier lead times",
-                        "phase": "7_10_days",
-                        "deadline_date": (datetime.utcnow() + timedelta(days=12)).strftime("%Y-%m-%d"),
-                        "priority": "standard",
-                        "is_urgent": False,
-                        "addresses": "financial",
-                        "completed": False
-                    },
-                    {
-                        "task_id": "chk_3",
-                        "label": "Verify mobile POS terminal connectivity and card reader backup",
-                        "title": "Verify mobile POS terminal connectivity and card reader backup",
-                        "phase": "event_week",
-                        "deadline_date": (datetime.utcnow() + timedelta(days=18)).strftime("%Y-%m-%d"),
-                        "priority": "standard",
-                        "is_urgent": False,
-                        "addresses": "operational",
-                        "completed": False
-                    }
-                ],
-                "judgment_prompts": [
-                    {
-                        "category": "Human Factors",
-                        "check_prompt": "Will key staff require overtime or schedule adjustments during this window?",
-                        "prompt": "Will key staff require overtime or schedule adjustments during this window?",
-                        "title": "Human Factors",
-                        "severity": "medium"
-                    },
-                    {
-                        "category": "Financial Ripple",
-                        "check_prompt": "What is the expected ROI multiple relative to upfront ingredient and transport costs?",
-                        "prompt": "What is the expected ROI multiple relative to upfront ingredient and transport costs?",
-                        "title": "Financial Ripple",
-                        "severity": "low"
-                    }
-                ],
-                "risk_prompts": [
-                    {
-                        "category": "Human Factors",
-                        "check_prompt": "Will key staff require overtime or schedule adjustments during this window?",
-                        "prompt": "Will key staff require overtime or schedule adjustments during this window?",
-                        "title": "Human Factors",
-                        "severity": "medium"
-                    },
-                    {
-                        "category": "Financial Ripple",
-                        "check_prompt": "What is the expected ROI multiple relative to upfront ingredient and transport costs?",
-                        "prompt": "What is the expected ROI multiple relative to upfront ingredient and transport costs?",
-                        "title": "Financial Ripple",
-                        "severity": "low"
-                    }
-                ],
-                "checkpoint_summary": "Preparation tracking active. Complete checklist items to stay on schedule.",
-                "cash_balance": 18500.0,
-                "revenue_attributed": 4200.0,
-                "owner_responses": {}
-            }
-            return JSONResponse(
-                status_code=status.HTTP_200_OK,
-                content=jsonable_encoder(_stringify_object_ids({
-                    "success": True,
-                    "cached": True,
-                    "data": fallback_prep,
-                }), custom_encoder={ObjectId: str}),
-            )
-
         opportunities_collection = get_collection("opportunities")
         business_profiles = get_collection("business_profiles")
 
@@ -1397,6 +1264,7 @@ async def update_opportunity_status(
     current_user: dict = Depends(get_current_user)
 ):
     """Persist opportunity status (none / tracked / selected / completed)."""
+    check_demo_write_guard(current_user)
     user_id = current_user.get("id") or current_user.get("_id")
     col = get_collection("opportunities")
     now = datetime.utcnow().isoformat()
@@ -1416,6 +1284,7 @@ async def respond_to_checkpoint(
     current_user: dict = Depends(get_current_user)
 ):
     """Save owner checkpoint response in prep view per spec §F."""
+    check_demo_write_guard(current_user)
     user_id = current_user.get("id") or current_user.get("_id")
     col = get_collection("opportunity_checkpoints")
     now = datetime.utcnow().isoformat()
@@ -1436,6 +1305,7 @@ async def toggle_checklist_task(
     current_user: dict = Depends(get_current_user)
 ):
     """Persist checklist task completion per spec §F."""
+    check_demo_write_guard(current_user)
     user_id = current_user.get("id") or current_user.get("_id")
     col = get_collection("opportunity_checklists")
     now = datetime.utcnow().isoformat()

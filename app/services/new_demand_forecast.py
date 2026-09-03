@@ -1172,39 +1172,6 @@ async def demand_forecast_route(
     user_id: str = Depends(get_current_user)
 ):
     # Check if demo user
-    users_col = get_collection("users")
-    user_doc = await users_col.find_one({"id": user_id}) or await users_col.find_one({"_id": user_id}) or {}
-    
-    if user_doc.get("is_demo") or (user_doc.get("email", "").startswith("demo-") and "@lightsignal.app" in user_doc.get("email", "")):
-        login_label = user_doc.get("login_label") or user_doc.get("username")
-        if not login_label and user_doc.get("email"):
-            login_label = user_doc.get("email").split("@")[0]
-        
-        from app.demo_data import get_demo_payload
-        demo_payload = get_demo_payload(login_label or "demo-restaurant")
-        if demo_payload and "demand_forecast" in demo_payload:
-            df_payload = dict(demo_payload["demand_forecast"])
-            agent_output = dict(df_payload.get("agentOutput", df_payload))
-            
-            # Normalize drivers confidence & add unit toggle support for demo payload
-            if "windows" in agent_output and isinstance(agent_output["windows"], list):
-                for w in agent_output["windows"]:
-                    if "drivers" in w:
-                        w["drivers"] = _normalize_driver_confidence(w.get("drivers", []))
-                    if "forecast" in w and "expected" in w["forecast"]:
-                        exp = w["forecast"]["expected"]
-                        if "volume_forecast" not in exp:
-                            exp["volume_forecast"] = 185
-                        if "demand_unit" not in exp:
-                            exp["demand_unit"] = agent_output.get("demand_unit", "Covers")
-
-            return {
-                "metrics": df_payload.get("metrics", {}),
-                "flags": df_payload.get("flags", []),
-                "data": df_payload.get("data", {}),
-                "agentOutput": agent_output
-            }
-
     from app.services.cost_guardrail_service import cost_guardrail_service
     allowed, reason = await cost_guardrail_service.check_and_reserve(user_id, "demand_forecast")
     if not allowed:

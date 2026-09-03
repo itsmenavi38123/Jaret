@@ -8,7 +8,7 @@ from typing import Dict, Any, List, Optional
 from app.db import get_collection
 
 DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-CONFIG_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "Demo Accounts")
+CONFIG_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "demo_configs")
 
 class DemoGeneratorService:
     def __init__(self):
@@ -213,17 +213,24 @@ class DemoGeneratorService:
             eff = a.get("effect", {})
             if "revenue_mult" in eff:
                 revenue *= eff["revenue_mult"]
-            if "day_override" in eff and DAYS[d.weekday()] == eff["day_override"]["weekday"]:
-                revenue *= eff["day_override"]["revenue_mult"]
+            if "day_override" in eff and isinstance(eff["day_override"], dict):
+                day_name = DAYS[d.weekday()]
+                if day_name in eff["day_override"]:
+                    revenue *= eff["day_override"][day_name]
+                elif day_name == eff["day_override"].get("weekday"):
+                    revenue *= eff["day_override"].get("revenue_mult", 1.0)
             for key in ("one_time_income", "one_time_expense"):
                 if key in eff and wk == a["wk"][0] and d.weekday() == 2:
+                    val = eff[key]
+                    lbl = val.get("label", key.replace("_", " ").title()) if isinstance(val, dict) else key.replace("_", " ").title()
+                    amt = val.get("amount", float(val)) if isinstance(val, dict) else float(val)
                     extra.append({
                         "user_id": user_id,
                         "business_id": biz_id,
                         "date": datetime.combine(d, datetime.min.time()),
                         "date_str": d.isoformat(),
-                        "label": eff[key]["label"],
-                        "amount": eff[key]["amount"],
+                        "label": lbl,
+                        "amount": amt,
                         "type": "one_time",
                         "is_demo": True
                     })

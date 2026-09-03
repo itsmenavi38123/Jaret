@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from app.services.document_store_service import DocumentStoreService
 from app.services.dia_agent_service import DIAService
 from app.services.dia_orchestrator import DIAOrchestrator
-from app.routes.auth.auth import get_current_user
+from app.routes.auth.auth import get_current_user, check_demo_write_guard
 from app.services.claude_service import ClaudeService
 from app.services.customer_memory_service import CustomerMemoryService
 from app.models.customer_memory import CustomerMemory
@@ -59,6 +59,7 @@ async def upload_document(
     pipeline: tuple = Depends(get_dia_pipeline)
     ):
     store, agent, orchestrator, current_user = pipeline
+    check_demo_write_guard(current_user)
     user_id = current_user["id"]
     
     results = []
@@ -275,6 +276,9 @@ async def review_fact(
     review_data: ReviewRequest, 
     pipeline: tuple = Depends(get_dia_pipeline)
     ):
+    store, agent, orchestrator, current_user = pipeline
+    check_demo_write_guard(current_user)
+    user_id = current_user["id"]
     meta = await store.get_metadata(document_id)
     if not meta or meta.get("customer_id") != user_id or meta.get("deleted_by_owner") is True:
         raise HTTPException(status_code=404, detail="Document not found")
@@ -456,6 +460,7 @@ async def review_fact(
 
 @router.delete("/cleanup")
 async def cleanup_documents(current_user: dict = Depends(get_current_user)):
+    check_demo_write_guard(current_user)
     user_id = current_user["id"]
     docs_coll = get_collection("documents_metadata")
     ext_coll = get_collection("extraction_records")
@@ -488,6 +493,7 @@ async def delete_document(
     document_id: str, 
     current_user: dict = Depends(get_current_user)
 ):
+    check_demo_write_guard(current_user)
     user_id = current_user["id"]
     docs_coll = get_collection("documents_metadata")
     

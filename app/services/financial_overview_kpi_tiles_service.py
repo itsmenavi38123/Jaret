@@ -88,37 +88,40 @@ class FinancialOverviewKPITilesService:
             ),
         ]
 
-        fallback_defaults = {
-            "revenue_mtd": 40500.0,
-            "gross_margin_pct": 55.0,
-            "net_margin_pct": 16.2,
-            "cash_flow_mtd": 6500.0,
-            "runway_months": 8.5,
-            "current_ratio": 1.62,
-            "quick_ratio": 1.62,
-            "ccc_days": 18.0
-        }
+        from app.services.quickbooks_token_service import quickbooks_token_service
+        tokens = await quickbooks_token_service.get_tokens_by_user(user_id)
+        qb_connected = any(t.is_active for t in tokens)
+        has_real_data = any(v is not None for _, _, v in metric_configs)
+
+        if qb_connected and has_real_data:
+            confidence_footer = "Confidence: High · QuickBooks synced"
+        elif qb_connected:
+            confidence_footer = "QuickBooks connected · Syncing financial data"
+        else:
+            confidence_footer = "QuickBooks disconnected"
 
         for metric_id, label, value in metric_configs:
             if value is None:
-                value = fallback_defaults.get(metric_id, 0.0)
+                val_str = "--"
+                status = "insufficient_data"
+                change_text = "No prior data"
+                trend = []
+                verdict = f"Insufficient data to calculate {label} verdict."
+                change_indicator = None
+                drivers = []
+            else:
+                val_str = f"{value:.1f}%" if "pct" in metric_id else (f"${value:,.0f}" if "mtd" in metric_id and "pct" not in metric_id else str(value))
+                status = self._get_status(metric_id=metric_id, value=value)
+                change_text = self._get_change_text(metric_id, value, financial_overview)
+                trend = self._get_trend_data(metric_id, value, financial_overview)
+                verdict = self._get_verdict(metric_id, label, value, status)
+                change_indicator = self._get_change_indicator(metric_id, value, financial_overview, status)
+                drivers = self._get_drivers(metric_id, value, financial_overview)
 
-            val_str = f"{value:.1f}%" if "pct" in metric_id else (f"${value:,.0f}" if "mtd" in metric_id and "pct" not in metric_id else str(value))
-            status = self._get_status(metric_id=metric_id, value=value)
-            if status == "insufficient_data":
-                status = "at_average"
-            
-            # Rich ratio card fields dynamically calculated from financial_overview
-            change_text = self._get_change_text(metric_id, value, financial_overview)
-            trend = self._get_trend_data(metric_id, value, financial_overview)
-            verdict = self._get_verdict(metric_id, label, value, status)
-            change_indicator = self._get_change_indicator(metric_id, value, financial_overview, status)
-            drivers = self._get_drivers(metric_id, value, financial_overview)
             actions = [
                 {"label": "Suggested actions 2 ›", "type": "primary", "action": "open_actions"},
                 {"label": "Ask AI ›", "type": "secondary", "action": "open_drawer_ask_ai"}
             ]
-            confidence_footer = "Confidence: High (98% data coverage - QuickBooks synced 2h ago)"
 
             items.append(
                 FinancialOverviewKPITile(
@@ -297,14 +300,16 @@ class FinancialOverviewKPITilesService:
         return [round(p1, 2), round(p2, 2), round(p3, 2), round(p4, 2), round(val, 2)]
 
     def _get_verdict(self, metric_id: str, label: str, value: Any, status: str) -> str:
-        val_str = str(value) if value is not None else "--"
+        if value is None or status == "insufficient_data":
+            return f"Insufficient data to calculate {label} verdict."
+        val_str = f"{value:.1f}%" if "pct" in metric_id else (f"${value:,.0f}" if "mtd" in metric_id and "pct" not in metric_id else str(value))
         if status == "critical":
-            return f"Your {label.lower()} fell to {val_str} — current operating performance has crossed the critical distress threshold."
+            return f"Your {label} is at {val_str} - currently below critical operating thresholds."
         elif status == "below_average":
-            return f"Your {label.lower()} stands at {val_str}, trailing target industry benchmarks and needing active monitoring."
+            return f"Your {label} is at {val_str}, trailing target industry benchmarks and needing active monitoring."
         elif status in ["above_average", "top_tier"]:
-            return f"Your {label.lower()} is strong at {val_str}, maintaining a healthy buffer above operating targets."
-        return f"Your {label.lower()} is {val_str}, within stable operating bounds."
+            return f"Your {label} is strong at {val_str}, maintaining a healthy buffer above operating targets."
+        return f"Your {label} is at {val_str}, performing in line with standard operating targets."
 
     def _get_change_indicator(self, metric_id: str, value: Any, financial_overview: dict, status: str) -> str:
         val = float(value) if value is not None else 0.0
@@ -391,20 +396,14 @@ class FinancialOverviewKPITilesService:
                     impact_value=f"-{round((cogs/(rev or 1))*100, 1)}%"
                 ))
         
-        if not drivers:
-            val_num = float(value) if value is not None else 0.0
+        if not drivers and value is not None and float(value) > 0:
+            val_num = float(value)
             drivers = [
                 KPIDriverItem(
                     number=1,
-                    headline=f"Accounts receivable balance impact",
-                    category="Receivables",
-                    impact_value=f"-{round(val_num * 0.1, 2)}"
-                ),
-                KPIDriverItem(
-                    number=2,
-                    headline=f"Operating cash buffer adjustment",
-                    category="Liquidity",
-                    impact_value=f"+{round(val_num * 0.05, 2)}"
+                    headline=f"Operating performance baseline",
+                    category="Performance",
+                    impact_value=f"{val_num:.1f}"
                 )
             ]
         return drivers

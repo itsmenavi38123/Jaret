@@ -1,12 +1,12 @@
 from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status, Request
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field
 
 from app.db import get_collection
 from app.routes.admin_auth import require_admin_session
-from app.routes.auth.auth import get_current_user
+from app.routes.auth.auth import get_current_user, check_demo_write_guard
 from app.config import _now_utc
 from app.services.settings_v2_service import settings_v2_service
 
@@ -66,6 +66,7 @@ async def update_general_settings(
     body: GeneralSettingsUpdateRequest,
     current_user: Any = Depends(get_current_user),
 ):
+    check_demo_write_guard(current_user)
     user_id = _get_user_id(current_user)
     updates = body.model_dump(exclude_unset=True)
     data = await settings_v2_service.update_general_settings(user_id, updates)
@@ -95,6 +96,7 @@ async def update_privacy_settings(
     body: PrivacySettingsUpdateRequest,
     current_user: Any = Depends(get_current_user),
 ):
+    check_demo_write_guard(current_user)
     user_id = _get_user_id(current_user)
     updates = body.model_dump(exclude_unset=True)
     data = await settings_v2_service.update_privacy_settings(user_id, updates)
@@ -111,6 +113,7 @@ async def get_consent_history(current_user: Any = Depends(get_current_user)):
 
 @router.post("/account/delete")
 async def initiate_account_deletion(current_user: Any = Depends(get_current_user)):
+    check_demo_write_guard(current_user)
     user_id = _get_user_id(current_user)
     data = await settings_v2_service.initiate_account_deletion(user_id)
     return JSONResponse(status_code=200, content={"success": True, "data": data})
@@ -128,6 +131,7 @@ async def get_sessions(current_user: Any = Depends(get_current_user)):
 
 @router.post("/sessions/revoke-all")
 async def revoke_all_sessions(current_user: Any = Depends(get_current_user)):
+    check_demo_write_guard(current_user)
     user_id = _get_user_id(current_user)
     data = await settings_v2_service.revoke_all_sessions(user_id)
     return JSONResponse(status_code=200, content={"success": True, "data": data})
@@ -135,6 +139,7 @@ async def revoke_all_sessions(current_user: Any = Depends(get_current_user)):
 
 @router.delete("/sessions/{session_id}")
 async def revoke_session(session_id: str, current_user: Any = Depends(get_current_user)):
+    check_demo_write_guard(current_user)
     user_id = _get_user_id(current_user)
     data = await settings_v2_service.revoke_session(user_id, session_id)
     return JSONResponse(status_code=200, content={"success": True, "data": data})
@@ -152,12 +157,14 @@ async def invite_team_member(
     body: TeamInviteRequest,
     current_user: dict = Depends(get_current_user),
 ):
+    check_demo_write_guard(current_user)
     data = await settings_v2_service.invite_team_member(current_user["id"], body.email, body.role)
     return JSONResponse(status_code=200, content={"success": True, "data": data})
 
 
 @router.delete("/team/{member_id}")
 async def delete_team_member(member_id: str, current_user: dict = Depends(get_current_user)):
+    check_demo_write_guard(current_user)
     data = await settings_v2_service.delete_team_member(current_user["id"], member_id)
     return JSONResponse(status_code=200, content={"success": True, "data": data})
 
@@ -168,6 +175,7 @@ async def create_share_link(
     body: Optional[ShareLinkCreateRequest] = None,
     current_user: dict = Depends(get_current_user),
 ):
+    check_demo_write_guard(current_user)
     scope = body.scope if body else "fo+bh"
     data = await settings_v2_service.create_share_link(current_user["id"], scope)
     return JSONResponse(status_code=200, content={"success": True, "data": data})
@@ -194,6 +202,7 @@ async def get_corrections(current_user: dict = Depends(get_current_user)):
 
 @router.post("/corrections/{correction_id}/undo")
 async def undo_correction(correction_id: str, current_user: dict = Depends(get_current_user)):
+    check_demo_write_guard(current_user)
     data = await settings_v2_service.undo_correction(current_user["id"], correction_id)
     return JSONResponse(status_code=200, content={"success": True, "data": data})
 
@@ -316,6 +325,7 @@ async def get_active_broadcast(current_user: Any = Depends(get_current_user)):
 
 @router.post("/broadcasts/{id}/dismiss")
 async def dismiss_broadcast(id: str, current_user: dict = Depends(get_current_user)):
+    check_demo_write_guard(current_user)
     try:
         broadcasts_col = get_collection("broadcasts")
         user_id = current_user["id"]

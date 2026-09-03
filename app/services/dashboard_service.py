@@ -479,7 +479,7 @@ class DashboardService:
     ) -> Dict[str, Any]:
         """
         Get AI-powered dashboard insights with 5-minute caching.
-        For demo accounts (is_demo == True), returns exact spec-compliant demo payload from app.demo_data.
+        Computes dynamic insights from live/seeded financial overview & KPIs.
         
         Returns summary, alerts, insight_pairs, opportunities, what_changed.
         """
@@ -488,23 +488,7 @@ class DashboardService:
         if cached:
             return cached
         
-        # Check if demo user
-        users_col = get_collection("users")
-        user_doc = await users_col.find_one({"id": user_id}) or await users_col.find_one({"_id": user_id}) or {}
-        
-        if user_doc.get("is_demo") or (user_doc.get("email", "").startswith("demo-") and "@lightsignal.app" in user_doc.get("email", "")):
-            login_label = user_doc.get("login_label") or user_doc.get("username")
-            if not login_label and user_doc.get("email"):
-                login_label = user_doc.get("email").split("@")[0]
-            
-            from app.demo_data import get_demo_payload
-            demo_payload = get_demo_payload(login_label or "demo-restaurant")
-            if demo_payload and "dashboard" in demo_payload:
-                insights = demo_payload["dashboard"]
-                self._cache_insights(user_id, insights)
-                return insights
-        
-        # Get current and prior KPIs for normal users
+        # Get current and prior KPIs
         (
             current_kpis,
             prior_kpis,

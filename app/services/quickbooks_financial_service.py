@@ -391,12 +391,11 @@ class QuickBooksFinancialService:
             return await self._build_demo_financial_overview(user_id)
 
         realm_id = await self.get_realm_id_by_user(user_id)
+        if not realm_id:
+            return None
         token = await quickbooks_token_service.get_token_by_user_and_realm(user_id, realm_id)
         if not token:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"No active QuickBooks connection found for realm {realm_id}",
-            )
+            return None
 
         token = await self._ensure_valid_token(token)
 
@@ -427,7 +426,7 @@ class QuickBooksFinancialService:
         if not active_tokens:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="No active QuickBooks connection found for user",
+                detail="QuickBooks is not connected. Please connect your accounting provider to view live financial metrics.",
             )
         return active_tokens[0].realm_id
 
@@ -440,7 +439,7 @@ class QuickBooksFinancialService:
         if not token:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"No active QuickBooks connection found for realm {realm_id}",
+                detail="QuickBooks is not connected. Please connect your accounting provider to view live financial metrics.",
             )
 
         token = await self._ensure_valid_token(token)

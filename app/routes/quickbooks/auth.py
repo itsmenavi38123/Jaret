@@ -3,7 +3,7 @@ from fastapi.responses import RedirectResponse
 from app.services import quickbooks_service
 from app.services.quickbooks_token_service import quickbooks_token_service
 from app.models.quickbooks.token import QuickBooksTokenCreate
-from app.routes.auth.auth import get_current_user
+from app.routes.auth.auth import get_current_user, check_demo_write_guard
 from fastapi.responses import JSONResponse
 from fastapi.encoders import jsonable_encoder
 from datetime import datetime, timedelta
@@ -120,18 +120,6 @@ async def get_status(current_user: dict = Depends(get_current_user)):
     Returns whether the authenticated user has an active QuickBooks connection.
     """
     user_id = current_user["id"]
-    if current_user.get("is_demo"):
-        return JSONResponse(
-            status_code=status.HTTP_200_OK,
-            content=jsonable_encoder({
-                "success": True,
-                "data": {
-                    "connected": True,
-                    "realm_ids": ["demo_realm"]
-                }
-            })
-        )
-
     tokens = await quickbooks_token_service.get_tokens_by_user(user_id)
     active_tokens = [token for token in tokens if token.is_active]
 
@@ -152,6 +140,7 @@ async def disconnect(current_user: dict = Depends(get_current_user)):
     Disconnects QuickBooks for the authenticated user: revokes the refresh
     token(s) with Intuit and deactivates the stored token record(s).
     """
+    check_demo_write_guard(current_user)
     user_id = current_user["id"]
     tokens = await quickbooks_token_service.get_tokens_by_user(user_id)
     active_tokens = [token for token in tokens if token.is_active]

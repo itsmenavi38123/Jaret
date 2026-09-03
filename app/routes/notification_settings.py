@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 
 from app.db import get_collection
 from app.models.notification_settings import NotificationSettingsRequest
-from app.routes.auth.auth import get_current_user
+from app.routes.auth.auth import get_current_user, check_demo_write_guard
 from app.services.notification_settings_service import notification_settings_service
 
 router = APIRouter(tags=["notification_settings"])
@@ -61,6 +61,7 @@ async def save_notification_settings(
     body: NotificationSettingsPartialUpdate,
     current_user: dict = Depends(get_current_user),
 ):
+    check_demo_write_guard(current_user)
     user_id = current_user["id"]
     updates = body.model_dump(exclude_unset=True)
     updates["updated_at"] = datetime.now(timezone.utc)
