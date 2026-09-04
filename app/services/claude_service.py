@@ -72,7 +72,7 @@ class ClaudeService:
         )
         # Environment-driven routing
         self.text_model = os.getenv("TEXT_MODEL", "claude-opus-4-7")
-        self.utility_model = os.getenv("UTILITY_MODEL", "claude-haiku-4-5")
+        self.utility_model = os.getenv("UTILITY_MODEL", "claude-fable-5")
         self.vision_model = os.getenv("VISION_MODEL", "claude-opus-4-7")
         self.vision_fallback_model = os.getenv("VISION_FALLBACK_MODEL")
         self.fable_model = os.getenv("FABLE_MODEL", "claude-fable-5")
